@@ -156,7 +156,10 @@ export default function TweetNode({ data }: NodeProps) {
             wordBreak: 'break-word',
           }}
         >
-          {showImage ? (text?.slice(0, 40) ?? '—') : `@${authorHandle}`}
+          {showImage
+            ? (text?.slice(0, 40) ?? '—')
+            : (authorHandle && authorHandle !== 'unknown' ? `@${authorHandle}` : (text?.slice(0, 40) ?? '—'))
+          }
         </p>
       )}
 
