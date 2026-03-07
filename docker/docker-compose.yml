@@ -1,0 +1,17 @@
+name: siftly
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - siftly_data:/data
+    restart: unless-stopped
+
+volumes:
+  siftly_data:

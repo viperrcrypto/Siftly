@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import prisma from '@/lib/db'
-import { createCliAnthropicClient, getCliAuthStatus } from '@/lib/claude-cli-auth'
+import { createCliAnthropicClient, createEnvCliAnthropicClient, getCliAuthStatus } from '@/lib/claude-cli-auth'
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let body: { provider?: string } = {}
@@ -24,14 +24,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       client = new Anthropic({ apiKey, ...(baseURL ? { baseURL } : {}) })
     } else {
       const cliClient = createCliAnthropicClient(baseURL)
-      if (!cliClient) {
+      const envCliClient = createEnvCliAnthropicClient(baseURL)
+      if (cliClient) {
+        client = cliClient
+      } else if (envCliClient) {
+        client = envCliClient
+      } else {
         const cliStatus = getCliAuthStatus()
         if (cliStatus.available && cliStatus.expired) {
           return NextResponse.json({ working: false, error: 'Claude CLI session expired — run `claude` to refresh' })
         }
         return NextResponse.json({ working: false, error: 'No API key found. Add one in Settings or log in with Claude CLI.' })
       }
-      client = cliClient
     }
 
     try {

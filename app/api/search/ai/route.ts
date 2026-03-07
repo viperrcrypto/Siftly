@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import prisma from '@/lib/db'
 import { ftsSearch } from '@/lib/fts'
-import { createCliAnthropicClient } from '@/lib/claude-cli-auth'
+import { createCliAnthropicClient, createEnvCliAnthropicClient } from '@/lib/claude-cli-auth'
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 interface CacheEntry { results: unknown; expiresAt: number }
@@ -43,6 +43,8 @@ function resolveSearchClient(dbApiKey: string): Anthropic {
   if (dbApiKey) return new Anthropic({ apiKey: dbApiKey, ...(baseURL ? { baseURL } : {}) })
   const cliClient = createCliAnthropicClient(baseURL)
   if (cliClient) return cliClient
+  const envCliClient = createEnvCliAnthropicClient(baseURL)
+  if (envCliClient) return envCliClient
   const envKey = process.env.ANTHROPIC_API_KEY
   if (envKey) return new Anthropic({ apiKey: envKey, ...(baseURL ? { baseURL } : {}) })
   if (baseURL) return new Anthropic({ apiKey: 'proxy', baseURL })

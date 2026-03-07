@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import prisma from '@/lib/db'
-import { createCliAnthropicClient } from '@/lib/claude-cli-auth'
+import { createCliAnthropicClient, createEnvCliAnthropicClient } from '@/lib/claude-cli-auth'
 import {
   seedDefaultCategories,
   categorizeBatch,
@@ -155,7 +155,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // CLI auth is tried before env var so .env placeholders don't block CLI users
       const resolvedClient = dbApiKey
         ? new Anthropic({ apiKey: dbApiKey, ...(baseURL ? { baseURL } : {}) })
-        : (createCliAnthropicClient(baseURL) ?? (anthropicApiKey ? new Anthropic({ apiKey: anthropicApiKey, ...(baseURL ? { baseURL } : {}) }) : null))
+        : (createCliAnthropicClient(baseURL)
+          ?? createEnvCliAnthropicClient(baseURL)
+          ?? (anthropicApiKey ? new Anthropic({ apiKey: anthropicApiKey, ...(baseURL ? { baseURL } : {}) }) : null))
 
       if (!resolvedClient) {
         setState({ lastError: 'No Anthropic API key configured. Go to Settings to add one, or log in with Claude CLI.' })

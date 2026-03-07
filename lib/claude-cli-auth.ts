@@ -53,6 +53,24 @@ export function getCliOAuthToken(): string | null {
 }
 
 /**
+ * Creates an Anthropic client using the ANTHROPIC_CLI_KEY env var as an OAuth Bearer token.
+ * Use this in Docker/Linux where the macOS keychain is unavailable but you have a CLI OAuth token.
+ * Returns null if ANTHROPIC_CLI_KEY is not set.
+ */
+export function createEnvCliAnthropicClient(baseURL?: string): Anthropic | null {
+  const token = process.env.ANTHROPIC_CLI_KEY
+  if (!token) return null
+
+  return new Anthropic({
+    authToken: token,
+    defaultHeaders: {
+      'anthropic-beta': 'oauth-2025-04-20',
+    },
+    ...(baseURL ? { baseURL } : {}),
+  })
+}
+
+/**
  * Creates an Anthropic client using the logged-in Claude CLI session.
  * Uses the OAuth Bearer token flow with the required anthropic-beta header.
  * Returns null if CLI auth is not available.
