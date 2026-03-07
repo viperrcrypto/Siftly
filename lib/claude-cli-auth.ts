@@ -1,4 +1,7 @@
 import { execSync } from 'child_process'
+import { readFileSync } from 'fs'
+import { join } from 'path'
+import { homedir } from 'os'
 import Anthropic from '@anthropic-ai/sdk'
 
 interface ClaudeOAuthCredentials {
@@ -10,17 +13,26 @@ interface ClaudeOAuthCredentials {
 }
 
 /**
- * Reads Claude Code CLI credentials from the macOS keychain.
- * Returns null if not on macOS, CLI not installed, or not logged in.
+ * Reads Claude Code CLI credentials.
+ * - macOS: reads from the system keychain
+ * - Linux: reads from ~/.claude/.credentials.json
+ * Returns null if CLI not installed or not logged in.
  */
 function readCliCredentials(): ClaudeOAuthCredentials | null {
-  if (process.platform !== 'darwin') return null
-
   try {
-    const raw = execSync('security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null', {
-      encoding: 'utf8',
-      timeout: 3000,
-    }).trim()
+    let raw: string | null = null
+
+    if (process.platform === 'darwin') {
+      raw = execSync('security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null', {
+        encoding: 'utf8',
+        timeout: 3000,
+      }).trim()
+    } else if (process.platform === 'linux') {
+      const credPath = join(homedir(), '.claude', '.credentials.json')
+      raw = readFileSync(credPath, 'utf8').trim()
+    } else {
+      return null
+    }
 
     if (!raw) return null
 
@@ -29,7 +41,8 @@ function readCliCredentials(): ClaudeOAuthCredentials | null {
     if (!oauth?.accessToken) return null
 
     return oauth as ClaudeOAuthCredentials
-  } catch {
+  } catch (err) {
+    console.warn('[claude-cli-auth] Failed to read credentials:', err instanceof Error ? err.message : err)
     return null
   }
 }
@@ -79,8 +92,6 @@ export function getCliAuthStatus(): {
   subscriptionType?: string
   expired?: boolean
 } {
-  if (process.platform !== 'darwin') return { available: false }
-
   const creds = readCliCredentials()
   if (!creds) return { available: false }
 
