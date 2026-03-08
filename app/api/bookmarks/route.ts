@@ -103,6 +103,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       authorHandle: bookmark.authorHandle,
       authorName: bookmark.authorName,
       source: bookmark.source,
+      cleanedFromX: bookmark.cleanedFromX?.toISOString() ?? null,
       tweetCreatedAt: bookmark.tweetCreatedAt?.toISOString() ?? null,
       importedAt: bookmark.importedAt.toISOString(),
       mediaItems: bookmark.mediaItems.map((m) => ({

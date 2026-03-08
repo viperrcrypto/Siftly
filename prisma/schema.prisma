@@ -21,6 +21,7 @@ model Bookmark {
   enrichedAt      DateTime? // when AI enrichment last ran — drives incremental processing
   enrichmentMeta  String?   // JSON: {sentiment, people[], companies[]} from batch enrichment
   source          String    @default("bookmark")  // "bookmark" | "like"
+  cleanedFromX    DateTime? // when this tweet was unbookmarked/unliked on X
   mediaItems    MediaItem[]
   categories    BookmarkCategory[]
 
@@ -28,6 +29,7 @@ model Bookmark {
   @@index([tweetCreatedAt])
   @@index([enrichedAt])
   @@index([source])
+  @@index([cleanedFromX])
 }
 
 model Category {

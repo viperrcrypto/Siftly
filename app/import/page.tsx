@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import Link from 'next/link'
-import { Upload, CheckCircle, ChevronRight, Loader2, Copy, Check, ExternalLink, Sparkles, Eye, Tag, Brain, Layers, StopCircle, RefreshCw, Clock, KeyRound, Trash2 } from 'lucide-react'
+import { Upload, CheckCircle, ChevronRight, Loader2, Copy, Check, ExternalLink, Sparkles, Eye, Tag, Brain, Layers, StopCircle, RefreshCw, Clock, KeyRound, Trash2, XCircle } from 'lucide-react'
 import * as Progress from '@radix-ui/react-progress'
 
 type Step = 1 | 2 | 3
@@ -1224,6 +1224,7 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
               Reprocess all
             </button>
           </div>
+          <CleanupPanel />
         </div>
       )}
 
@@ -1253,8 +1254,233 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
               Reprocess all
             </button>
           </div>
+          <CleanupPanel />
         </div>
       )}
+    </div>
+  )
+}
+
+function CleanupPanel() {
+  const [hasCredentials, setHasCredentials] = useState<boolean | null>(null)
+  const [source, setSource] = useState<'bookmark' | 'like' | 'all'>('all')
+  const [cleaning, setCleaning] = useState(false)
+  const [cleanDone, setCleanDone] = useState(false)
+  const [status, setStatus] = useState<{ running: boolean; done: number; total: number; failed: number; lastError: string | null } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [stats, setStats] = useState<{ uncleaned: number; uncleanedBookmarks: number; uncleanedLikes: number } | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    // Check if credentials exist and get uncleaned count
+    Promise.all([
+      fetch('/api/import/live').then((r) => r.json()).catch(() => null),
+      fetch('/api/cleanup/stats').then((r) => r.json()).catch(() => null),
+      fetch('/api/cleanup').then((r) => r.json()).catch(() => null),
+    ]).then(([liveCfg, statsData, cleanupStatus]) => {
+      setHasCredentials(!!liveCfg?.hasCredentials)
+      if (statsData) setStats(statsData)
+      if (cleanupStatus?.running) {
+        setCleaning(true)
+        setStatus(cleanupStatus)
+        startPolling()
+      }
+    })
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function startPolling() {
+    if (pollRef.current) clearInterval(pollRef.current)
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch('/api/cleanup')
+        const data = await res.json()
+        setStatus(data)
+        if (!data.running) {
+          if (pollRef.current) clearInterval(pollRef.current)
+          pollRef.current = null
+          setCleaning(false)
+          setCleanDone(true)
+          // Refresh stats
+          fetch('/api/cleanup/stats').then((r) => r.json()).then(setStats).catch(() => {})
+        }
+      } catch {
+        // keep polling
+      }
+    }, 1000)
+  }
+
+  const [confirmMessage, setConfirmMessage] = useState<string | null>(null)
+  const [confirmTotal, setConfirmTotal] = useState(0)
+
+  async function handleStart() {
+    setError(null)
+    setConfirmMessage(null)
+    try {
+      const res = await fetch('/api/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error)
+        return
+      }
+      // API returns a confirmation prompt first
+      if (data.requiresConfirmation) {
+        setConfirmMessage(data.message)
+        setConfirmTotal(data.total)
+        return
+      }
+      setCleaning(true)
+      setCleanDone(false)
+      startPolling()
+    } catch {
+      setError('Failed to start cleanup')
+    }
+  }
+
+  async function handleConfirm() {
+    setError(null)
+    setConfirmMessage(null)
+    try {
+      const res = await fetch('/api/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source, confirmed: true }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error)
+        return
+      }
+      setCleaning(true)
+      setCleanDone(false)
+      startPolling()
+    } catch {
+      setError('Failed to start cleanup')
+    }
+  }
+
+  async function handleStop() {
+    await fetch('/api/cleanup', { method: 'DELETE' }).catch(() => {})
+  }
+
+  if (hasCredentials === null || hasCredentials === false) return null
+  if (!stats || stats.uncleaned === 0) return null
+
+  const progress = status ? Math.round((status.done / Math.max(status.total, 1)) * 100) : 0
+
+  return (
+    <div className="border-t border-zinc-800 pt-5 mt-2">
+      <div className="rounded-xl bg-red-500/5 border border-red-500/20 p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center shrink-0">
+            <XCircle size={20} className="text-red-400" />
+          </div>
+          <div>
+            <p className="text-zinc-200 font-medium">Clean up X</p>
+            <p className="text-zinc-500 text-sm mt-0.5">
+              Remove {stats.uncleaned} imported item{stats.uncleaned !== 1 ? 's' : ''} from your X account.
+              {stats.uncleanedBookmarks > 0 && stats.uncleanedLikes > 0
+                ? ` (${stats.uncleanedBookmarks} bookmarks, ${stats.uncleanedLikes} likes)`
+                : ''}
+            </p>
+          </div>
+        </div>
+
+        {!cleaning && !cleanDone && !confirmMessage && (
+          <div className="flex items-center gap-3">
+            <select
+              value={source}
+              onChange={(e) => setSource(e.target.value as 'bookmark' | 'like' | 'all')}
+              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none"
+            >
+              <option value="all">All ({stats.uncleaned})</option>
+              {stats.uncleanedBookmarks > 0 && <option value="bookmark">Bookmarks ({stats.uncleanedBookmarks})</option>}
+              {stats.uncleanedLikes > 0 && <option value="like">Likes ({stats.uncleanedLikes})</option>}
+            </select>
+            <button
+              onClick={() => void handleStart()}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
+            >
+              <Trash2 size={14} />
+              Remove from X
+            </button>
+          </div>
+        )}
+
+        {confirmMessage && (
+          <div className="rounded-xl bg-amber-500/8 border border-amber-500/20 p-4 space-y-3">
+            <p className="text-sm text-amber-200">{confirmMessage}</p>
+            <p className="text-xs text-zinc-500">
+              Make sure your {confirmTotal} item{confirmTotal !== 1 ? 's are' : ' is'} safely imported in Siftly before proceeding.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => void handleConfirm()}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
+              >
+                <Trash2 size={14} />
+                Yes, remove from X
+              </button>
+              <button
+                onClick={() => setConfirmMessage(null)}
+                className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-sm font-medium border border-zinc-700 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {cleaning && status && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-zinc-400">
+                <Loader2 size={14} className="animate-spin text-red-400" />
+                Removing {status.done} / {status.total}...
+              </div>
+              <button
+                onClick={() => void handleStop()}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-xs font-medium border border-zinc-700 transition-colors"
+              >
+                <StopCircle size={12} />
+                Stop
+              </button>
+            </div>
+            <div className="relative h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+              <div
+                className="h-full bg-red-500 transition-all duration-500"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            {status.total > 0 && (
+              <p className="text-xs text-zinc-600">
+                ~{Math.ceil((status.total - status.done))} seconds remaining
+              </p>
+            )}
+          </div>
+        )}
+
+        {cleanDone && status && (
+          <div className="flex items-center gap-2 text-sm">
+            <CheckCircle size={16} className="text-emerald-400" />
+            <span className="text-zinc-300">
+              {status.done} removed from X
+              {status.failed > 0 && <span className="text-zinc-500"> · {status.failed} failed</span>}
+            </span>
+          </div>
+        )}
+
+        {(status?.lastError && status.lastError !== 'Stopped by user') && (
+          <p className="text-xs text-red-400">{status.lastError}</p>
+        )}
+
+        {error && <p className="text-xs text-red-400">{error}</p>}
+      </div>
     </div>
   )
 }

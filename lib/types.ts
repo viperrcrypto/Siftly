@@ -22,8 +22,20 @@ export interface BookmarkWithMedia {
   authorName: string
   tweetCreatedAt: string | null
   importedAt?: string
+  source?: string
+  cleanedFromX?: string | null
   mediaItems: MediaItem[]
   categories: BookmarkCategory[]
+}
+
+export type CleanupSource = 'bookmark' | 'like' | 'all'
+
+export interface CleanupStatus {
+  running: boolean
+  done: number
+  total: number
+  failed: number
+  lastError: string | null
 }
 
 export interface Category {
