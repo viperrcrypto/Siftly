@@ -29,12 +29,14 @@ export interface BookmarkWithMedia {
 }
 
 export type CleanupSource = 'bookmark' | 'like' | 'all'
+export type CleanupSpeed = 'fast' | 'normal' | 'safe'
 
 export interface CleanupStatus {
   running: boolean
   done: number
   total: number
   failed: number
+  speed: CleanupSpeed
   lastError: string | null
 }
 

@@ -1,21 +1,27 @@
 import prisma from '@/lib/db'
-import type { CleanupStatus, CleanupSource } from '@/lib/types'
+import type { CleanupStatus, CleanupSource, CleanupSpeed } from '@/lib/types'
 
 // GraphQL mutation query IDs — update if X returns 400 after a platform deploy
-const DELETE_BOOKMARK_QUERY_ID = 'Fn36NTYDO0hkMlBM4eoLcA'
+const DELETE_BOOKMARK_QUERY_ID = 'Wlmlj2-xzyS1GN3a6cj-mQ'
 const UNLIKE_QUERY_ID = 'ZYKSe-w7KEslx3JhSIk5LA'
 
 const BEARER =
   'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA'
 
-const INTER_REQUEST_DELAY_MS = 1000
+// Delay between requests per speed setting
+const SPEED_DELAY_MS: Record<CleanupSpeed, number> = {
+  fast: 1000,    // ~1/sec — 1 hour for 3600 items
+  normal: 3000,  // ~1/3sec — 3 hours for 3600 items
+  safe: 5000,    // ~1/5sec — 5 hours for 3600 items
+}
+
 const RATE_LIMIT_BACKOFF_MS = 60_000
 
 // ── State ────────────────────────────────────────────────────────────────────
 
 let cleanupRunning = false
 let cleanupShouldStop = false
-let status: CleanupStatus = { running: false, done: 0, total: 0, failed: 0, lastError: null }
+let status: CleanupStatus = { running: false, done: 0, total: 0, failed: 0, speed: 'normal', lastError: null }
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -39,6 +45,16 @@ function xHeaders(authToken: string, ct0: string): Record<string, string> {
 
 type MutationResult = 'ok' | 'already_removed' | 'rate_limit' | 'auth_error' | 'error'
 
+function isAlreadyRemovedError(json: unknown): boolean {
+  const errors =
+    typeof json === 'object' && json !== null && 'errors' in json
+      ? (json as { errors?: Array<{ code?: number }> }).errors
+      : undefined
+
+  // X may return these when the bookmark/like is already gone.
+  return Boolean(errors?.some((e) => e.code === 34 || e.code === 144))
+}
+
 async function deleteBookmark(
   authToken: string,
   ct0: string,
@@ -58,15 +74,23 @@ async function deleteBookmark(
 
   if (res.status === 429) return 'rate_limit'
   if (res.status === 401 || res.status === 403) return 'auth_error'
-  if (!res.ok) return 'error'
 
   try {
     const json = await res.json()
-    // Tweet already deleted or not found
-    if (json.errors?.some((e: { code?: number }) => e.code === 144)) return 'already_removed'
+    if (isAlreadyRemovedError(json)) return 'already_removed'
+
+    if (!res.ok) {
+      console.error(`[x-cleanup] DeleteBookmark ${tweetId} HTTP ${res.status}:`, JSON.stringify(json).slice(0, 300))
+      return 'error'
+    }
+
     return 'ok'
   } catch {
-    return 'ok' // 200 with empty/non-JSON body is fine
+    if (!res.ok) {
+      console.error(`[x-cleanup] DeleteBookmark ${tweetId} HTTP ${res.status} (no JSON body)`)
+      return 'error'
+    }
+    return 'ok'
   }
 }
 
@@ -89,14 +113,50 @@ async function unlikeTweet(
 
   if (res.status === 429) return 'rate_limit'
   if (res.status === 401 || res.status === 403) return 'auth_error'
-  if (!res.ok) return 'error'
 
   try {
     const json = await res.json()
-    if (json.errors?.some((e: { code?: number }) => e.code === 144)) return 'already_removed'
+    if (isAlreadyRemovedError(json)) return 'already_removed'
+
+    if (!res.ok) {
+      console.error(`[x-cleanup] UnfavoriteTweet ${tweetId} HTTP ${res.status}:`, JSON.stringify(json).slice(0, 300))
+      return 'error'
+    }
+
     return 'ok'
   } catch {
+    if (!res.ok) {
+      console.error(`[x-cleanup] UnfavoriteTweet ${tweetId} HTTP ${res.status} (no JSON body)`)
+      return 'error'
+    }
     return 'ok'
+  }
+}
+
+// ── Session health check ─────────────────────────────────────────────────────
+
+export async function checkSession(
+  authToken: string,
+  ct0: string,
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    // Use the viewer endpoint — lightweight and works with session cookies
+    const res = await fetch('https://x.com/i/api/graphql/boP0x_MHAG1GhZ3svMKl3g/Viewer', {
+      method: 'POST',
+      headers: xHeaders(authToken, ct0),
+      body: JSON.stringify({
+        variables: { withCommunitiesMemberships: false },
+        features: { responsive_web_graphql_exclude_directive_enabled: true },
+        queryId: 'boP0x_MHAG1GhZ3svMKl3g',
+      }),
+    })
+    if (res.status === 200) return { valid: true }
+    if (res.status === 401 || res.status === 403) {
+      return { valid: false, error: 'Session expired — re-save your credentials in Import > Live Import.' }
+    }
+    return { valid: false, error: `Unexpected response from X (${res.status})` }
+  } catch {
+    return { valid: false, error: 'Could not reach X — check your internet connection.' }
   }
 }
 
@@ -106,6 +166,7 @@ export async function startCleanup(
   authToken: string,
   ct0: string,
   source: CleanupSource,
+  speed: CleanupSpeed = 'normal',
 ): Promise<void> {
   if (cleanupRunning) throw new Error('Cleanup already in progress')
 
@@ -118,9 +179,11 @@ export async function startCleanup(
     orderBy: { importedAt: 'asc' },
   })
 
+  const delayMs = SPEED_DELAY_MS[speed]
+
   cleanupRunning = true
   cleanupShouldStop = false
-  status = { running: true, done: 0, total: items.length, failed: 0, lastError: null }
+  status = { running: true, done: 0, total: items.length, failed: 0, speed, lastError: null }
 
   try {
     for (const item of items) {
@@ -167,7 +230,7 @@ export async function startCleanup(
         status.lastError = `Failed to clean tweet ${item.tweetId}`
       }
 
-      await sleep(INTER_REQUEST_DELAY_MS)
+      await sleep(delayMs)
     }
   } catch (err) {
     status.lastError = err instanceof Error ? err.message : String(err)

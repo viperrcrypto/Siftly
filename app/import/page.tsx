@@ -1264,9 +1264,10 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
 function CleanupPanel() {
   const [hasCredentials, setHasCredentials] = useState<boolean | null>(null)
   const [source, setSource] = useState<'bookmark' | 'like' | 'all'>('all')
+  const [speed, setSpeed] = useState<'fast' | 'normal' | 'safe'>('normal')
   const [cleaning, setCleaning] = useState(false)
   const [cleanDone, setCleanDone] = useState(false)
-  const [status, setStatus] = useState<{ running: boolean; done: number; total: number; failed: number; lastError: string | null } | null>(null)
+  const [status, setStatus] = useState<{ running: boolean; done: number; total: number; failed: number; speed?: string; lastError: string | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [stats, setStats] = useState<{ uncleaned: number; uncleanedBookmarks: number; uncleanedLikes: number } | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -1321,7 +1322,7 @@ function CleanupPanel() {
       const res = await fetch('/api/cleanup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source }),
+        body: JSON.stringify({ source, speed }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -1349,7 +1350,7 @@ function CleanupPanel() {
       const res = await fetch('/api/cleanup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source, confirmed: true }),
+        body: JSON.stringify({ source, speed, confirmed: true }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -1368,10 +1369,19 @@ function CleanupPanel() {
     await fetch('/api/cleanup', { method: 'DELETE' }).catch(() => {})
   }
 
-  if (hasCredentials === null || hasCredentials === false) return null
   if (!stats || stats.uncleaned === 0) return null
 
+  function formatDuration(seconds: number) {
+    if (seconds < 60) return `${seconds}s`
+    if (seconds < 3600) return `${Math.ceil(seconds / 60)} min`
+    const h = Math.floor(seconds / 3600)
+    const m = Math.ceil((seconds % 3600) / 60)
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+
   const progress = status ? Math.round((status.done / Math.max(status.total, 1)) * 100) : 0
+  const activeSpeed: 'fast' | 'normal' | 'safe' = (status?.speed as 'fast' | 'normal' | 'safe') ?? speed
+  const delayPerItem = { fast: 1, normal: 3, safe: 5 }[activeSpeed] as number
 
   return (
     <div className="border-t border-zinc-800 pt-5 mt-2">
@@ -1391,24 +1401,52 @@ function CleanupPanel() {
           </div>
         </div>
 
-        {!cleaning && !cleanDone && !confirmMessage && (
-          <div className="flex items-center gap-3">
-            <select
-              value={source}
-              onChange={(e) => setSource(e.target.value as 'bookmark' | 'like' | 'all')}
-              className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none"
-            >
-              <option value="all">All ({stats.uncleaned})</option>
-              {stats.uncleanedBookmarks > 0 && <option value="bookmark">Bookmarks ({stats.uncleanedBookmarks})</option>}
-              {stats.uncleanedLikes > 0 && <option value="like">Likes ({stats.uncleanedLikes})</option>}
-            </select>
-            <button
-              onClick={() => void handleStart()}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
-            >
-              <Trash2 size={14} />
-              Remove from X
-            </button>
+        {!hasCredentials && !cleaning && !cleanDone && (
+          <div className="rounded-xl bg-amber-500/8 border border-amber-500/20 p-4 space-y-2">
+            <p className="text-sm text-amber-200">X credentials required</p>
+            <p className="text-xs text-zinc-500">
+              To remove items from X, save your <code className="text-zinc-400">auth_token</code> and <code className="text-zinc-400">ct0</code> cookies in the <strong>Live Import</strong> tab above.
+            </p>
+          </div>
+        )}
+
+        {hasCredentials && !cleaning && !cleanDone && !confirmMessage && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <select
+                value={source}
+                onChange={(e) => setSource(e.target.value as 'bookmark' | 'like' | 'all')}
+                className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none"
+              >
+                <option value="all">All ({stats.uncleaned})</option>
+                {stats.uncleanedBookmarks > 0 && <option value="bookmark">Bookmarks ({stats.uncleanedBookmarks})</option>}
+                {stats.uncleanedLikes > 0 && <option value="like">Likes ({stats.uncleanedLikes})</option>}
+              </select>
+              <select
+                value={speed}
+                onChange={(e) => setSpeed(e.target.value as 'fast' | 'normal' | 'safe')}
+                className="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-300 outline-none"
+              >
+                <option value="fast">Fast (1/sec)</option>
+                <option value="normal">Normal (1/3sec)</option>
+                <option value="safe">Safe (1/5sec)</option>
+              </select>
+              <button
+                onClick={() => void handleStart()}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
+              >
+                <Trash2 size={14} />
+                Remove from X
+              </button>
+            </div>
+            <p className="text-xs text-zinc-600">
+              {(() => {
+                const count = source === 'all' ? stats.uncleaned : source === 'bookmark' ? stats.uncleanedBookmarks : stats.uncleanedLikes
+                return `Estimated time: ~${formatDuration(count * ({ fast: 1, normal: 3, safe: 5 }[speed]))}`
+              })()}
+              {speed === 'safe' && ' — lowest risk of X flagging your account'}
+              {speed === 'fast' && ' — slightly higher risk, but still within normal usage'}
+            </p>
           </div>
         )}
 
@@ -1459,7 +1497,7 @@ function CleanupPanel() {
             </div>
             {status.total > 0 && (
               <p className="text-xs text-zinc-600">
-                ~{Math.ceil((status.total - status.done))} seconds remaining
+                ~{formatDuration((status.total - status.done) * delayPerItem)} remaining · {status.speed ?? 'normal'} speed
               </p>
             )}
           </div>
@@ -1653,6 +1691,9 @@ export default function ImportPage() {
         )}
         {step === 3 && <CategorizeStep importedCount={importResult ? importResult.imported : -1} force={forceReprocess} />}
       </div>
+
+      {/* Cleanup panel — always visible when there are imported items and credentials */}
+      {step !== 3 && <CleanupPanel />}
     </div>
   )
 }

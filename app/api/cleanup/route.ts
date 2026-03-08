@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { startCleanup, stopCleanup, getCleanupStatus, isCleanupRunning } from '@/lib/x-cleanup'
-import type { CleanupSource } from '@/lib/types'
+import type { CleanupSource, CleanupSpeed } from '@/lib/types'
 
 const VALID_SOURCES: CleanupSource[] = ['bookmark', 'like', 'all']
+const VALID_SPEEDS: CleanupSpeed[] = ['fast', 'normal', 'safe']
 
 export async function GET(): Promise<NextResponse> {
   return NextResponse.json(getCleanupStatus())
@@ -57,8 +58,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       })
     }
 
+    const speed: CleanupSpeed = VALID_SPEEDS.includes(body.speed) ? body.speed : 'normal'
+
     // Fire-and-forget
-    void startCleanup(authSetting.value, ct0Setting.value, source).catch((err) => {
+    void startCleanup(authSetting.value, ct0Setting.value, source, speed).catch((err) => {
       console.error('[cleanup] Unhandled error:', err)
     })
 
