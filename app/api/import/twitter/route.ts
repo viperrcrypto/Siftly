@@ -189,7 +189,48 @@ type StoredEntities = {
   mentions: string[]
 }
 
-function extractEntities(tweet: TweetResult): StoredEntities {
+const MAX_URL_RESOLVE_CONCURRENCY = 5
+let activeUrlResolves = 0
+const urlResolveQueue: Array<() => void> = []
+
+async function withUrlResolveSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeUrlResolves >= MAX_URL_RESOLVE_CONCURRENCY) {
+    await new Promise<void>((resolve) => urlResolveQueue.push(resolve))
+  }
+  activeUrlResolves++
+  try {
+    return await fn()
+  } finally {
+    activeUrlResolves--
+    urlResolveQueue.shift()?.()
+  }
+}
+
+async function tryResolve(url: string, method: 'HEAD' | 'GET'): Promise<string | null> {
+  try {
+    const res = await fetch(url, { method, redirect: 'follow', signal: AbortSignal.timeout(5000) })
+    if (!res.ok) return null
+    return res.url || url
+  } catch {
+    return null
+  }
+}
+
+async function resolveTco(url: string): Promise<string> {
+  if (!url) return url
+  // Only spend network calls on t.co shortlinks
+  if (!/^https?:\/\/t\.co\//i.test(url)) return url
+
+  return withUrlResolveSlot(async () => {
+    const head = await tryResolve(url, 'HEAD')
+    if (head) return head
+    const get = await tryResolve(url, 'GET')
+    if (get) return get
+    return url
+  })
+}
+
+async function extractEntities(tweet: TweetResult): Promise<StoredEntities> {
   const hashtags = (tweet.legacy?.entities?.hashtags ?? [])
     .map((h) => String((h as { text?: string })?.text ?? '').trim())
     .filter(Boolean)
@@ -198,7 +239,7 @@ function extractEntities(tweet: TweetResult): StoredEntities {
     .map((m) => String((m as { screen_name?: string })?.screen_name ?? '').trim())
     .filter(Boolean)
 
-  const urls = (tweet.legacy?.entities?.urls ?? [])
+  const urlsRaw = (tweet.legacy?.entities?.urls ?? [])
     .map((u) => u as UrlEntity)
     .map((u) => {
       const short = String(u.url ?? '').trim()
@@ -207,9 +248,13 @@ function extractEntities(tweet: TweetResult): StoredEntities {
     })
     .filter(Boolean) as Array<{ short: string; expanded: string }>
 
+  const urlsResolved = await Promise.all(
+    urlsRaw.map(async (u) => ({ short: u.short, expanded: await resolveTco(u.expanded) }))
+  )
+
   // de-dupe
   const map = new Map<string, { short: string; expanded: string }>()
-  for (const u of urls) map.set(u.expanded, u)
+  for (const u of urlsResolved) map.set(u.expanded, u)
 
   return { urls: Array.from(map.values()), hashtags, mentions }
 }
@@ -310,7 +355,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             authorName: userLegacy.name ?? 'Unknown',
             tweetCreatedAt: tweet.legacy?.created_at ? new Date(tweet.legacy.created_at) : null,
             rawJson: JSON.stringify(tweet),
-            entities: JSON.stringify(extractEntities(tweet)),
+            entities: JSON.stringify(await extractEntities(tweet)),
             source,
           },
         })
