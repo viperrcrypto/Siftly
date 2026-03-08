@@ -10,7 +10,7 @@ npm install
 
 # Generate Prisma client + create local SQLite database
 npx prisma generate
-npx prisma migrate dev --name init
+npx prisma db push
 
 # Start the dev server
 npx next dev
@@ -40,8 +40,7 @@ To verify it's working, hit: `GET /api/settings/cli-status`
 npx next dev          # Start dev server (port 3000)
 npx tsc --noEmit      # Type check
 npx prisma studio     # Database GUI
-npx prisma migrate dev --name <change-name>  # Create/apply local migration
-npx prisma migrate deploy                    # Apply committed migrations (runtime/prod)
+npx prisma db push    # Apply schema changes to DB
 npm run build         # Production build
 ```
 
@@ -148,8 +147,4 @@ SQLite file at `prisma/dev.db`. Schema models:
 - `Setting` — key/value store (API keys, model choice)
 - `ImportJob` — import file tracking
 
-After schema changes: `npx prisma migrate dev --name <change-name>`
-
-FTS note:
-- `bookmark_fts` (SQLite FTS5) is currently created/maintained by app runtime SQL in `lib/fts.ts`, not Prisma schema migrations.
-- Long-term recommendation is to move FTS schema creation into SQL migrations for deterministic environments, while keeping runtime rebuild logic.
+After schema changes: `npx prisma db push`
