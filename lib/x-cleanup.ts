@@ -44,6 +44,36 @@ function xHeaders(authToken: string, ct0: string): Record<string, string> {
 // ── Mutations ────────────────────────────────────────────────────────────────
 
 type MutationResult = 'ok' | 'already_removed' | 'rate_limit' | 'auth_error' | 'error'
+const NETWORK_RETRY_DELAY_MS = 5_000
+
+async function sendMutationRequest(
+  url: string,
+  body: unknown,
+  authToken: string,
+  ct0: string,
+  logPrefix: string,
+): Promise<Response | null> {
+  const requestInit: RequestInit = {
+    method: 'POST',
+    headers: xHeaders(authToken, ct0),
+    body: JSON.stringify(body),
+  }
+
+  try {
+    return await fetch(url, requestInit)
+  } catch (err) {
+    console.error(`[x-cleanup] ${logPrefix} network error, retrying in ${NETWORK_RETRY_DELAY_MS / 1000}s...`, err)
+  }
+
+  await sleep(NETWORK_RETRY_DELAY_MS)
+
+  try {
+    return await fetch(url, requestInit)
+  } catch (err) {
+    console.error(`[x-cleanup] ${logPrefix} retry failed`, err)
+    return null
+  }
+}
 
 function isAlreadyRemovedError(json: unknown): boolean {
   const errors =
@@ -60,17 +90,17 @@ async function deleteBookmark(
   ct0: string,
   tweetId: string,
 ): Promise<MutationResult> {
-  const res = await fetch(
+  const res = await sendMutationRequest(
     `https://x.com/i/api/graphql/${DELETE_BOOKMARK_QUERY_ID}/DeleteBookmark`,
     {
-      method: 'POST',
-      headers: xHeaders(authToken, ct0),
-      body: JSON.stringify({
-        variables: { tweet_id: tweetId },
-        queryId: DELETE_BOOKMARK_QUERY_ID,
-      }),
+      variables: { tweet_id: tweetId },
+      queryId: DELETE_BOOKMARK_QUERY_ID,
     },
+    authToken,
+    ct0,
+    `DeleteBookmark ${tweetId}`,
   )
+  if (!res) return 'error'
 
   if (res.status === 429) return 'rate_limit'
   if (res.status === 401 || res.status === 403) return 'auth_error'
@@ -99,17 +129,17 @@ async function unlikeTweet(
   ct0: string,
   tweetId: string,
 ): Promise<MutationResult> {
-  const res = await fetch(
+  const res = await sendMutationRequest(
     `https://x.com/i/api/graphql/${UNLIKE_QUERY_ID}/UnfavoriteTweet`,
     {
-      method: 'POST',
-      headers: xHeaders(authToken, ct0),
-      body: JSON.stringify({
-        variables: { tweet_id: tweetId },
-        queryId: UNLIKE_QUERY_ID,
-      }),
+      variables: { tweet_id: tweetId },
+      queryId: UNLIKE_QUERY_ID,
     },
+    authToken,
+    ct0,
+    `UnfavoriteTweet ${tweetId}`,
   )
+  if (!res) return 'error'
 
   if (res.status === 429) return 'rate_limit'
   if (res.status === 401 || res.status === 403) return 'auth_error'
