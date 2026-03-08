@@ -81,7 +81,7 @@ git clone https://github.com/viperrcrypto/Siftly.git
 cd Siftly
 npm install
 npx prisma generate
-npx prisma db push
+npx prisma migrate dev --name init
 npx next dev
 ```
 
@@ -331,6 +331,125 @@ Setting           — key-value store (API keys, model preferences)
 ImportJob         — tracks import file status and progress
 ```
 
+### Prisma + SQLite + FTS5 (Important)
+
+Siftly uses Prisma for all normal relational tables (`Bookmark`, `MediaItem`, `Category`, etc.) and uses raw SQLite SQL for FTS5 virtual tables.
+
+#### Why Prisma is used
+
+- Type-safe DB access in TypeScript (`prisma.bookmark.findMany`, nested selects, relations)
+- Schema as code in `prisma/schema.prisma`
+- Versioned SQL migrations in `prisma/migrations/`
+- Generated client in `app/generated/prisma`
+
+#### Command order (new project / schema change)
+
+```bash
+# 1) Install deps
+npm install
+
+# 2) Generate Prisma client from schema
+npx prisma generate
+
+# 3) Create/apply a migration in local dev (when schema changes)
+npx prisma migrate dev --name init
+
+# 4) Run app
+npx next dev
+```
+
+For production/container startup, apply committed migrations only:
+
+```bash
+npx prisma migrate deploy
+```
+
+Note: `start.sh` currently uses `npx prisma migrate deploy 2>/dev/null || npx prisma db push` as a first-run fallback. The recommended long-term flow is still migration-first (`migrate dev` in development, `migrate deploy` in runtime environments).
+
+#### `migrate dev` vs `migrate deploy` vs `generate` vs `db push`
+
+- `prisma migrate dev`:
+  - Dev-only workflow command
+  - Diffs schema changes, creates SQL migration files, applies them locally
+- `prisma migrate deploy`:
+  - Applies existing migration files only
+  - Safe startup command in CI/prod/container
+- `prisma generate`:
+  - Regenerates TypeScript Prisma client code
+  - Does not change DB data/schema by itself
+- `prisma db push`:
+  - Directly syncs schema to DB without creating migration history
+  - Useful for quick prototyping, but not recommended for production migration flow
+
+#### FTS5 virtual tables in this repo
+
+Primary virtual table created by app code:
+- `bookmark_fts`
+
+SQLite also auto-creates shadow tables:
+- `bookmark_fts_data`
+- `bookmark_fts_idx`
+- `bookmark_fts_content`
+- `bookmark_fts_docsize`
+- `bookmark_fts_config`
+
+These are not represented in `schema.prisma`; they are created dynamically via raw SQL in `lib/fts.ts`.
+
+#### Where virtual tables are created and used
+
+1. Create FTS table (if missing) in `lib/fts.ts`:
+
+```ts
+await prisma.$executeRawUnsafe(`
+  CREATE VIRTUAL TABLE IF NOT EXISTS bookmark_fts USING fts5(
+    bookmark_id UNINDEXED,
+    text,
+    semantic_tags,
+    entities,
+    image_tags,
+    tokenize='porter unicode61'
+  )
+`)
+```
+
+2. Rebuild index after enrichment/categorization pipeline in `app/api/categorize/route.ts`:
+
+```ts
+if (!shouldAbort()) {
+  await rebuildFts().catch((err) => console.error('FTS rebuild error:', err))
+}
+```
+
+3. Search route uses FTS first, then falls back to LIKE filters in `app/api/search/ai/route.ts`:
+
+```ts
+const ftsIds = keywords.length > 0 ? await ftsSearch(keywords) : []
+const useFts = ftsIds.length > 0
+```
+
+Why this exists:
+- FTS5 gives fast ranked text retrieval (`MATCH ... ORDER BY rank`)
+- Prisma then fetches full bookmark records and AI reranking happens on top
+
+#### Why migrations can be tricky with FTS5
+
+Prisma migrations manage only tables defined in `schema.prisma`. FTS virtual/shadow tables are outside Prisma's schema model, so they are managed by runtime SQL (`lib/fts.ts`).
+
+Should FTS be in migrations?
+- Yes, ideally. For production-grade determinism, create FTS schema objects via SQL migrations.
+- Keep app-level rebuild logic (`rebuildFts`) for data refresh/backfill.
+
+Current project workflow (intentionally kept for now):
+- FTS table creation remains runtime-driven (`ensureFtsTable` in app code).
+- Relational schema changes stay in Prisma migrations.
+- Runtime/deploy flow remains migration-first where possible (`migrate deploy`), with current `start.sh` fallback unchanged.
+
+Practical rule:
+- Keep relational schema changes in Prisma migrations
+- Keep FTS virtual table lifecycle in app code (`ensureFtsTable`, `rebuildFts`)
+
+For deploys/startup, prefer `migrate deploy` over schema-diff style flows when possible, since FTS tables are external to Prisma's schema representation.
+
 ---
 
 ## Tech Stack
@@ -360,7 +479,7 @@ ImportJob         — tracks import file status and progress
 # Or manually:
 npm install
 npx prisma generate
-npx prisma db push
+npx prisma migrate dev --name init
 npx next dev
 
 # Type check

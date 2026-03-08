@@ -6,7 +6,9 @@ Thank you for your interest in contributing! Here's how to get started.
 
 1. Fork and clone the repo
 2. Install dependencies: `npm install`
-3. Set up the database: `npx prisma db push`
+3. Set up the database:
+   - `npx prisma generate`
+   - `npx prisma migrate dev --name init`
 4. Copy the env example: `cp .env.example .env.local`
 5. Add your Anthropic API key to `.env.local`
 6. Run the dev server: `npm run dev`
