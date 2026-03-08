@@ -60,13 +60,13 @@ function Section({ icon: Icon, title, description, children, variant = 'default'
   const isDanger = variant === 'danger'
   return (
     <div
-      className={`bg-zinc-900 rounded-2xl p-6 transition-all duration-200 ${
+      className={`bg-zinc-900 rounded-2xl p-4 sm:p-6 transition-all duration-200 ${
         isDanger
           ? 'border border-red-700/60 hover:border-red-600/70'
           : 'border border-zinc-800 hover:border-zinc-700'
       }`}
     >
-      <div className="flex items-start gap-3 mb-5">
+      <div className="mb-4 flex items-start gap-2.5 sm:mb-5 sm:gap-3">
         <div
           className={`p-2.5 rounded-xl shrink-0 ${
             isDanger ? 'bg-red-800/40' : 'bg-indigo-500/10'
@@ -74,7 +74,7 @@ function Section({ icon: Icon, title, description, children, variant = 'default'
         >
           <Icon size={16} className={isDanger ? 'text-red-500' : 'text-indigo-400'} />
         </div>
-        <div>
+        <div className="min-w-0">
           <h2 className={`text-base font-semibold ${isDanger ? 'text-red-400' : 'text-zinc-100'}`}>
             {title}
           </h2>
@@ -205,10 +205,10 @@ function ApiKeyField({
     <div className="space-y-2.5">
       <div className="flex flex-col gap-2 min-w-0 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm font-medium text-zinc-300 shrink-0">{label}</p>
-        <div className="flex flex-wrap items-center gap-2 min-w-0 overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
           {savedMasked && (
-            <span className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-lg min-w-0 overflow-hidden">
-              <Check size={11} className="shrink-0" /> <span className="shrink-0">Saved:</span> <span className="font-mono truncate">{savedMasked}</span>
+            <span className="flex max-w-full min-w-0 items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400">
+              <Check size={11} className="shrink-0" /> <span className="shrink-0">Saved:</span> <span className="min-w-0 truncate font-mono">{savedMasked}</span>
             </span>
           )}
           {savedMasked && (
@@ -268,7 +268,7 @@ function ApiKeyField({
         <button
           onClick={() => void handleSave()}
           disabled={saving}
-          className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors shrink-0"
+          className="w-full shrink-0 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -329,7 +329,7 @@ function ModelSelector({
 
   return (
     <>
-      <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="mt-2.5 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
         <span className="text-xs text-zinc-500 shrink-0">Model:</span>
         <div className="relative flex-1">
           <select
@@ -346,12 +346,12 @@ function ModelSelector({
           <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
         </div>
         {saved && (
-          <span className="flex items-center gap-1 text-xs text-emerald-400 shrink-0">
+          <span className="flex items-center gap-1 text-xs text-emerald-400">
             <Check size={12} /> Saved
           </span>
         )}
         {!saved && selected && (
-          <span className="text-xs text-zinc-600 shrink-0 hidden sm:block">{selected.description}</span>
+          <span className="hidden text-xs text-zinc-600 sm:block">{selected.description}</span>
         )}
       </div>
       {value === 'claude-opus-4-6' && (
@@ -563,19 +563,19 @@ function DangerZoneSection({ onToast }: { onToast: (t: Toast) => void }) {
             Clear all
           </button>
         ) : (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-400 mr-1">Are you sure?</span>
+          <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <span className="text-xs text-zinc-400 sm:mr-1">Are you sure?</span>
             <button
               onClick={() => setConfirming(false)}
               disabled={clearing}
-              className="px-3 py-2 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              className="rounded-lg px-3 py-2 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 sm:w-auto"
             >
               Cancel
             </button>
             <button
               onClick={() => void handleClearAll()}
               disabled={clearing}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-white bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
               <Trash2 size={12} />
               {clearing ? 'Deleting…' : 'Yes, delete all'}
@@ -636,9 +636,9 @@ function AboutSection() {
           </p>
           <button
             onClick={copyAddress}
-            className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-zinc-900/60 border border-amber-500/20 hover:border-amber-500/50 hover:bg-zinc-900 transition-all group"
+            className="group flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-amber-500/20 bg-zinc-900/60 px-3 py-2 transition-all hover:border-amber-500/50 hover:bg-zinc-900"
           >
-            <span className="text-[10px] font-mono text-zinc-400 group-hover:text-zinc-200 transition-colors truncate">
+            <span className="min-w-0 flex-1 truncate text-left font-mono text-[10px] text-zinc-400 transition-colors group-hover:text-zinc-200">
               {DONATION_ADDRESS}
             </span>
             {copied
