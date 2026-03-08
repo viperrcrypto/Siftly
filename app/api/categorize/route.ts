@@ -19,6 +19,33 @@ import {
 import { backfillEntities } from '@/lib/rawjson-extractor'
 import { rebuildFts } from '@/lib/fts'
 
+/** Lightweight link preview: returns title + description from og/meta tags. */
+async function fetchLinkPreview(url: string): Promise<{ title: string; description: string } | null> {
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      signal: AbortSignal.timeout(8000),
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)' },
+    })
+    if (!res.ok) return null
+    const html = await res.text()
+    const get = (...patterns: RegExp[]) => {
+      for (const p of patterns) { const m = html.match(p); if (m?.[1]) return m[1].trim() }
+      return ''
+    }
+    const title = get(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i,
+      /<title>([^<]+)<\/title>/i)
+    const description = get(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)/i,
+      /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:description["']/i,
+      /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)/i)
+    if (!title && !description) return null
+    return { title, description }
+  } catch {
+    return null
+  }
+}
+
 type Stage = 'vision' | 'entities' | 'enrichment' | 'categorize' | 'parallel'
 
 interface CategorizationState {
@@ -304,8 +331,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     .map((m) => m.imageTags)
                     .filter((t): t is string => t !== null && t !== '' && t !== '{}')
 
-              if (imageTags.length === 0 && bm.text.length < 20) {
-                // Trivial bookmark — skip enrichment
+              // If text is too short but we have a URL, try to enrich from the page title/description
+              let enrichedText = bm.text
+              if (imageTags.length === 0 && bm.text.length < 20 && bm.entities) {
+                try {
+                  const ents = JSON.parse(bm.entities) as { urls?: Array<{ expanded?: string }> }
+                  const url = ents?.urls?.[0]?.expanded
+                  if (url) {
+                    const preview = await fetchLinkPreview(url)
+                    if (preview) {
+                      enrichedText = [preview.title, preview.description].filter(Boolean).join('. ')
+                      // Persist so future runs don't re-fetch
+                      await prisma.bookmark.update({ where: { id: bm.id }, data: { text: enrichedText } })
+                    }
+                  }
+                } catch { /* ignore — best effort */ }
+              }
+
+              if (imageTags.length === 0 && enrichedText.length < 20) {
+                // Truly trivial bookmark (no text, no media, no url preview) — skip enrichment
                 await prisma.bookmark.update({ where: { id: bm.id }, data: { semanticTags: '[]' } })
               } else {
                 let entities: BookmarkForEnrichment['entities'] = undefined
