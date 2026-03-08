@@ -43,6 +43,9 @@ fi
 if [ ! -f "prisma/dev.db" ]; then
   echo "  Setting up database..."
   npx prisma migrate deploy 2>/dev/null || npx prisma db push
+else
+  # Ensure migrations are up-to-date on existing databases
+  npx prisma migrate deploy 2>/dev/null || true
 fi
 echo ""
 
