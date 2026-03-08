@@ -293,5 +293,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 
+  // Opt-in: trigger categorization in background after a successful import.
+  // Enable by setting AUTO_CATEGORIZE_AFTER_IMPORT=true in the environment.
+  if (imported > 0 && process.env.AUTO_CATEGORIZE_AFTER_IMPORT === 'true') {
+    void fetch('http://localhost:3000/api/categorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force: false }),
+    }).catch(() => { /* best-effort */ })
+  }
+
   return NextResponse.json({ imported, skipped })
 }
