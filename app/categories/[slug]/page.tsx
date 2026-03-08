@@ -93,7 +93,7 @@ export default function CategoryPage() {
 
   if (loading && !data) {
     return (
-      <div className="p-8 max-w-7xl mx-auto">
+      <div className="mx-auto max-w-7xl p-4 sm:p-6 md:p-8">
         <div className="h-8 w-48 bg-zinc-800 rounded animate-pulse mb-4" />
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -109,7 +109,7 @@ export default function CategoryPage() {
   const total = data?.total ?? 0
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="mx-auto max-w-7xl p-4 sm:p-6 md:p-8">
       <button
         onClick={() => router.push('/categories')}
         className="flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors mb-6"
@@ -119,14 +119,14 @@ export default function CategoryPage() {
       </button>
 
       {category && (
-        <div className="flex items-start justify-between gap-4 mb-8">
-          <div className="flex items-center gap-3">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
             <div
               className="w-4 h-4 rounded-full shrink-0"
               style={{ backgroundColor: category.color }}
             />
-            <div>
-              <h1 className="text-2xl font-bold text-zinc-100">{category.name}</h1>
+            <div className="min-w-0">
+              <h1 className="break-words text-2xl font-bold text-zinc-100">{category.name}</h1>
               {category.description && (
                 <p className="text-zinc-400 text-sm mt-0.5">{category.description}</p>
               )}
@@ -135,7 +135,7 @@ export default function CategoryPage() {
           </div>
           <button
             onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium transition-colors shrink-0"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700 sm:w-auto shrink-0"
           >
             <Download size={15} />
             Export ZIP

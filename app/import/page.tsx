@@ -399,7 +399,7 @@ function DraggableBookmarklet() {
 function StepIndicator({ current }: { current: Step }) {
   const steps = ['Upload', 'Importing', 'Categorize']
   return (
-    <div className="flex items-center gap-2 mb-8">
+    <div className="mb-8 flex flex-wrap items-center gap-2">
       {steps.map((label, i) => {
         const num = (i + 1) as Step
         const isActive = num === current
@@ -461,7 +461,7 @@ function UploadZone({ onFile }: { onFile: (file: File) => void }) {
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       onClick={() => inputRef.current?.click()}
-      className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+      className={`relative cursor-pointer rounded-xl border-2 border-dashed p-5 text-center transition-all sm:p-8 ${
         dragging ? 'border-indigo-500 bg-indigo-500/5' : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/30'
       }`}
     >
@@ -916,7 +916,7 @@ function InstructionsStep({ onFile, importSource, onLiveSynced }: { onFile: (fil
   return (
     <div>
       {/* Method tabs */}
-      <div className="flex gap-1 mb-6 p-1 bg-zinc-800 rounded-xl">
+      <div className="mb-6 flex flex-col gap-1 rounded-xl bg-zinc-800 p-1 sm:flex-row">
         <button
           onClick={() => setMethod('live')}
           className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -1376,7 +1376,7 @@ export default function ImportPage() {
   }
 
   return (
-    <div className="p-8 max-w-2xl mx-auto">
+    <div className="mx-auto max-w-2xl p-4 sm:p-6 md:p-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-zinc-100">Import {importSource === 'like' ? 'Likes' : 'Bookmarks'}</h1>
         <p className="text-zinc-400 mt-1">Export your X/Twitter {importSource === 'like' ? 'likes' : 'bookmarks'} as JSON, then upload below.</p>
@@ -1418,7 +1418,7 @@ export default function ImportPage() {
 
       <StepIndicator current={step} />
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4 sm:p-6">
         {step === 1 && <InstructionsStep onFile={handleFile} importSource={importSource} onLiveSynced={handleLiveSynced} />}
         {step === 2 && (
           <ImportingStep

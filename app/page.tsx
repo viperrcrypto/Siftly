@@ -159,7 +159,7 @@ export default async function DashboardPage() {
   const categorizedCount = data.totalBookmarks - data.uncategorizedCount
 
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-8">
+    <div className="mx-auto max-w-7xl space-y-8 p-4 sm:p-6 md:p-8">
 
       {/* Hero Section */}
       <div>
@@ -181,24 +181,24 @@ export default async function DashboardPage() {
             </p>
           </div>
           {/* Quick Actions */}
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
             <Link
               href="/import"
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-colors"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 sm:w-auto"
             >
               <Upload size={15} />
               Import More
             </Link>
             <Link
               href="/categorize"
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl transition-colors border border-zinc-700"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700 sm:w-auto"
             >
               <Sparkles size={15} />
               AI Categorize
             </Link>
             <Link
               href="/ai-search"
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-xl transition-colors"
+              className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100 sm:w-auto"
             >
               <Search size={15} />
               AI Search
@@ -208,7 +208,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label={data.likeSourceCount > 0 ? `${data.bookmarkSourceCount.toLocaleString()} bookmarks · ${data.likeSourceCount.toLocaleString()} likes` : 'Total Bookmarks'}
           value={data.totalBookmarks}
@@ -313,7 +313,7 @@ export default async function DashboardPage() {
 
 function EmptyState() {
   return (
-    <div className="p-6 md:p-8 min-h-screen flex items-center justify-center">
+    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center p-6 md:min-h-screen md:p-8">
       <div className="text-center max-w-md mx-auto">
         <div className="flex items-center justify-center w-20 h-20 rounded-3xl bg-indigo-500/10 mx-auto mb-6">
           <BookmarkIcon size={36} className="text-indigo-400 opacity-80" />

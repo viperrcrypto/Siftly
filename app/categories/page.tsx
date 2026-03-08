@@ -68,7 +68,7 @@ function AddCategoryModal({ open, onClose, onAdd }: AddCategoryModalProps) {
     <Dialog.Root open={open} onOpenChange={(v) => !v && handleClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 animate-in fade-in duration-200" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl shadow-black/50 focus:outline-none animate-in fade-in zoom-in-95 duration-200">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-1.5rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-zinc-800 bg-zinc-900 p-5 shadow-2xl shadow-black/50 focus:outline-none animate-in fade-in zoom-in-95 duration-200 sm:p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
               <Dialog.Title className="text-lg font-semibold text-zinc-100">New Category</Dialog.Title>
@@ -253,10 +253,10 @@ export default function CategoriesPage() {
   }
 
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto">
+    <div className="mx-auto max-w-7xl p-4 sm:p-6 md:p-8">
 
       {/* Page Header */}
-      <div className="flex items-start justify-between mb-8">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs text-zinc-500 uppercase tracking-widest font-medium mb-1">Organization</p>
           <div className="flex items-center gap-3">
@@ -277,7 +277,7 @@ export default function CategoriesPage() {
         </div>
         <button
           onClick={() => setModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors shadow-lg shadow-indigo-500/20"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition-colors shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 sm:w-auto"
         >
           <Plus size={16} />
           Add Category
@@ -324,7 +324,7 @@ export default function CategoriesPage() {
 
       {/* Hint for empty categories */}
       {!loading && categories.length > 0 && (
-        <div className="mt-8 flex items-center gap-3 p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <div className="mt-8 flex flex-col gap-3 rounded-xl border border-zinc-800/50 bg-zinc-900/50 p-4 sm:flex-row sm:items-center">
           <Tag size={15} className="text-indigo-400 shrink-0" />
           <p className="text-sm text-zinc-500">
             Tip: Use{' '}

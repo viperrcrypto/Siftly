@@ -22,13 +22,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
-      {/* Anti-flash: apply stored theme before React hydrates */}
       <head>
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='light')document.documentElement.classList.add('light');}catch(e){}})()` }} />
       </head>
-      <body className="flex min-h-screen bg-zinc-950 text-zinc-100 antialiased">
+      <body className="flex min-h-screen flex-col overflow-x-hidden bg-zinc-950 text-zinc-100 antialiased lg:flex-row">
         <Nav />
-        <main className="flex-1 min-w-0 overflow-auto">
+        <main className="flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
           {children}
         </main>
         <CommandPalette />

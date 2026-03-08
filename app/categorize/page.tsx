@@ -73,7 +73,6 @@ export default function CategorizePage() {
         }
       } catch { /* ignore */ }
     })()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function stopCategorization() {
@@ -134,7 +133,7 @@ export default function CategorizePage() {
   const currentStageInfo = status?.stage ? STAGE_INFO[status.stage] : null
 
   return (
-    <div className="p-8 max-w-xl mx-auto">
+    <div className="mx-auto max-w-xl p-4 sm:p-6 md:p-8">
       <div className="mb-8">
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-medium mb-4">
           <Sparkles size={12} /> AI Categorization
@@ -273,16 +272,16 @@ export default function CategorizePage() {
                 {status.error}
               </p>
             )}
-            <div className="flex gap-3">
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
               <Link
                 href="/bookmarks"
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-colors"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 sm:w-auto"
               >
                 View bookmarks <ChevronRight size={14} />
               </Link>
               <button
                 onClick={() => { setDone(false); setStatus(null) }}
-                className="px-5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium transition-colors border border-zinc-700"
+                className="w-full rounded-xl border border-zinc-700 bg-zinc-800 px-5 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700 sm:w-auto"
               >
                 Run again
               </button>

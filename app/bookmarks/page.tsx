@@ -68,7 +68,7 @@ function SelectMenu({
 }) {
   return (
     <Select.Root value={value || '_all'} onValueChange={(v) => onChange(v === '_all' ? '' : v)}>
-      <Select.Trigger className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-sm text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 focus:outline-none focus:border-indigo-500 transition-all min-w-[120px] shrink-0">
+      <Select.Trigger className="flex min-h-10 w-full min-w-[140px] items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-400 transition-all hover:border-zinc-700 hover:text-zinc-200 focus:outline-none focus:border-indigo-500 sm:w-auto shrink-0">
         <Select.Value placeholder={placeholder} />
         <Select.Icon className="ml-auto">
           <ChevronDown size={12} className="text-zinc-600" />
@@ -154,7 +154,7 @@ function Pagination({
   }
 
   return (
-    <div className="flex items-center justify-center gap-1.5 mt-12">
+    <div className="mt-10 flex flex-wrap items-center justify-center gap-2 sm:mt-12">
       <button
         onClick={() => onChange(page - 1)}
         disabled={page <= 1}
@@ -205,7 +205,7 @@ function BookmarksPageInner() {
     mediaType: searchParams.get('mediaType') ?? '',
     q: searchParams.get('q') ?? '',
   }))
-  const [searchInput, setSearchInput] = useState('')
+  const [searchInput, setSearchInput] = useState(() => searchParams.get('q') ?? '')
   const [bookmarks, setBookmarks] = useState<BookmarkWithMedia[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -273,9 +273,9 @@ function BookmarksPageInner() {
     <div className="flex flex-col h-full">
 
       {/* ── Sticky top bar ── */}
-      <div className="sticky top-0 z-20 bg-zinc-950/90 backdrop-blur-lg border-b border-zinc-800/60">
-        <div className="px-6 md:px-8 py-4">
-          <div className="flex items-center gap-3">
+      <div className="sticky top-0 z-20 border-b border-zinc-800/60 bg-zinc-950/90 backdrop-blur-lg">
+        <div className="px-4 py-3 sm:px-6 md:px-8 md:py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
 
             {/* Search */}
             <div className="relative flex-1">
@@ -297,52 +297,52 @@ function BookmarksPageInner() {
               )}
             </div>
 
-            {/* Filters */}
-            <SelectMenu
-              value={filters.mediaType}
-              onChange={(v) => updateFilter('mediaType', v)}
-              options={mediaOptions}
-              placeholder="All media"
-            />
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 lg:ml-auto lg:flex-nowrap">
+              <SelectMenu
+                value={filters.mediaType}
+                onChange={(v) => updateFilter('mediaType', v)}
+                options={mediaOptions}
+                placeholder="All media"
+              />
 
-            {/* Source */}
-            <SelectMenu
-              value={filters.source}
-              onChange={(v) => updateFilter('source', v)}
-              options={sourceOptions}
-              placeholder="All sources"
-            />
+              {/* Source */}
+              <SelectMenu
+                value={filters.source}
+                onChange={(v) => updateFilter('source', v)}
+                options={sourceOptions}
+                placeholder="All sources"
+              />
 
-            {/* Sort */}
-            <button
-              onClick={() => updateFilter('sort', filters.sort === 'newest' ? 'oldest' : 'newest')}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-sm text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 transition-all shrink-0"
-              title={`Sort: ${sortLabel}`}
-            >
-              <ArrowUpDown size={13} />
-              <span className="hidden sm:inline">{sortLabel}</span>
-            </button>
-
-            {/* View toggle */}
-            <div className="flex items-center gap-0.5 bg-zinc-900 border border-zinc-800 rounded-xl p-1 shrink-0">
+              {/* Sort */}
               <button
-                onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-lg transition-all ${
-                  viewMode === 'grid' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-600 hover:text-zinc-300'
-                }`}
-                aria-label="Masonry view"
+                onClick={() => updateFilter('sort', filters.sort === 'newest' ? 'oldest' : 'newest')}
+                className="flex min-h-10 items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-400 transition-all hover:border-zinc-700 hover:text-zinc-200 shrink-0"
+                title={`Sort: ${sortLabel}`}
               >
-                <LayoutGrid size={14} />
+                <ArrowUpDown size={13} />
+                <span className="hidden sm:inline">{sortLabel}</span>
               </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded-lg transition-all ${
-                  viewMode === 'list' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-600 hover:text-zinc-300'
-                }`}
-                aria-label="List view"
-              >
-                <List size={14} />
-              </button>
+
+              <div className="flex items-center gap-0.5 rounded-xl border border-zinc-800 bg-zinc-900 p-1 shrink-0">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-1.5 rounded-lg transition-all ${
+                    viewMode === 'grid' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-600 hover:text-zinc-300'
+                  }`}
+                  aria-label="Masonry view"
+                >
+                  <LayoutGrid size={14} />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-1.5 rounded-lg transition-all ${
+                    viewMode === 'list' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-600 hover:text-zinc-300'
+                  }`}
+                  aria-label="List view"
+                >
+                  <List size={14} />
+                </button>
+              </div>
             </div>
 
           </div>
@@ -389,17 +389,17 @@ function BookmarksPageInner() {
       </div>
 
       {/* ── Content ── */}
-      <div className="flex-1 px-6 md:px-8 py-6 max-w-7xl mx-auto w-full">
+      <div className="mx-auto flex-1 w-full max-w-7xl px-4 py-5 sm:px-6 md:px-8 md:py-6">
 
         {/* Results count */}
         {!loading && (
-          <div className="flex items-center justify-between mb-5">
+          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-zinc-500">
               {total > 0 ? (
                 <>
                   <span className="text-zinc-200 font-semibold">{total.toLocaleString()}</span>
                   {' '}bookmark{total !== 1 ? 's' : ''}
-                  {filters.q && <span className="text-zinc-600"> for "{filters.q}"</span>}
+                  {filters.q && <span className="text-zinc-600"> for &ldquo;{filters.q}&rdquo;</span>}
                 </>
               ) : (
                 'No bookmarks found'

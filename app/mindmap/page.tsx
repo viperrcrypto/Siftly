@@ -33,7 +33,7 @@ function Legend({ categories }: { categories: CategoryLegendItem[] }) {
   if (categories.length === 0) return null
 
   return (
-    <div className="absolute top-4 left-4 z-10 bg-zinc-900/90 backdrop-blur-sm border border-zinc-800 rounded-xl p-4 max-w-52">
+    <div className="absolute left-3 top-3 z-10 max-w-[calc(100%-1.5rem)] rounded-xl border border-zinc-800 bg-zinc-900/90 p-3 backdrop-blur-sm sm:left-4 sm:top-4 sm:max-w-52 sm:p-4">
       <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Categories</p>
       <div className="space-y-2">
         {categories.map((cat) => (
@@ -92,7 +92,6 @@ function UncategorizedState({ totalBookmarks }: { totalBookmarks: number }) {
         }
       })
       .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function startCategorization() {
@@ -348,7 +347,7 @@ export default function MindmapPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen w-full">
+      <div className="flex h-[calc(100vh-4rem)] w-full items-center justify-center lg:h-screen">
         <div className="flex flex-col items-center gap-3">
           <Loader2 size={36} className="text-indigo-400 animate-spin" />
           <p className="text-zinc-400 text-sm">Loading mindmap...</p>
@@ -359,7 +358,7 @@ export default function MindmapPage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-screen w-full">
+      <div className="flex h-[calc(100vh-4rem)] w-full items-center justify-center lg:h-screen">
         <p className="text-zinc-400">{error}</p>
       </div>
     )
@@ -367,7 +366,7 @@ export default function MindmapPage() {
 
   if (!data || data.nodes.length === 0) {
     return (
-      <div className="flex items-center justify-center h-screen w-full">
+      <div className="flex h-[calc(100vh-4rem)] w-full items-center justify-center lg:h-screen">
         {totalBookmarks > 0 ? (
           <UncategorizedState totalBookmarks={totalBookmarks} />
         ) : (
@@ -390,7 +389,7 @@ export default function MindmapPage() {
   const legend = extractLegend(data.nodes)
 
   return (
-    <div className="relative w-full h-screen">
+    <div className="relative h-[calc(100vh-4rem)] w-full lg:h-screen">
       <Legend categories={legend} />
       <MindmapCanvas initialNodes={data.nodes} initialEdges={data.edges} />
       {showOverlay && (

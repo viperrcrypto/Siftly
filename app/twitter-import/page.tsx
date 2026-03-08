@@ -18,7 +18,6 @@ const STEPS = [
 
 export default function TwitterImportPage() {
   const [copied, setCopied] = useState(false)
-  const [success, setSuccess] = useState<{ imported: number; skipped: number } | null>(null)
   const linkRef = useRef<HTMLAnchorElement>(null)
   const [bookmarkletCode, setBookmarkletCode] = useState('')
 
@@ -119,21 +118,11 @@ export default function TwitterImportPage() {
         </h2>
         <p className="text-sm text-zinc-400 leading-relaxed">
           The bookmarklet runs inside your browser on x.com, using your existing login session.
-          It calls the same internal API Twitter's own website uses — no password, no API key, no extension required.
+          It calls the same internal API Twitter&rsquo;s own website uses — no password, no API key, no extension required.
           Your credentials never leave your browser. All data goes directly to your local Siftly instance.
         </p>
       </div>
 
-      {success && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
-          <CheckCircle size={16} />
-          Imported <strong>{success.imported}</strong> bookmarks
-          {success.skipped > 0 && `, ${success.skipped} duplicates skipped`}.
-          <Link href="/bookmarks" className="ml-auto flex items-center gap-1 text-indigo-400 hover:underline">
-            View <ChevronRight size={13} />
-          </Link>
-        </div>
-      )}
     </div>
   )
 }

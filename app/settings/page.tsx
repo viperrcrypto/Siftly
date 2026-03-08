@@ -14,7 +14,6 @@ import {
   Shield,
   ExternalLink,
   ChevronDown,
-  Zap,
   Copy,
   Coffee,
   Terminal,
@@ -204,9 +203,9 @@ function ApiKeyField({
 
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center justify-between gap-2 min-w-0">
+      <div className="flex flex-col gap-2 min-w-0 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm font-medium text-zinc-300 shrink-0">{label}</p>
-        <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2 min-w-0 overflow-hidden">
           {savedMasked && (
             <span className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-lg min-w-0 overflow-hidden">
               <Check size={11} className="shrink-0" /> <span className="shrink-0">Saved:</span> <span className="font-mono truncate">{savedMasked}</span>
@@ -247,7 +246,7 @@ function ApiKeyField({
           )}
         </div>
       </div>
-      <div className="flex gap-2.5">
+      <div className="flex flex-col gap-2.5 sm:flex-row">
         <div className="relative flex-1">
           <input
             type={showKey ? 'text' : 'password'}
@@ -274,7 +273,7 @@ function ApiKeyField({
           {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-zinc-600">{hint}</p>
         <a
           href={docHref}
@@ -330,7 +329,7 @@ function ModelSelector({
 
   return (
     <>
-      <div className="flex items-center gap-2 mt-2.5">
+      <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-center">
         <span className="text-xs text-zinc-500 shrink-0">Model:</span>
         <div className="relative flex-1">
           <select
@@ -545,7 +544,7 @@ function DangerZoneSection({ onToast }: { onToast: (t: Toast) => void }) {
       description="Irreversible actions that affect all your data."
       variant="danger"
     >
-      <div className="flex items-center justify-between p-4 rounded-xl bg-red-900/20 border border-red-800/40">
+      <div className="flex flex-col gap-4 rounded-xl border border-red-800/40 bg-red-900/20 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-medium text-zinc-300">Clear all bookmarks</p>
           <p className="text-xs text-zinc-500 mt-0.5">Permanently delete all imported bookmarks</p>
@@ -587,14 +586,6 @@ function DangerZoneSection({ onToast }: { onToast: (t: Toast) => void }) {
     </Section>
   )
 }
-
-const TECH_STACK = [
-  { label: 'Next.js 15', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
-  { label: 'Prisma + SQLite', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
-  { label: 'Anthropic API', color: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
-  { label: 'React Flow', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
-  { label: 'Tailwind CSS', color: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' },
-]
 
 const DONATION_ADDRESS = '0xcF10B967a9e422753812004Cd59990f62E360760'
 
@@ -673,7 +664,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-6 md:p-8 max-w-2xl mx-auto">
+    <div className="mx-auto max-w-2xl p-4 sm:p-6 md:p-8">
 
       {/* Page Header */}
       <div className="mb-8">

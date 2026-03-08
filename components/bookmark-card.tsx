@@ -6,13 +6,8 @@ import type { BookmarkWithMedia, Category } from '@/lib/types'
 
 // ── URL helpers ────────────────────────────────────────────────────────────────
 
-const URL_REGEX = /https?:\/\/[^\s]+/g
 // Twitter always shortens links to t.co — strip these from display text
 const TCO_REGEX = /https?:\/\/t\.co\/[^\s]+/g
-
-function extractUrls(text: string): string[] {
-  return text.match(URL_REGEX) ?? []
-}
 
 /** Always strip t.co shortlinks — Twitter appends them to every tweet with a link or media */
 function stripTcoUrls(text: string): string {
@@ -33,14 +28,14 @@ interface LinkPreviewData {
 // Module-level cache: url → preview data (or null on error)
 const previewCache = new Map<string, LinkPreviewData | null>()
 
-function LinkPreview({ url, tweetUrl }: { url: string; tweetUrl: string }) {
-  const [data, setData] = useState<LinkPreviewData | null | 'loading'>('loading')
+function LinkPreview({ url }: { url: string }) {
+  const [data, setData] = useState<LinkPreviewData | null | 'loading'>(() => {
+    if (!previewCache.has(url)) return 'loading'
+    return previewCache.get(url) ?? null
+  })
 
   useEffect(() => {
-    if (previewCache.has(url)) {
-      setData(previewCache.get(url) ?? null)
-      return
-    }
+    if (previewCache.has(url)) return
     let cancelled = false
     fetch(`/api/link-preview?url=${encodeURIComponent(url)}`)
       .then((r) => r.json())
@@ -331,7 +326,7 @@ function CategoryChip({
 }) {
   return (
     <span
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+      className="inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
       style={{
         backgroundColor: `${category.color}18`,
         color: category.color,
@@ -436,7 +431,7 @@ function CategoryEditor({ bookmarkId, currentCategoryIds, onSave, onClose }: Cat
   return (
     <div
       ref={editorRef}
-      className="absolute left-0 right-0 top-full mt-2 z-50 bg-zinc-900 border border-zinc-700 rounded-xl p-3 shadow-2xl shadow-black/50"
+      className="absolute left-0 right-0 top-full z-50 mt-2 rounded-xl border border-zinc-700 bg-zinc-900 p-3 shadow-2xl shadow-black/50 sm:left-auto sm:min-w-[18rem]"
       onClick={(e) => e.stopPropagation()}
     >
       <p className="text-xs font-semibold text-zinc-500 mb-2 uppercase tracking-wide">Edit categories</p>
@@ -591,7 +586,7 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
           </div>
 
           {/* Actions — visible on hover */}
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5">
+          <div className="mt-0.5 flex flex-shrink-0 items-center gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
             {isDownloadable && (
               <button
                 onClick={handleDownload}
@@ -616,7 +611,7 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
         {/* Tweet text */}
         <div className={`flex-1 ${previewUrl && !displayText ? '' : 'min-h-[4.5rem]'}`}>
           {displayText.length > 0 && (
-            <p className="text-sm text-zinc-200 leading-relaxed">
+            <p className="break-words text-sm leading-relaxed text-zinc-200">
               {displayText}
               {isLong && !expanded && (
                 <span>
@@ -646,7 +641,7 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
             <p className="text-xs text-zinc-700 italic">No text content</p>
           )}
           {previewUrl && (
-            <LinkPreview url={previewUrl} tweetUrl={tweetUrl} />
+            <LinkPreview key={previewUrl} url={previewUrl} />
           )}
         </div>
 
@@ -661,14 +656,14 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
               <span className="text-xs text-zinc-700 italic">Uncategorized</span>
             )}
             {isKnownAuthor && dateStr && (
-              <span className="ml-auto text-xs text-zinc-600 flex-shrink-0">
+              <span className="basis-full text-xs text-zinc-600 sm:ml-auto sm:basis-auto flex-shrink-0">
                 {dateStr}
               </span>
             )}
           </div>
 
           {/* Row 2: edit button — always in DOM to reserve space; invisible until hover */}
-          <div className="mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="mt-1.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
             <button
               onClick={() => setEditingCategories((v) => !v)}
               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs text-zinc-700 hover:text-zinc-300 hover:bg-zinc-800 border border-transparent hover:border-zinc-700 transition-all"
