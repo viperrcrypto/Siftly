@@ -71,7 +71,12 @@ interface MediaEntity {
 interface TweetLegacy {
   full_text?: string
   created_at?: string
-  entities?: { hashtags?: unknown[]; urls?: unknown[]; media?: MediaEntity[] }
+  entities?: {
+    hashtags?: unknown[]
+    urls?: unknown[]
+    user_mentions?: unknown[]
+    media?: MediaEntity[]
+  }
   extended_entities?: { media?: MediaEntity[] }
 }
 
@@ -167,18 +172,60 @@ function bestVideoUrl(variants: MediaVariant[]): string | null {
   return mp4[0]?.url ?? null
 }
 
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+}
+
+type UrlEntity = { url?: string; expanded_url?: string; display_url?: string }
+
+type StoredEntities = {
+  urls: Array<{ short: string; expanded: string }>
+  hashtags: string[]
+  mentions: string[]
+}
+
+function extractEntities(tweet: TweetResult): StoredEntities {
+  const hashtags = (tweet.legacy?.entities?.hashtags ?? [])
+    .map((h) => String((h as { text?: string })?.text ?? '').trim())
+    .filter(Boolean)
+
+  const mentions = (tweet.legacy?.entities?.user_mentions ?? [])
+    .map((m) => String((m as { screen_name?: string })?.screen_name ?? '').trim())
+    .filter(Boolean)
+
+  const urls = (tweet.legacy?.entities?.urls ?? [])
+    .map((u) => u as UrlEntity)
+    .map((u) => {
+      const short = String(u.url ?? '').trim()
+      const expanded = String(u.expanded_url ?? u.url ?? '').trim()
+      return short && expanded ? { short, expanded } : null
+    })
+    .filter(Boolean) as Array<{ short: string; expanded: string }>
+
+  // de-dupe
+  const map = new Map<string, { short: string; expanded: string }>()
+  for (const u of urls) map.set(u.expanded, u)
+
+  return { urls: Array.from(map.values()), hashtags, mentions }
+}
+
 function tweetFullText(tweet: TweetResult): string {
   if (tweet.note_tweet?.note_tweet_results?.result?.text) {
-    return tweet.note_tweet.note_tweet_results.result.text
+    return decodeHtmlEntities(tweet.note_tweet.note_tweet_results.result.text)
   }
   const article = tweet.article?.article_results?.result
   if (article) {
     const parts: string[] = []
     if (article.title) parts.push(article.title)
     if (article.content) parts.push(article.content)
-    if (parts.length > 0) return parts.join('\n\n')
+    if (parts.length > 0) return decodeHtmlEntities(parts.join('\n\n'))
   }
-  return tweet.legacy?.full_text ?? ''
+  return decodeHtmlEntities(tweet.legacy?.full_text ?? '')
 }
 
 function extractMedia(tweet: TweetResult) {
@@ -261,10 +308,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             text: tweetFullText(tweet),
             authorHandle: userLegacy.screen_name ?? 'unknown',
             authorName: userLegacy.name ?? 'Unknown',
-            tweetCreatedAt: tweet.legacy?.created_at
-              ? new Date(tweet.legacy.created_at)
-              : null,
+            tweetCreatedAt: tweet.legacy?.created_at ? new Date(tweet.legacy.created_at) : null,
             rawJson: JSON.stringify(tweet),
+            entities: JSON.stringify(extractEntities(tweet)),
             source,
           },
         })
