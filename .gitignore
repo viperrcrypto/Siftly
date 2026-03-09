@@ -63,3 +63,9 @@ promo-video/
 
 # Claude Code local settings
 .claude/
+
+# Editor
+.idea/
+*.swp
+*.swo
+*~

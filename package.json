@@ -1,7 +1,12 @@
 {
   "name": "siftly",
   "version": "0.1.0",
+  "description": "Self-hosted Twitter/X bookmark manager with AI-powered categorization",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/viperrcrypto/Siftly.git"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
