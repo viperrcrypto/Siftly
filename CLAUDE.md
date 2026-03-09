@@ -148,10 +148,3 @@ SQLite file at `prisma/dev.db`. Schema models:
 - `ImportJob` — import file tracking
 
 After schema changes: `npx prisma db push`
-
-## Author Identity
-
-- Always use **"Viperr"** or **"viperrcrypto"** as the author/maintainer identity.
-- Always use `viperrcrypto@users.noreply.github.com` as the commit email.
-- X/Twitter handle is **@viperr** (not @viperrcrypto).
-- Do not use any other name or identity in commits, code, comments, or documentation.
