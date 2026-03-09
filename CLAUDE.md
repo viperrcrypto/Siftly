@@ -149,9 +149,9 @@ SQLite file at `prisma/dev.db`. Schema models:
 
 After schema changes: `npx prisma db push`
 
-## Privacy
+## Author Identity
 
-- **NEVER** use the name "Layth Kal" or any variation (Layth, Kal, laythkal, etc.) in commits, code, comments, documentation, or any file in this repository.
 - Always use **"Viperr"** or **"viperrcrypto"** as the author/maintainer identity.
 - Always use `viperrcrypto@users.noreply.github.com` as the commit email.
 - X/Twitter handle is **@viperr** (not @viperrcrypto).
+- Do not use any other name or identity in commits, code, comments, or documentation.
