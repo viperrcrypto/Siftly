@@ -2,7 +2,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import { resolveAnthropicClient } from './claude-cli-auth'
 import { resolveOpenAIClient } from './openai-auth'
-import { getProvider } from './settings'
+import { getProvider, getOpencodeModel } from './settings'
+import { getOpencodeApiKey, getOpenaiTokenFromOpencode } from './opencode-auth'
 
 export interface AIContentBlock {
   type: 'text' | 'image'
@@ -20,7 +21,7 @@ export interface AIResponse {
 }
 
 export interface AIClient {
-  provider: 'anthropic' | 'openai'
+  provider: 'anthropic' | 'openai' | 'opencode'
   createMessage(params: {
     model: string
     max_tokens: number
@@ -67,7 +68,7 @@ export class AnthropicAIClient implements AIClient {
 
 // Wrap OpenAI SDK
 export class OpenAIAIClient implements AIClient {
-  provider = 'openai' as const
+  provider: 'openai' | 'opencode' = 'openai'
   constructor(private sdk: OpenAI) {}
 
   async createMessage(params: { model: string; max_tokens: number; messages: AIMessage[] }): Promise<AIResponse> {
@@ -104,6 +105,18 @@ export async function resolveAIClient(options: {
   dbKey?: string
 } = {}): Promise<AIClient> {
   const provider = await getProvider()
+
+  if (provider === 'opencode') {
+    // OpenCode uses OpenAI-compatible API
+    const apiKey = options.overrideKey ?? options.dbKey ?? getOpencodeApiKey() ?? getOpenaiTokenFromOpencode()
+    if (!apiKey) {
+      throw new Error('No OpenCode API key found. Check your OpenCode installation or add a key in Settings.')
+    }
+    // OpenCode uses OpenAI SDK with custom base URL
+    const baseURL = process.env.OPENCODE_BASE_URL ?? 'https://api.opencode.ai/v1'
+    const client = new OpenAI({ apiKey, baseURL })
+    return new OpenAIAIClient(client)
+  }
 
   if (provider === 'openai') {
     const client = resolveOpenAIClient(options)

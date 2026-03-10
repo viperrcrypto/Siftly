@@ -4,11 +4,14 @@ import prisma from '@/lib/db'
 let _cachedModel: string | null = null
 let _modelCacheExpiry = 0
 
-let _cachedProvider: 'anthropic' | 'openai' | null = null
+let _cachedProvider: 'anthropic' | 'openai' | 'opencode' | null = null
 let _providerCacheExpiry = 0
 
 let _cachedOpenAIModel: string | null = null
 let _openAIModelCacheExpiry = 0
+
+let _cachedOpencodeModel: string | null = null
+let _opencodeModelCacheExpiry = 0
 
 const CACHE_TTL = 5 * 60 * 1000
 
@@ -26,10 +29,11 @@ export async function getAnthropicModel(): Promise<string> {
 /**
  * Get the active AI provider (cached for 5 minutes).
  */
-export async function getProvider(): Promise<'anthropic' | 'openai'> {
+export async function getProvider(): Promise<'anthropic' | 'openai' | 'opencode'> {
   if (_cachedProvider && Date.now() < _providerCacheExpiry) return _cachedProvider
   const setting = await prisma.setting.findUnique({ where: { key: 'aiProvider' } })
-  _cachedProvider = setting?.value === 'openai' ? 'openai' : 'anthropic'
+  const value = setting?.value
+  _cachedProvider = value === 'opencode' ? 'opencode' : value === 'openai' ? 'openai' : 'anthropic'
   _providerCacheExpiry = Date.now() + CACHE_TTL
   return _cachedProvider
 }
@@ -46,10 +50,22 @@ export async function getOpenAIModel(): Promise<string> {
 }
 
 /**
+ * Get the configured OpenCode model from settings (cached for 5 minutes).
+ */
+export async function getOpencodeModel(): Promise<string> {
+  if (_cachedOpencodeModel && Date.now() < _opencodeModelCacheExpiry) return _cachedOpencodeModel
+  const setting = await prisma.setting.findUnique({ where: { key: 'opencodeModel' } })
+  _cachedOpencodeModel = setting?.value ?? 'gpt-4.1-mini'
+  _opencodeModelCacheExpiry = Date.now() + CACHE_TTL
+  return _cachedOpencodeModel
+}
+
+/**
  * Get the model for the currently active provider.
  */
 export async function getActiveModel(): Promise<string> {
   const provider = await getProvider()
+  if (provider === 'opencode') return getOpencodeModel()
   return provider === 'openai' ? getOpenAIModel() : getAnthropicModel()
 }
 
@@ -63,4 +79,6 @@ export function invalidateSettingsCache(): void {
   _providerCacheExpiry = 0
   _cachedOpenAIModel = null
   _openAIModelCacheExpiry = 0
+  _cachedOpencodeModel = null
+  _opencodeModelCacheExpiry = 0
 }

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { resolveAnthropicClient, getCliAuthStatus } from '@/lib/claude-cli-auth'
 import { resolveOpenAIClient } from '@/lib/openai-auth'
+import { getOpencodeApiKey, getOpenaiTokenFromOpencode } from '@/lib/opencode-auth'
+import OpenAI from 'openai'
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let body: { provider?: string } = {}
@@ -57,6 +59,36 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } catch {
       return NextResponse.json({ working: false, error: 'No OpenAI API key found. Add one in Settings or set up Codex CLI.' })
     }
+
+    try {
+      await client.chat.completions.create({
+        model: 'gpt-4.1-mini',
+        max_tokens: 5,
+        messages: [{ role: 'user', content: 'hi' }],
+      })
+      return NextResponse.json({ working: true })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const friendly = msg.includes('401') || msg.includes('invalid_api_key')
+        ? 'Invalid API key'
+        : msg.includes('403')
+        ? 'Key does not have permission'
+        : msg.slice(0, 120)
+      return NextResponse.json({ working: false, error: friendly })
+    }
+  }
+
+  if (provider === 'opencode') {
+    const setting = await prisma.setting.findUnique({ where: { key: 'opencodeApiKey' } })
+    const dbKey = setting?.value?.trim()
+    const apiKey = dbKey ?? getOpencodeApiKey() ?? getOpenaiTokenFromOpencode()
+
+    if (!apiKey) {
+      return NextResponse.json({ working: false, error: 'No OpenCode API key found. Check your OpenCode installation or add a key in Settings.' })
+    }
+
+    const baseURL = process.env.OPENCODE_BASE_URL ?? 'https://api.opencode.ai/v1'
+    const client = new OpenAI({ apiKey, baseURL })
 
     try {
       await client.chat.completions.create({

@@ -51,7 +51,7 @@ After the pipeline runs, you get:
 - [Node.js 18+](https://nodejs.org)
 - npm (comes with Node.js)
 
-**That's it.** If you have [Claude Code CLI](https://claude.ai/code) installed and signed in, AI features work automatically — no API key needed.
+**That's it.** If you have [Claude Code CLI](https://claude.ai/code) or [OpenCode](https://opencode.ai) installed, AI features work automatically — no API key needed.
 
 ### Option A — One command (recommended)
 
@@ -61,7 +61,7 @@ cd Siftly
 ./start.sh
 ```
 
-`start.sh` installs dependencies, sets up the database, checks for Claude CLI auth, and opens [http://localhost:3000](http://localhost:3000) automatically.
+`start.sh` installs dependencies, sets up the database, checks for Claude CLI or OpenCode auth, and opens [http://localhost:3000](http://localhost:3000) automatically.
 
 ### Option B — Using Claude Code
 
@@ -98,9 +98,10 @@ Siftly automatically detects the best available auth method — no configuration
 | # | Method | How |
 |---|--------|-----|
 | 1 | **Claude Code CLI** *(zero config)* | Already signed in? Siftly reads your session from the macOS keychain automatically |
-| 2 | **API key in Settings** | Open Settings in the app and paste your key |
-| 3 | **`ANTHROPIC_API_KEY` env var** | Set in `.env.local` or your shell environment |
-| 4 | **Local proxy** | Set `ANTHROPIC_BASE_URL` to any Anthropic-compatible endpoint |
+| 2 | **OpenCode** *(zero config)* | OpenCode installed? Siftly reads `~/.config/opencode/auth.json` automatically |
+| 3 | **API key in Settings** | Open Settings in the app and paste your key |
+| 4 | **`ANTHROPIC_API_KEY` env var** | Set in `.env.local` or your shell environment |
+| 5 | **Local proxy** | Set `ANTHROPIC_BASE_URL` to any Anthropic-compatible endpoint |
 
 ### Claude Code CLI (no API key needed)
 
@@ -109,6 +110,12 @@ If you use [Claude Code](https://claude.ai/code), you're already signed in. Sift
 The Settings page shows a green **"Claude CLI detected — no API key needed"** badge with your subscription tier when this is active.
 
 > **Note:** This works on macOS. On Linux/Windows, add an API key in Settings instead.
+
+### OpenCode (no API key needed)
+
+If you use [OpenCode](https://opencode.ai), Siftly automatically reads your auth credentials from `~/.config/opencode/auth.json` and uses your OpenCode subscription.
+
+Select **OpenCode** as the AI provider in Settings. Siftly will use OpenCode's AI models for categorization, search, and analysis.
 
 ### Getting an API key (if needed)
 
@@ -237,10 +244,12 @@ All settings are manageable in the **Settings** page at `/settings` or via envir
 
 | Setting | Env Var | Description |
 |---------|---------|-------------|
-| Anthropic API Key | `ANTHROPIC_API_KEY` | Optional if Claude CLI is signed in — otherwise required for AI features |
-| API Base URL | `ANTHROPIC_BASE_URL` | Custom endpoint for proxies or local Anthropic-compatible models |
-| AI Model | Settings page only | Haiku 4.5 (default, fastest/cheapest), Sonnet 4.6, Opus 4.6 |
-| OpenAI Key | Settings page only | Alternative provider if no Anthropic key is set |
+| AI Provider | Settings page only | Choose between `anthropic`, `openai`, or `opencode` |
+| Anthropic API Key | `ANTHROPIC_API_KEY` | Optional if Claude CLI is signed in |
+| OpenAI API Key | `OPENAI_API_KEY` | Optional if Codex CLI is signed in |
+| OpenCode | Auto-detected | Reads from `~/.config/opencode/auth.json` |
+| API Base URL | `ANTHROPIC_BASE_URL` | Custom endpoint for proxies |
+| AI Model | Settings page only | Model selection based on provider |
 | Database | `DATABASE_URL` | SQLite file path (default: `file:./prisma/dev.db`) |
 
 ### Custom API Endpoint
@@ -302,6 +311,9 @@ siftly/
 ├── lib/
 │   ├── categorizer.ts        # AI categorization logic + default categories
 │   ├── claude-cli-auth.ts    # Claude CLI OAuth session detection (macOS keychain)
+│   ├── opencode-auth.ts      # OpenCode auth detection (~/.config/opencode/auth.json)
+│   ├── openai-auth.ts        # OpenAI/Codex CLI auth
+│   ├── ai-client.ts          # Unified AI client (Anthropic/OpenAI/OpenCode)
 │   ├── vision-analyzer.ts    # Image analysis + batch semantic tagging
 │   ├── image-context.ts      # Shared image context builder
 │   ├── fts.ts                # SQLite FTS5 full-text search index
@@ -315,7 +327,8 @@ siftly/
 │   └── schema.prisma         # SQLite schema
 │
 ├── start.sh                  # One-command launcher (install + DB setup + open browser)
-└── CLAUDE.md                 # Instructions for Claude Code AI assistant
+├── CLAUDE.md                 # Instructions for Claude Code AI assistant
+└── OPENCODE.md               # Instructions for OpenCode AI assistant
 ```
 
 ### Database Schema
@@ -354,6 +367,7 @@ For Prisma command and workflow details, see:
 | [SQLite](https://sqlite.org) | — | Local database — zero setup, includes FTS5 |
 | [Tailwind CSS](https://tailwindcss.com) | v4 | Styling |
 | [Anthropic SDK](https://docs.anthropic.com) | — | Vision, semantic tagging, categorization, search |
+| [OpenAI SDK](https://platform.openai.com) | — | Alternative AI provider (Codex, OpenCode) |
 | [@xyflow/react](https://xyflow.com) | 12 | Interactive mindmap graph |
 | [Framer Motion](https://www.framer.com/motion/) | 12 | Animations |
 | [Radix UI](https://www.radix-ui.com) | — | Accessible UI primitives |
