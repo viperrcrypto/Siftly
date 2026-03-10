@@ -9,15 +9,19 @@ import {
   ChevronRight,
   LayoutGrid,
   List,
+  AlignJustify,
   X,
   ChevronDown,
   ArrowUpDown,
 } from 'lucide-react'
 import * as Select from '@radix-ui/react-select'
 import BookmarkCard from '@/components/bookmark-card'
+import BookmarkRow from '@/components/bookmark-row'
+import BookmarkDetailModal from '@/components/bookmark-detail-modal'
 import type { BookmarkWithMedia, BookmarksResponse } from '@/lib/types'
 
-const PAGE_SIZE = 24
+const DEFAULT_PAGE_SIZE = 24
+const COMPACT_PAGE_SIZE = 100
 
 interface Filters {
   q: string
@@ -39,7 +43,7 @@ const DEFAULT_FILTERS: Filters = {
   uncategorized: false,
 }
 
-function buildUrl(filters: Filters): string {
+function buildUrl(filters: Filters, limit: number): string {
   const params = new URLSearchParams()
   if (filters.q) params.set('q', filters.q)
   if (filters.uncategorized) {
@@ -51,7 +55,7 @@ function buildUrl(filters: Filters): string {
   if (filters.source) params.set('source', filters.source)
   params.set('sort', filters.sort)
   params.set('page', String(filters.page))
-  params.set('limit', String(PAGE_SIZE))
+  params.set('limit', String(limit))
   return `/api/bookmarks?${params.toString()}`
 }
 
@@ -209,13 +213,14 @@ function BookmarksPageInner() {
   const [bookmarks, setBookmarks] = useState<BookmarkWithMedia[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'compact'>('grid')
+  const [openBookmark, setOpenBookmark] = useState<BookmarkWithMedia | null>(null)
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const fetchBookmarks = useCallback(async (f: Filters) => {
+  const fetchBookmarks = useCallback(async (f: Filters, limit: number) => {
     setLoading(true)
     try {
-      const res = await fetch(buildUrl(f))
+      const res = await fetch(buildUrl(f, limit))
       if (!res.ok) throw new Error('Failed to fetch')
       const data: BookmarksResponse = await res.json()
       setBookmarks(data.bookmarks)
@@ -229,9 +234,16 @@ function BookmarksPageInner() {
     }
   }, [])
 
+  const pageSize = viewMode === 'compact' ? COMPACT_PAGE_SIZE : DEFAULT_PAGE_SIZE
+
   useEffect(() => {
-    fetchBookmarks(filters)
-  }, [fetchBookmarks, filters])
+    fetchBookmarks(filters, pageSize)
+  }, [fetchBookmarks, filters, pageSize])
+
+  function handleSetViewMode(mode: 'grid' | 'list' | 'compact') {
+    setViewMode(mode)
+    setFilters((prev) => ({ ...prev, page: 1 }))
+  }
 
   function updateSearch(q: string) {
     setSearchInput(q)
@@ -326,7 +338,7 @@ function BookmarksPageInner() {
             {/* View toggle */}
             <div className="flex items-center gap-0.5 bg-zinc-900 border border-zinc-800 rounded-xl p-1 shrink-0">
               <button
-                onClick={() => setViewMode('grid')}
+                onClick={() => handleSetViewMode('grid')}
                 className={`p-1.5 rounded-lg transition-all ${
                   viewMode === 'grid' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-600 hover:text-zinc-300'
                 }`}
@@ -335,13 +347,22 @@ function BookmarksPageInner() {
                 <LayoutGrid size={14} />
               </button>
               <button
-                onClick={() => setViewMode('list')}
+                onClick={() => handleSetViewMode('list')}
                 className={`p-1.5 rounded-lg transition-all ${
                   viewMode === 'list' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-600 hover:text-zinc-300'
                 }`}
                 aria-label="List view"
               >
                 <List size={14} />
+              </button>
+              <button
+                onClick={() => handleSetViewMode('compact')}
+                className={`p-1.5 rounded-lg transition-all ${
+                  viewMode === 'compact' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-600 hover:text-zinc-300'
+                }`}
+                aria-label="Compact view"
+              >
+                <AlignJustify size={14} />
               </button>
             </div>
 
@@ -457,13 +478,29 @@ function BookmarksPageInner() {
           </div>
         )}
 
+        {/* Compact view */}
+        {!loading && bookmarks.length > 0 && viewMode === 'compact' && (
+          <div className="flex flex-col divide-y divide-zinc-800/50 border border-zinc-800 rounded-2xl overflow-hidden max-w-5xl mx-auto">
+            {bookmarks.map((bookmark) => (
+              <BookmarkRow key={bookmark.id} bookmark={bookmark} onClick={setOpenBookmark} />
+            ))}
+          </div>
+        )}
+
         <Pagination
           page={filters.page}
           total={total}
-          limit={PAGE_SIZE}
+          limit={pageSize}
           onChange={(p) => setFilters((prev) => ({ ...prev, page: p }))}
         />
       </div>
+
+      {openBookmark && (
+        <BookmarkDetailModal
+          bookmark={openBookmark}
+          onClose={() => setOpenBookmark(null)}
+        />
+      )}
     </div>
   )
 }
