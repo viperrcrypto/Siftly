@@ -156,9 +156,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       let client: AIClient | null = null
       try {
         client = await resolveAIClient({ dbKey: dbApiKey })
-      } catch {
+      } catch (err) {
         // SDK client not available — CLI path may still work (e.g. ChatGPT OAuth via codex exec)
-        console.warn('No SDK client available — will rely on CLI path')
+        console.warn('No SDK client available — will rely on CLI path:', err instanceof Error ? err.message : err)
       }
 
         await seedDefaultCategories()
