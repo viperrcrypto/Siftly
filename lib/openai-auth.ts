@@ -2,6 +2,7 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import OpenAI from 'openai'
+import { getOpenaiTokenFromOpencode } from './opencode-auth'
 
 interface CodexAuth {
   auth_mode?: string
@@ -123,6 +124,12 @@ export function resolveOpenAIClient(options: {
 
   if (options.dbKey?.trim()) {
     return new OpenAI({ apiKey: options.dbKey.trim(), ...(baseURL ? { baseURL } : {}) })
+  }
+
+  // Check OpenCode auth for OpenAI token
+  const opencodeToken = getOpenaiTokenFromOpencode()
+  if (opencodeToken) {
+    return new OpenAI({ apiKey: opencodeToken, ...(baseURL ? { baseURL } : {}) })
   }
 
   const cliClient = createCodexOpenAIClient(baseURL)

@@ -3,7 +3,6 @@ import OpenAI from 'openai'
 import { resolveAnthropicClient } from './claude-cli-auth'
 import { resolveOpenAIClient } from './openai-auth'
 import { getProvider, getOpencodeModel } from './settings'
-import { getOpencodeApiKey, getOpenaiTokenFromOpencode } from './opencode-auth'
 
 export interface AIContentBlock {
   type: 'text' | 'image'
@@ -106,19 +105,9 @@ export async function resolveAIClient(options: {
 } = {}): Promise<AIClient> {
   const provider = await getProvider()
 
-  if (provider === 'opencode') {
-    // OpenCode uses OpenAI-compatible API
-    const apiKey = options.overrideKey ?? options.dbKey ?? getOpencodeApiKey() ?? getOpenaiTokenFromOpencode()
-    if (!apiKey) {
-      throw new Error('No OpenCode API key found. Check your OpenCode installation or add a key in Settings.')
-    }
-    // OpenCode uses OpenAI SDK with custom base URL
-    const baseURL = process.env.OPENCODE_BASE_URL ?? 'https://api.opencode.ai/v1'
-    const client = new OpenAI({ apiKey, baseURL })
-    return new OpenAIAIClient(client)
-  }
-
-  if (provider === 'openai') {
+  if (provider === 'openai' || provider === 'opencode') {
+    // Both 'openai' and 'opencode' providers use the OpenAI SDK
+    // The OpenAI auth module now checks for OpenCode tokens automatically
     const client = resolveOpenAIClient(options)
     return new OpenAIAIClient(client)
   }
