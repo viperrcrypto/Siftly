@@ -92,7 +92,16 @@ const BOOKMARKLET_SCRIPT = `(async function(){
   function addTweet(t){
     if(!t||!t.rest_id||seen.has(t.rest_id))return;
     seen.add(t.rest_id);
-    var leg=t.legacy||{},usr=(t.core&&t.core.user_results&&t.core.user_results.result&&t.core.user_results.result.legacy)||{};
+    var leg=t.legacy||{};
+    var res=t.core&&t.core.user_results&&t.core.user_results.result;
+    var usrLeg=(res&&res.legacy)||{};
+    var usrCore=(res&&res.core)||{};
+    var usrAvatar=(res&&res.avatar)||{};
+    var usr={
+      name:usrCore.name||usrLeg.name||'Unknown',
+      screen_name:usrCore.screen_name||usrLeg.screen_name||'unknown',
+      profile_image_url_https:usrAvatar.image_url||usrLeg.profile_image_url_https||''
+    };
     var rawMedia=(leg.extended_entities&&leg.extended_entities.media)||(leg.entities&&leg.entities.media)||[];
     var media=rawMedia.map(function(m){
       var thumb=m.media_url_https||'';
@@ -191,11 +200,12 @@ const BOOKMARKLET_SCRIPT = `(async function(){
   document.body.appendChild(btn);
   document.body.appendChild(autoBtn);
   var origFetch=window.fetch;
+  function isRelevantUrl(u){return u.includes('/graphql/')&&(isLikes?u.toLowerCase().includes('like'):u.includes('Bookmark'));}
   window.fetch=async function(){
     var r=await origFetch.apply(this,arguments);
     try{
       var u=arguments[0] instanceof Request?arguments[0].url:String(arguments[0]);
-      if(u.includes('/graphql/')){var d=await r.clone().json();processData(d);}
+      if(isRelevantUrl(u)){var d=await r.clone().json();processData(d);}
     }catch(ex){}
     return r;
   };
@@ -203,7 +213,7 @@ const BOOKMARKLET_SCRIPT = `(async function(){
   XMLHttpRequest.prototype.open=function(){xhrUrls.set(this,String(arguments[1]||''));return origOpen.apply(this,arguments);};
   XMLHttpRequest.prototype.send=function(){
     var xhr=this,u=xhrUrls.get(xhr)||'';
-    if(u.includes('/graphql/')){xhr.addEventListener('load',function(){try{processData(JSON.parse(xhr.responseText));}catch(ex){}});}
+    if(isRelevantUrl(u)){xhr.addEventListener('load',function(){try{processData(JSON.parse(xhr.responseText));}catch(ex){}});}
     return origSend.apply(this,arguments);
   };
   showToast('\u2705 Active! Scroll your '+label+' \u2014 counter updates above.','#1e1b4b');
@@ -222,7 +232,16 @@ const CONSOLE_SCRIPT = `(async function() {
   function addTweet(t) {
     if (!t?.rest_id || seen.has(t.rest_id)) return;
     seen.add(t.rest_id);
-    const leg = t.legacy ?? {}, usr = t.core?.user_results?.result?.legacy ?? {};
+    const leg = t.legacy ?? {};
+    const res = t.core?.user_results?.result;
+    const usrLeg = res?.legacy ?? {};
+    const usrCore = res?.core ?? {};
+    const usrAvatar = res?.avatar ?? {};
+    const usr = {
+      name: usrCore.name ?? usrLeg.name ?? 'Unknown',
+      screen_name: usrCore.screen_name ?? usrLeg.screen_name ?? 'unknown',
+      profile_image_url_https: usrAvatar.image_url ?? usrLeg.profile_image_url_https ?? '',
+    };
     const media = (leg.extended_entities?.media ?? leg.entities?.media ?? []).map(m => {
       const thumb = m.media_url_https ?? '';
       if (m.type === 'video' || m.type === 'animated_gif') {
@@ -336,14 +355,13 @@ const CONSOLE_SCRIPT = `(async function() {
     autoBtn.style.background = '#4f46e5'; autoBtn.style.color = '#fff'; autoBtn.style.border = 'none';
     runAutoScroll();
   };
-  document.body.appendChild(btn);
-  document.body.appendChild(autoBtn);
+  const isRelevantUrl = (u) => u.includes('/graphql/') && (isLikes ? u.toLowerCase().includes('like') : u.includes('Bookmark'));
   const origFetch = window.fetch;
   window.fetch = async function(...args) {
     const r = await origFetch.apply(this, args);
     try {
       const u = args[0] instanceof Request ? args[0].url : String(args[0]);
-      if (u.includes('/graphql/')) {
+      if (isRelevantUrl(u)) {
         const d = await r.clone().json();
         processData(d);
       }
@@ -359,13 +377,15 @@ const CONSOLE_SCRIPT = `(async function() {
   };
   XMLHttpRequest.prototype.send = function(...args) {
     const xhr = this, u = xhrUrls.get(xhr) ?? '';
-    if (u.includes('/graphql/')) {
+    if (isRelevantUrl(u)) {
       xhr.addEventListener('load', function() {
         try { processData(JSON.parse(xhr.responseText)); } catch(e) {}
       });
     }
     return origSend.apply(this, args);
   };
+  document.body.appendChild(btn);
+  document.body.appendChild(autoBtn);
   console.log(\`✅ Script active. Scroll through your \${label}, then click the purple button.\`);
 })();`
 

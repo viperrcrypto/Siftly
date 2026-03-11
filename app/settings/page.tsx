@@ -20,6 +20,8 @@ import {
   Terminal,
   Loader2,
   X,
+  BookOpen,
+  FolderOpen,
 } from 'lucide-react'
 
 const ANTHROPIC_MODELS = [
@@ -655,7 +657,164 @@ function ExportButton({
   )
 }
 
-function DataSection() {
+interface ObsidianResult {
+  written: number
+  skipped: number
+  errors: Array<{ tweetId: string; error: string }>
+  indexesWritten: number
+}
+
+function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
+  const [vaultPath, setVaultPath] = useState('')
+  const [savedPath, setSavedPath] = useState<string | null>(null)
+  const [savingPath, setSavingPath] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [result, setResult] = useState<ObsidianResult | null>(null)
+  const [overwrite, setOverwrite] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((d: Record<string, unknown>) => {
+        if (d.obsidianVaultPath) setSavedPath(d.obsidianVaultPath as string)
+      })
+      .catch(() => {})
+  }, [])
+
+  async function handleSavePath() {
+    if (!vaultPath.trim()) {
+      onToast({ type: 'error', message: 'Enter a vault path first' })
+      return
+    }
+    setSavingPath(true)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ obsidianVaultPath: vaultPath.trim() }),
+      })
+      if (!res.ok) {
+        const data = await res.json() as { error?: string }
+        throw new Error(data.error ?? 'Failed to save')
+      }
+      setSavedPath(vaultPath.trim())
+      setVaultPath('')
+      onToast({ type: 'success', message: 'Vault path saved' })
+    } catch (err) {
+      onToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save path' })
+    } finally {
+      setSavingPath(false)
+    }
+  }
+
+  async function handleExport() {
+    setExporting(true)
+    setResult(null)
+    try {
+      const res = await fetch('/api/export/obsidian', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overwrite }),
+      })
+      const data = await res.json() as ObsidianResult & { error?: string }
+      if (!res.ok) throw new Error(data.error ?? 'Export failed')
+      setResult(data)
+      onToast({ type: 'success', message: `${data.written} notes written to vault` })
+    } catch (err) {
+      onToast({ type: 'error', message: err instanceof Error ? err.message : 'Export failed' })
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <div className="mt-5 pt-5 border-t border-zinc-800">
+      <div className="flex items-center gap-2 mb-3">
+        <BookOpen size={14} className="text-indigo-400 shrink-0" />
+        <p className="text-sm font-medium text-zinc-300">Export to Obsidian</p>
+      </div>
+
+      {/* Vault path row */}
+      <div className="space-y-2 mb-3">
+        <div className="flex gap-2.5">
+          <div className="relative flex-1">
+            <FolderOpen size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+            <input
+              type="text"
+              value={vaultPath}
+              onChange={(e) => setVaultPath(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && void handleSavePath()}
+              placeholder={savedPath ?? 'C:\\Users\\you\\Obsidian\\MyVault'}
+              className="w-full pl-8 pr-3.5 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder:text-zinc-600 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all duration-200 font-mono"
+            />
+          </div>
+          <button
+            onClick={() => void handleSavePath()}
+            disabled={savingPath}
+            className="px-4 py-2.5 rounded-xl bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-200 text-sm font-medium transition-colors shrink-0"
+          >
+            {savingPath ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        {savedPath && (
+          <p className="text-xs text-zinc-500 flex items-center gap-1.5">
+            <Check size={11} className="text-emerald-400 shrink-0" />
+            <span className="font-mono text-zinc-400 truncate">{savedPath}</span>
+          </p>
+        )}
+      </div>
+
+      {/* Overwrite toggle + export button */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => void handleExport()}
+          disabled={exporting || !savedPath}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors shrink-0"
+        >
+          {exporting
+            ? <><Loader2 size={14} className="animate-spin" /> Exporting…</>
+            : <><BookOpen size={14} /> Export to Obsidian</>
+          }
+        </button>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={overwrite}
+            onChange={(e) => setOverwrite(e.target.checked)}
+            className="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500/20"
+          />
+          <span className="text-xs text-zinc-500">Overwrite existing notes</span>
+        </label>
+      </div>
+
+      {/* Result summary */}
+      {result && (
+        <div className="mt-3 flex flex-wrap gap-3 text-xs">
+          <span className="flex items-center gap-1.5 text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
+            <Check size={11} /> {result.written} written
+          </span>
+          <span className="text-zinc-500 bg-zinc-800 border border-zinc-700 px-2.5 py-1 rounded-lg">
+            {result.skipped} skipped
+          </span>
+          <span className="text-zinc-500 bg-zinc-800 border border-zinc-700 px-2.5 py-1 rounded-lg">
+            {result.indexesWritten} indexes
+          </span>
+          {result.errors.length > 0 && (
+            <span className="flex items-center gap-1.5 text-red-400 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-lg">
+              <AlertCircle size={11} /> {result.errors.length} errors
+            </span>
+          )}
+        </div>
+      )}
+
+      <p className="text-xs text-zinc-600 mt-3">
+        Notes are written to a <span className="font-mono text-zinc-500">Twitter Bookmarks/</span> subfolder inside your vault. Index notes linking by author and category are created automatically in <span className="font-mono text-zinc-500">_index/</span>.
+      </p>
+    </div>
+  )
+}
+
+function DataSection({ onToast }: { onToast: (t: Toast) => void }) {
   return (
     <Section
       icon={Database}
@@ -674,6 +833,7 @@ function DataSection() {
           description="Full data with all fields"
         />
       </div>
+      <ObsidianExportBlock onToast={onToast} />
     </Section>
   )
 }
@@ -1006,7 +1166,7 @@ export default function SettingsPage() {
       <div className="space-y-4">
         <ApiKeySection onToast={showToast} />
         <XOAuthSection onToast={showToast} />
-        <DataSection />
+        <DataSection onToast={showToast} />
         <DangerZoneSection onToast={showToast} />
         <AboutSection />
       </div>
