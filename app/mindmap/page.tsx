@@ -70,8 +70,8 @@ const STAGE_LABELS: Record<NonNullable<CategorizeStage>, string> = {
   entities: 'Extracting entities…',
   vision: 'Analyzing images…',
   enrichment: 'Generating semantic tags…',
-  categorize: 'Categorizing bookmarks…',
-  parallel: 'Processing bookmarks in parallel…',
+  categorize: 'Categorizing tweets…',
+  parallel: 'Processing tweets in parallel…',
 }
 
 function UncategorizedState({ totalBookmarks }: { totalBookmarks: number }) {
@@ -172,9 +172,9 @@ function UncategorizedState({ totalBookmarks }: { totalBookmarks: number }) {
         <Sparkles size={28} className="text-indigo-400" />
       </div>
       <div>
-        <p className="text-xl font-semibold text-zinc-100">Bookmarks not categorized yet</p>
+        <p className="text-xl font-semibold text-zinc-100">Tweets not categorized yet</p>
         <p className="text-zinc-500 text-sm mt-1.5 leading-relaxed">
-          You have <span className="text-zinc-300 font-medium">{totalBookmarks.toLocaleString()}</span> bookmarks imported.
+          You have <span className="text-zinc-300 font-medium">{totalBookmarks.toLocaleString()}</span> tweets imported.
           Run AI categorization to populate the mindmap.
         </p>
       </div>
@@ -289,9 +289,9 @@ function MindmapOverlay({
               <Sparkles size={28} className="text-indigo-400" />
             </div>
             <div>
-              <p className="text-xl font-bold text-zinc-100">Bookmarks Not Categorized Yet</p>
+              <p className="text-xl font-bold text-zinc-100">Tweets Not Categorized Yet</p>
               <p className="text-zinc-400 text-sm mt-2 leading-relaxed">
-                You have <span className="text-zinc-200 font-semibold">{totalBookmarks.toLocaleString()}</span> bookmarks imported.
+                You have <span className="text-zinc-200 font-semibold">{totalBookmarks.toLocaleString()}</span> tweets imported.
                 The mindmap will fill in once AI categorization completes.
               </p>
             </div>
@@ -373,7 +373,7 @@ export default function MindmapPage() {
         ) : (
           <div className="text-center">
             <p className="text-xl font-semibold text-zinc-400">No data to display</p>
-            <p className="text-zinc-600 text-sm mt-1">Import and categorize bookmarks first.</p>
+            <p className="text-zinc-600 text-sm mt-1">Import and categorize tweets first.</p>
           </div>
         )}
       </div>

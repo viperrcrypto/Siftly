@@ -222,7 +222,7 @@ export default function AISearchPage() {
       {searched && !loading && results.length === 0 && !error && (
         <div className="text-center py-16 text-zinc-600">
           <BookMarked size={36} className="mx-auto mb-3 opacity-30" />
-          <p>No bookmarks matched that description. Try different words.</p>
+          <p>No tweets matched that description. Try different words.</p>
         </div>
       )}
 

@@ -46,13 +46,18 @@ next-env.d.ts
 # generated prisma client
 /app/generated/prisma
 
-# Database files — never commit these (contain your private bookmarks)
+# Database files — never commit these (contain your private tweets)
 prisma/dev.db
 prisma/dev.db-journal
+prisma/dev.db.backup-*
 dev.db
 dev.db-journal
 *.db
 *.db-journal
+
+# User data exports — never commit
+bookmarks.json
+likes.json
 
 # OS
 .DS_Store

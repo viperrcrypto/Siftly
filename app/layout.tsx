@@ -12,7 +12,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: 'Siftly',
-  description: 'Your Twitter bookmarks, organized and searchable.',
+  description: 'Your Twitter/X bookmarks and likes, organized and searchable.',
 }
 
 export default function RootLayout({

@@ -130,7 +130,7 @@ export default function CategoryPage() {
               {category.description && (
                 <p className="text-zinc-400 text-sm mt-0.5">{category.description}</p>
               )}
-              <p className="text-zinc-500 text-sm mt-1">{total.toLocaleString()} bookmark{total !== 1 ? 's' : ''}</p>
+              <p className="text-zinc-500 text-sm mt-1">{total.toLocaleString()} tweet{total !== 1 ? 's' : ''}</p>
             </div>
           </div>
           <button
@@ -153,7 +153,7 @@ export default function CategoryPage() {
 
       {!loading && bookmarks.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <p className="text-xl font-semibold text-zinc-400">No bookmarks in this category</p>
+          <p className="text-xl font-semibold text-zinc-400">No tweets in this category</p>
         </div>
       )}
 

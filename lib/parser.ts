@@ -4,7 +4,7 @@ export interface ParsedMedia {
   thumbnailUrl?: string
 }
 
-export interface ParsedBookmark {
+export interface ParsedTweet {
   tweetId: string
   text: string
   authorHandle: string
@@ -144,7 +144,7 @@ function extractMedia(tweet: RawTweet): ParsedMedia[] {
     .filter((m): m is ParsedMedia => m !== null)
 }
 
-function parseSingleTweet(tweet: RawTweet): ParsedBookmark | null {
+function parseSingleTweet(tweet: RawTweet): ParsedTweet | null {
   const tweetId = extractTweetId(tweet)
   if (!tweetId) return null
 
@@ -213,6 +213,8 @@ interface ConsoleExportBookmark {
   media?: { type?: string; url?: string }[]
   hashtags?: string[]
   urls?: string[]
+  quotedText?: string
+  quotedAuthor?: string
 }
 
 function isConsoleExportFormat(obj: unknown): obj is { bookmarks: ConsoleExportBookmark[] } {
@@ -237,9 +239,13 @@ function convertConsoleExportRow(row: ConsoleExportBookmark): RawTweet {
 
   const handle = (row.handle ?? '').replace(/^@/, '')
 
+  const fullText = row.quotedText
+    ? `${row.text || ''}\n\n[Quote @${row.quotedAuthor || 'unknown'}]: ${row.quotedText}`
+    : row.text
+
   return {
     id_str: row.id,
-    full_text: row.text,
+    full_text: fullText,
     created_at: row.timestamp,
     user: { screen_name: handle || 'unknown', name: row.author || handle || 'Unknown' },
     entities: {
@@ -248,6 +254,50 @@ function convertConsoleExportRow(row: ConsoleExportBookmark): RawTweet {
       media: mediaEntities.length > 0 ? mediaEntities : undefined,
     },
     extended_entities: mediaEntities.length > 0 ? { media: mediaEntities } : undefined,
+  }
+}
+
+interface TwitterArchiveItem {
+  like?: { tweetId?: string; fullText?: string; expandedUrl?: string }
+  bookmark?: { tweetId?: string; fullText?: string; expandedUrl?: string }
+}
+
+function stripArchivePrefix(content: string): { json: string; archiveType: 'like' | 'bookmark' | null } {
+  const trimmed = content.trim()
+  if (!trimmed.startsWith('window.YTD.')) {
+    return { json: trimmed, archiveType: null }
+  }
+  const match = trimmed.match(/^window\.YTD\.(\w+)\.part\d+\s*=\s*/)
+  if (!match) {
+    return { json: trimmed, archiveType: null }
+  }
+  const rawType = match[1]
+  const archiveType: 'like' | 'bookmark' | null =
+    rawType === 'like' ? 'like' : rawType === 'bookmark' ? 'bookmark' : null
+  const json = trimmed.slice(match[0].length)
+  return { json, archiveType }
+}
+
+function isTwitterArchiveFormat(items: unknown[]): boolean {
+  if (items.length === 0) return false
+  const first = items[0]
+  if (typeof first !== 'object' || first === null) return false
+  return 'like' in first || 'bookmark' in first
+}
+
+function convertArchiveItem(item: TwitterArchiveItem): RawTweet {
+  const inner = item.like ?? item.bookmark
+  if (!inner) {
+    return {}
+  }
+  const urls: TwitterUrlEntity[] = inner.expandedUrl
+    ? [{ expanded_url: inner.expandedUrl }]
+    : []
+  return {
+    id_str: inner.tweetId,
+    full_text: inner.fullText,
+    user: { screen_name: 'unknown', name: 'Unknown' },
+    entities: { urls },
   }
 }
 
@@ -301,6 +351,10 @@ function normalizeTweetArray(parsed: unknown): RawTweet[] {
     if (parsed.length > 0 && isSiftlyExportFormat(parsed[0])) {
       return parsed.map((row) => convertSiftlyExportRow(row as SiftlyExportItem))
     }
+    // Twitter/X data archive format: [{ like: {...} }] or [{ bookmark: {...} }]
+    if (parsed.length > 0 && isTwitterArchiveFormat(parsed)) {
+      return parsed.map((item) => convertArchiveItem(item as TwitterArchiveItem))
+    }
     return parsed as RawTweet[]
   }
 
@@ -319,21 +373,23 @@ function normalizeTweetArray(parsed: unknown): RawTweet[] {
   return []
 }
 
-export function parseBookmarksJson(jsonString: string): ParsedBookmark[] {
+export function parseTweetsJson(jsonString: string): ParsedTweet[] {
   if (!jsonString || jsonString.trim() === '') {
     throw new Error('Empty JSON string provided')
   }
 
+  const { json } = stripArchivePrefix(jsonString)
+
   let parsed: unknown
   try {
-    parsed = JSON.parse(jsonString)
+    parsed = JSON.parse(json)
   } catch (err) {
     throw new Error(`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`)
   }
 
   const tweets = normalizeTweetArray(parsed)
 
-  const results: ParsedBookmark[] = []
+  const results: ParsedTweet[] = []
   for (const tweet of tweets) {
     const bookmark = parseSingleTweet(tweet)
     if (bookmark !== null) {
@@ -342,4 +398,39 @@ export function parseBookmarksJson(jsonString: string): ParsedBookmark[] {
   }
 
   return results
+}
+
+export interface ParseResult {
+  tweets: ParsedTweet[]
+  detectedSource?: 'like' | 'bookmark'
+}
+
+export function parseTweetsWithMeta(content: string): ParseResult {
+  if (!content || content.trim() === '') {
+    throw new Error('Empty content provided')
+  }
+
+  const { json, archiveType } = stripArchivePrefix(content)
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(json)
+  } catch (err) {
+    throw new Error(`Invalid JSON: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  const tweets = normalizeTweetArray(parsed)
+
+  const results: ParsedTweet[] = []
+  for (const tweet of tweets) {
+    const parsed = parseSingleTweet(tweet)
+    if (parsed !== null) {
+      results.push(parsed)
+    }
+  }
+
+  return {
+    tweets: results,
+    detectedSource: archiveType ?? undefined,
+  }
 }

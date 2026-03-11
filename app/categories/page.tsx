@@ -271,8 +271,8 @@ export default function CategoriesPage() {
             {loading
               ? 'Loading your categories...'
               : categories.length > 0
-              ? `${totalBookmarks.toLocaleString()} bookmarks across ${categories.length} categories`
-              : 'Organize your bookmarks by topic'}
+              ? `${totalBookmarks.toLocaleString()} tweets across ${categories.length} categories`
+              : 'Organize your tweets by topic'}
           </p>
         </div>
         <button
@@ -301,7 +301,7 @@ export default function CategoriesPage() {
           </div>
           <h3 className="text-lg font-semibold text-zinc-300 mb-2">No categories yet</h3>
           <p className="text-zinc-500 text-sm mb-6 max-w-xs leading-relaxed">
-            Create your first category to start organizing your bookmarks by topic.
+            Create your first category to start organizing your tweets by topic.
           </p>
           <button
             onClick={() => setModalOpen(true)}
@@ -331,7 +331,7 @@ export default function CategoriesPage() {
             <Link href="/categorize" className="text-indigo-400 hover:text-indigo-300 transition-colors">
               AI Categorize
             </Link>{' '}
-            to automatically assign bookmarks to your categories.
+            to automatically assign tweets to your categories.
           </p>
         </div>
       )}
