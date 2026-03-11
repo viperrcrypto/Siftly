@@ -29,18 +29,20 @@ It runs a **4-stage AI pipeline** on your bookmarks:
     ↓
 🏷️  Entity Extraction   — mines hashtags, URLs, mentions, and 100+ known tools from raw tweet data (free, zero API calls)
     ↓
-👁️  Vision Analysis      — reads text, objects, and context from every image/GIF/video thumbnail (30–40 visual tags per image)
+👁️  Vision Analysis      — reads text, objects, and context from every image/GIF/video thumbnail
     ↓
-🧠 Semantic Tagging     — generates 25–35 searchable tags per bookmark for AI-powered search
+🧠 Semantic Tagging     — generates broad, reusable search tags per bookmark for AI-powered search
     ↓
 📂 Categorization       — assigns each bookmark to 1–3 categories with confidence scores
+    ↓
+📖 Obsidian Export      — writes your knowledge base as Markdown notes with YAML frontmatter, wikilinks, and index files
 ```
 
 After the pipeline runs, you get:
 - **AI search** — find bookmarks by meaning, not just keywords (*"funny meme about crypto crashing"*)
 - **Interactive mindmap** — explore your entire bookmark graph visually
 - **Filtered browsing** — grid or list view, filter by category, media type, and date
-- **Export tools** — download media, export as CSV / JSON / ZIP
+- **Export tools** — download media, export as CSV / JSON / ZIP / Obsidian vault
 
 ---
 
@@ -224,6 +226,45 @@ Create custom categories with a name, color, and optional description. The descr
 - **CSV** — spreadsheet-compatible with all fields
 - **JSON** — full structured data export
 - **ZIP** — exports a category's bookmarks + all media files with a `manifest.csv`
+- **Obsidian** — exports your entire knowledge base as a Markdown vault (see below)
+
+### 📖 Obsidian Export
+
+Export all processed bookmarks directly into an [Obsidian](https://obsidian.md) vault as structured Markdown notes.
+
+**Each bookmark becomes a note** with YAML frontmatter:
+
+```yaml
+---
+tweet_id: "1933508347334177246"
+author: "alex_prompter"
+author_name: "Alex Prompter"
+date: 2025-06-13
+source: "https://x.com/alex_prompter/status/1933508347334177246"
+categories: ["AI & Agents", "PKM & Workflows"]
+tags:
+  - twitter/bookmark
+  - author/alex_prompter
+  - prompt-engineering
+  - llm
+  - automation
+  - category/ai-agents
+---
+```
+
+**Index notes** are generated automatically in a `_index/` subfolder:
+- One note per **category** — lists all bookmarks in that category as `[[wikilinks]]`
+- One note per **author** — lists every bookmark from that person
+
+This creates a dense backlink graph in Obsidian's graph view, where bookmarks cluster naturally by topic and author.
+
+**To set up:**
+1. Go to **Settings** → find the **Obsidian Export** section
+2. Enter the full path to your Obsidian vault folder (e.g. `/Users/you/Obsidian/Personal`)
+3. Click **Save**, then **Export to Obsidian**
+4. Open your vault in Obsidian — notes appear in a `Twitter Bookmarks/` folder
+
+Re-export anytime. By default, existing notes are skipped — enable **Overwrite** to replace them.
 
 ### ⌨️ Command Palette
 
@@ -241,6 +282,7 @@ All settings are manageable in the **Settings** page at `/settings` or via envir
 | API Base URL | `ANTHROPIC_BASE_URL` | Custom endpoint for proxies or local Anthropic-compatible models |
 | AI Model | Settings page only | Haiku 4.5 (default, fastest/cheapest), Sonnet 4.6, Opus 4.6 |
 | OpenAI Key | Settings page only | Alternative provider if no Anthropic key is set |
+| Obsidian Vault Path | Settings page only | Absolute path to your Obsidian vault folder for Markdown export |
 | Database | `DATABASE_URL` | SQLite file path (default: `file:./prisma/dev.db`) |
 
 ### Custom API Endpoint
@@ -266,6 +308,7 @@ siftly/
 │   │   │   └── [slug]/       # Individual category operations
 │   │   ├── categorize/       # 4-stage AI pipeline (start, status, stop)
 │   │   ├── export/           # CSV, JSON, ZIP export
+│   │   │   └── obsidian/     # Obsidian vault export endpoint
 │   │   ├── import/           # JSON file import with dedup + auto-pipeline trigger
 │   │   │   ├── bookmarklet/  # Bookmarklet-specific import endpoint
 │   │   │   └── twitter/      # Twitter-specific import endpoint
@@ -308,6 +351,7 @@ siftly/
 │   ├── rawjson-extractor.ts  # Entity extraction from raw tweet JSON
 │   ├── parser.ts             # Multi-format JSON parser
 │   ├── exporter.ts           # CSV, JSON, ZIP export
+│   ├── obsidian-exporter.ts  # Obsidian vault export (Markdown + YAML frontmatter + indexes)
 │   ├── types.ts              # Shared TypeScript types
 │   └── db.ts                 # Prisma client singleton
 │
