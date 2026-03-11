@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Tag, X, ArrowRight, Folder, Bookmark } from 'lucide-react'
+import { Plus, Tag, X, ArrowRight, Folder, Bookmark, Sparkles, Loader2, Check, Trash2 } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import Link from 'next/link'
 import type { Category } from '@/lib/types'
@@ -16,6 +16,20 @@ const PRESET_COLORS = [
   '#f97316', // orange
   '#ec4899', // pink
 ]
+
+interface CategorySuggestion {
+  name: string
+  slug: string
+  description: string
+  color: string
+  bookmarkCount: number
+  confidence: number
+  exampleBookmarks: Array<{
+    tweetId: string
+    text: string
+    authorHandle: string
+  }>
+}
 
 interface AddCategoryModalProps {
   open: boolean
@@ -167,6 +181,256 @@ function AddCategoryModal({ open, onClose, onAdd }: AddCategoryModalProps) {
   )
 }
 
+interface AIAssistantModalProps {
+  open: boolean
+  onClose: () => void
+  onCategoriesCreated: (categories: Category[]) => void
+}
+
+function AIAssistantModal({ open, onClose, onCategoriesCreated }: AIAssistantModalProps) {
+  const [suggestions, setSuggestions] = useState<CategorySuggestion[]>([])
+  const [selectedSuggestions, setSelectedSuggestions] = useState<Set<string>>(new Set())
+  const [loading, setLoading] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (open && suggestions.length === 0) {
+      fetchSuggestions()
+    }
+  }, [open])
+
+  async function fetchSuggestions() {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/categories/suggest')
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed to generate suggestions')
+      setSuggestions(data.suggestions || [])
+      // Auto-select all by default
+      setSelectedSuggestions(new Set(data.suggestions?.map((s: CategorySuggestion) => s.slug) || []))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate suggestions')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function toggleSelection(slug: string) {
+    setSelectedSuggestions((prev) => {
+      const next = new Set(prev)
+      if (next.has(slug)) {
+        next.delete(slug)
+      } else {
+        next.add(slug)
+      }
+      return next
+    })
+  }
+
+  async function handleCreateSelected() {
+    const selected = suggestions.filter((s) => selectedSuggestions.has(s.slug))
+    if (selected.length === 0) return
+
+    setCreating(true)
+    setError('')
+    try {
+      const res = await fetch('/api/categories/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ suggestions: selected }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed to create categories')
+      
+      // Refresh categories list
+      const catsRes = await fetch('/api/categories')
+      const catsData = await catsRes.json()
+      if (catsData.categories) {
+        onCategoriesCreated(catsData.categories)
+      }
+      
+      // Close modal
+      onClose()
+      setSuggestions([])
+      setSelectedSuggestions(new Set())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create categories')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  function handleClose() {
+    if (!creating) {
+      onClose()
+      setError('')
+    }
+  }
+
+  return (
+    <Dialog.Root open={open} onOpenChange={(v) => !v && handleClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 animate-in fade-in duration-200" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl shadow-black/50 focus:outline-none animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-hidden">
+          <div className="p-6 border-b border-zinc-800">
+            <div className="flex items-center justify-between">
+              <div>
+                <Dialog.Title className="text-xl font-semibold text-zinc-100 flex items-center gap-2">
+                  <Sparkles size={20} className="text-indigo-400" />
+                  AI Category Assistant
+                </Dialog.Title>
+                <Dialog.Description className="text-sm text-zinc-500 mt-1">
+                  Analyze your bookmarks and discover natural topic clusters
+                </Dialog.Description>
+              </div>
+              <button
+                onClick={handleClose}
+                disabled={creating}
+                className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors disabled:opacity-50"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-6 overflow-y-auto max-h-[60vh]">
+            {loading && (
+              <div className="flex flex-col items-center justify-center py-12">
+                <Loader2 size={32} className="text-indigo-400 animate-spin mb-4" />
+                <p className="text-zinc-400">Analyzing your bookmarks...</p>
+                <p className="text-zinc-500 text-sm mt-1">This may take a moment</p>
+              </div>
+            )}
+
+            {!loading && error && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-4">
+                <p className="text-red-400 text-sm">{error}</p>
+                <button
+                  onClick={fetchSuggestions}
+                  className="mt-2 text-sm text-red-400 hover:text-red-300 underline"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {!loading && !error && suggestions.length === 0 && (
+              <div className="text-center py-12">
+                <p className="text-zinc-400">No suggestions available.</p>
+                <p className="text-zinc-500 text-sm mt-1">Make sure you have at least 10 bookmarks imported.</p>
+              </div>
+            )}
+
+            {!loading && suggestions.length > 0 && (
+              <div className="space-y-4">
+                <p className="text-zinc-400 text-sm">
+                  Found {suggestions.length} potential categories. Select the ones you want to create:
+                </p>
+                
+                {suggestions.map((suggestion) => (
+                  <div
+                    key={suggestion.slug}
+                    onClick={() => toggleSelection(suggestion.slug)}
+                    className={`relative border rounded-xl p-4 cursor-pointer transition-all duration-200 ${
+                      selectedSuggestions.has(suggestion.slug)
+                        ? 'border-indigo-500 bg-indigo-500/5'
+                        : 'border-zinc-800 hover:border-zinc-700'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                          selectedSuggestions.has(suggestion.slug)
+                            ? 'bg-indigo-500 border-indigo-500'
+                            : 'border-zinc-600'
+                        }`}
+                      >
+                        {selectedSuggestions.has(suggestion.slug) && (
+                          <Check size={12} className="text-white" />
+                        )}
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: suggestion.color }}
+                          />
+                          <h3 className="font-semibold text-zinc-100">{suggestion.name}</h3>
+                          <span className="text-xs text-zinc-500">
+                            {suggestion.bookmarkCount} bookmarks
+                          </span>
+                          <span className="text-xs text-zinc-600">
+                            {(suggestion.confidence * 100).toFixed(0)}% confidence
+                          </span>
+                        </div>
+                        
+                        <p className="text-sm text-zinc-400 mb-2">{suggestion.description}</p>
+                        
+                        {suggestion.exampleBookmarks.length > 0 && (
+                          <div className="space-y-1.5">
+                            <p className="text-xs text-zinc-500">Example bookmarks:</p>
+                            {suggestion.exampleBookmarks.map((bm) => (
+                              <div
+                                key={bm.tweetId}
+                                className="text-xs text-zinc-600 bg-zinc-800/50 rounded px-2 py-1.5 line-clamp-1"
+                              >
+                                <span className="text-zinc-500">@{bm.authorHandle}:</span> {bm.text}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {suggestions.length > 0 && (
+            <div className="p-6 border-t border-zinc-800 bg-zinc-900/50">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-zinc-500">
+                  {selectedSuggestions.size} of {suggestions.length} selected
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setSelectedSuggestions(new Set())}
+                    disabled={creating}
+                    className="px-4 py-2 rounded-xl text-sm font-medium text-zinc-400 hover:text-zinc-300 transition-colors"
+                  >
+                    Clear all
+                  </button>
+                  <button
+                    onClick={handleCreateSelected}
+                    disabled={creating || selectedSuggestions.size === 0}
+                    className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {creating ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <Plus size={16} />
+                        Create {selectedSuggestions.size} categories
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}
+
 interface CategoryDisplayCardProps {
   category: Category
 }
@@ -234,6 +498,7 @@ export default function CategoriesPage() {
   const [totalBookmarks, setTotalBookmarks] = useState(0)
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
+  const [aiModalOpen, setAiModalOpen] = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -252,9 +517,12 @@ export default function CategoriesPage() {
     setCategories((prev) => [...prev, category])
   }
 
+  function handleCategoriesCreated(newCategories: Category[]) {
+    setCategories(newCategories)
+  }
+
   return (
     <div className="p-6 md:p-8 max-w-7xl mx-auto">
-
       {/* Page Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
@@ -275,13 +543,22 @@ export default function CategoriesPage() {
               : 'Organize your bookmarks by topic'}
           </p>
         </div>
-        <button
-          onClick={() => setModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors shadow-lg shadow-indigo-500/20"
-        >
-          <Plus size={16} />
-          Add Category
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setAiModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 text-sm font-medium transition-colors"
+          >
+            <Sparkles size={16} className="text-indigo-400" />
+            AI Assistant
+          </button>
+          <button
+            onClick={() => setModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors shadow-lg shadow-indigo-500/20"
+          >
+            <Plus size={16} />
+            Add Category
+          </button>
+        </div>
       </div>
 
       {/* Loading State */}
@@ -340,6 +617,12 @@ export default function CategoriesPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onAdd={handleAdd}
+      />
+
+      <AIAssistantModal
+        open={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
+        onCategoriesCreated={handleCategoriesCreated}
       />
     </div>
   )
