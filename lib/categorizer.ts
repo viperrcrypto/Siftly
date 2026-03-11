@@ -399,13 +399,13 @@ export async function categorizeAll(
 
   // Resolve auth once — avoids re-resolving inside every batch call
   const provider = await getProvider()
-  const keyName = provider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
-  const apiKeySetting = await prisma.setting.findUnique({ where: { key: keyName } })
+  const keyName = provider === 'openai' ? 'openaiApiKey' : provider === 'ollama' ? null : 'anthropicApiKey'
+  const apiKeySetting = keyName ? await prisma.setting.findUnique({ where: { key: keyName } }) : null
   let client: AIClient | null = null
   try {
     client = await resolveAIClient({ dbKey: apiKeySetting?.value })
   } catch {
-    // CLI might still work — client stays null
+    // CLI might still work — client stays null (not applicable for Ollama)
   }
 
   // Load ALL categories (default + custom) for the prompt

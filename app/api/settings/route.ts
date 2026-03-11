@@ -24,12 +24,14 @@ const ALLOWED_OPENAI_MODELS = [
 
 export async function GET(): Promise<NextResponse> {
   try {
-    const [anthropic, anthropicModel, provider, openai, openaiModel, xClientId, xClientSecret] = await Promise.all([
+    const [anthropic, anthropicModel, provider, openai, openaiModel, ollamaModel, ollamaBaseUrl, xClientId, xClientSecret] = await Promise.all([
       prisma.setting.findUnique({ where: { key: 'anthropicApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'anthropicModel' } }),
       prisma.setting.findUnique({ where: { key: 'aiProvider' } }),
       prisma.setting.findUnique({ where: { key: 'openaiApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'openaiModel' } }),
+      prisma.setting.findUnique({ where: { key: 'ollamaModel' } }),
+      prisma.setting.findUnique({ where: { key: 'ollamaBaseUrl' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_id' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_secret' } }),
     ])
@@ -42,6 +44,8 @@ export async function GET(): Promise<NextResponse> {
       openaiApiKey: maskKey(openai?.value ?? null),
       hasOpenaiKey: openai !== null,
       openaiModel: openaiModel?.value ?? 'gpt-4.1-mini',
+      ollamaModel: ollamaModel?.value ?? 'llama3.1',
+      ollamaBaseUrl: ollamaBaseUrl?.value ?? 'http://localhost:11434',
       xOAuthClientId: maskKey(xClientId?.value ?? null),
       xOAuthClientSecret: maskKey(xClientSecret?.value ?? null),
       hasXOAuth: !!xClientId?.value,
@@ -62,6 +66,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     provider?: string
     openaiApiKey?: string
     openaiModel?: string
+    ollamaModel?: string
+    ollamaBaseUrl?: string
     xOAuthClientId?: string
     xOAuthClientSecret?: string
   } = {}
@@ -71,11 +77,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { anthropicApiKey, anthropicModel, provider, openaiApiKey, openaiModel } = body
+  const { anthropicApiKey, anthropicModel, provider, openaiApiKey, openaiModel, ollamaModel, ollamaBaseUrl } = body
 
   // Save provider if provided
   if (provider !== undefined) {
-    if (provider !== 'anthropic' && provider !== 'openai') {
+    if (provider !== 'anthropic' && provider !== 'openai' && provider !== 'ollama') {
       return NextResponse.json({ error: 'Invalid provider' }, { status: 400 })
     }
     await prisma.setting.upsert({
@@ -110,6 +116,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       where: { key: 'openaiModel' },
       update: { value: openaiModel },
       create: { key: 'openaiModel', value: openaiModel },
+    })
+    invalidateSettingsCache()
+    return NextResponse.json({ saved: true })
+  }
+
+  // Save Ollama model if provided (free-form — user can type any model name)
+  if (ollamaModel !== undefined) {
+    if (typeof ollamaModel !== 'string' || ollamaModel.trim() === '') {
+      return NextResponse.json({ error: 'Invalid Ollama model' }, { status: 400 })
+    }
+    await prisma.setting.upsert({
+      where: { key: 'ollamaModel' },
+      update: { value: ollamaModel.trim() },
+      create: { key: 'ollamaModel', value: ollamaModel.trim() },
+    })
+    invalidateSettingsCache()
+    return NextResponse.json({ saved: true })
+  }
+
+  // Save Ollama base URL if provided
+  if (ollamaBaseUrl !== undefined) {
+    if (typeof ollamaBaseUrl !== 'string' || ollamaBaseUrl.trim() === '') {
+      return NextResponse.json({ error: 'Invalid Ollama base URL' }, { status: 400 })
+    }
+    await prisma.setting.upsert({
+      where: { key: 'ollamaBaseUrl' },
+      update: { value: ollamaBaseUrl.trim() },
+      create: { key: 'ollamaBaseUrl', value: ollamaBaseUrl.trim() },
     })
     invalidateSettingsCache()
     return NextResponse.json({ saved: true })

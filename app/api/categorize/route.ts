@@ -111,12 +111,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   if (apiKey && typeof apiKey === 'string' && apiKey.trim() !== '') {
     const currentProvider = await getProvider()
-    const keySlot = currentProvider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
-    await prisma.setting.upsert({
-      where: { key: keySlot },
-      update: { value: apiKey.trim() },
-      create: { key: keySlot, value: apiKey.trim() },
-    })
+    // Ollama doesn't use API keys — skip saving
+    if (currentProvider !== 'ollama') {
+      const keySlot = currentProvider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
+      await prisma.setting.upsert({
+        where: { key: keySlot },
+        update: { value: apiKey.trim() },
+        create: { key: keySlot, value: apiKey.trim() },
+      })
+    }
   }
 
   globalState.categorizationAbort = false
@@ -145,9 +148,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   })
 
   const provider = await getProvider()
-  const keyName = provider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
-  const dbApiKey =
-    (await prisma.setting.findUnique({ where: { key: keyName } }))?.value?.trim() || ''
+  const keyName = provider === 'openai' ? 'openaiApiKey' : provider === 'ollama' ? null : 'anthropicApiKey'
+  const dbApiKey = keyName
+    ? ((await prisma.setting.findUnique({ where: { key: keyName } }))?.value?.trim() || '')
+    : '' // Ollama doesn't need an API key
 
   void (async () => {
     const counts = { visionTagged: 0, entitiesExtracted: 0, enriched: 0, categorized: 0 }

@@ -495,7 +495,9 @@ function CodexCliStatusBox() {
   )
 }
 
-function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; onChange: (v: 'anthropic' | 'openai') => void }) {
+type Provider = 'anthropic' | 'openai' | 'ollama'
+
+function ProviderToggle({ value, onChange }: { value: Provider; onChange: (v: Provider) => void }) {
   return (
     <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-800 border border-zinc-700 mb-5">
       <button
@@ -506,7 +508,7 @@ function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; on
             : 'text-zinc-400 hover:text-zinc-200'
         }`}
       >
-        Anthropic (Claude)
+        Anthropic
       </button>
       <button
         onClick={() => onChange('openai')}
@@ -516,25 +518,248 @@ function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; on
             : 'text-zinc-400 hover:text-zinc-200'
         }`}
       >
-        OpenAI (GPT)
+        OpenAI
+      </button>
+      <button
+        onClick={() => onChange('ollama')}
+        className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          value === 'ollama'
+            ? 'bg-orange-600 text-white shadow-sm'
+            : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+      >
+        Ollama
       </button>
     </div>
   )
 }
 
+function OllamaSettingsPanel({ onToast }: { onToast: (t: Toast) => void }) {
+  const [model, setModel] = useState('llama3.1')
+  const [baseUrl, setBaseUrl] = useState('http://localhost:11434')
+  const [modelSaved, setModelSaved] = useState(false)
+  const [urlSaved, setUrlSaved] = useState(false)
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
+  const [testError, setTestError] = useState('')
+  const [ollamaStatus, setOllamaStatus] = useState<{ available: boolean; models?: string[]; error?: string } | null>(null)
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((d: Record<string, unknown>) => {
+        if (d.ollamaModel) setModel(d.ollamaModel as string)
+        if (d.ollamaBaseUrl) setBaseUrl(d.ollamaBaseUrl as string)
+      })
+      .catch(() => {})
+
+    fetch('/api/settings/cli-status')
+      .then((r) => r.json())
+      .then((d: { ollama?: { available: boolean; models?: string[]; error?: string } }) => {
+        setOllamaStatus(d.ollama ?? { available: false })
+      })
+      .catch(() => setOllamaStatus({ available: false }))
+  }, [])
+
+  async function saveModel(val: string) {
+    setModel(val)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ollamaModel: val }),
+      })
+      if (!res.ok) throw new Error('Failed')
+      setModelSaved(true)
+      setTimeout(() => setModelSaved(false), 2000)
+    } catch {
+      onToast({ type: 'error', message: 'Failed to save model' })
+    }
+  }
+
+  async function saveBaseUrl() {
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ollamaBaseUrl: baseUrl.trim() }),
+      })
+      if (!res.ok) throw new Error('Failed')
+      setUrlSaved(true)
+      setTimeout(() => setUrlSaved(false), 2000)
+      // Re-check Ollama status after URL change
+      fetch('/api/settings/cli-status')
+        .then((r) => r.json())
+        .then((d: { ollama?: { available: boolean; models?: string[]; error?: string } }) => {
+          setOllamaStatus(d.ollama ?? { available: false })
+        })
+        .catch(() => {})
+    } catch {
+      onToast({ type: 'error', message: 'Failed to save base URL' })
+    }
+  }
+
+  async function handleTest() {
+    setTestState('testing')
+    setTestError('')
+    try {
+      const res = await fetch('/api/settings/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'ollama' }),
+      })
+      const data = await res.json() as { working: boolean; error?: string }
+      if (data.working) {
+        setTestState('ok')
+        onToast({ type: 'success', message: 'Ollama is working!' })
+      } else {
+        setTestState('fail')
+        setTestError(data.error ?? 'Connection failed')
+      }
+    } catch {
+      setTestState('fail')
+      setTestError('Connection error')
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Status box */}
+      {ollamaStatus && ollamaStatus.available ? (
+        <div className="flex gap-3 p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/20 mb-2">
+          <Check size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-emerald-300">
+              Ollama is running — no API key needed
+            </p>
+            <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+              Connected to <span className="text-zinc-300 font-mono">{baseUrl}</span>.
+              {ollamaStatus.models && ollamaStatus.models.length > 0 && (
+                <> Available models: <span className="text-zinc-300">{ollamaStatus.models.join(', ')}</span></>
+              )}
+            </p>
+          </div>
+        </div>
+      ) : ollamaStatus ? (
+        <div className="flex gap-3 p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/20 mb-2">
+          <AlertCircle size={15} className="text-amber-400 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-amber-300">Ollama not detected</p>
+            <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+              Make sure Ollama is running: <span className="font-mono text-zinc-300">ollama serve</span>
+              {ollamaStatus.error && <span className="text-red-400/70"> ({ollamaStatus.error})</span>}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Base URL */}
+      <div className="space-y-2">
+        <p className="text-sm font-medium text-zinc-300">Server URL</p>
+        <div className="flex gap-2.5">
+          <input
+            type="text"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void saveBaseUrl()}
+            placeholder="http://localhost:11434"
+            className="flex-1 px-3.5 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/20 transition-all duration-200 font-mono"
+          />
+          <button
+            onClick={() => void saveBaseUrl()}
+            className="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium transition-colors shrink-0"
+          >
+            {urlSaved ? 'Saved!' : 'Save'}
+          </button>
+        </div>
+        <p className="text-xs text-zinc-600">Default: http://localhost:11434. Change if Ollama runs on another host/port.</p>
+      </div>
+
+      {/* Model */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-zinc-300">Model</p>
+          {modelSaved && (
+            <span className="flex items-center gap-1 text-xs text-emerald-400">
+              <Check size={12} /> Saved
+            </span>
+          )}
+        </div>
+        {ollamaStatus?.models && ollamaStatus.models.length > 0 ? (
+          <div className="relative">
+            <select
+              value={model}
+              onChange={(e) => void saveModel(e.target.value)}
+              className="w-full appearance-none pl-3 pr-8 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm focus:outline-none focus:border-orange-500 transition-colors cursor-pointer font-mono"
+            >
+              {ollamaStatus.models.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+              {!ollamaStatus.models.includes(model) && (
+                <option value={model}>{model} (not installed)</option>
+              )}
+            </select>
+            <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+          </div>
+        ) : (
+          <input
+            type="text"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            onBlur={() => void saveModel(model)}
+            onKeyDown={(e) => e.key === 'Enter' && void saveModel(model)}
+            placeholder="llama3.1"
+            className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 text-sm focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/20 transition-all duration-200 font-mono"
+          />
+        )}
+        <p className="text-xs text-zinc-600">
+          Pull models with: <code className="bg-zinc-800 px-1.5 py-0.5 rounded font-mono text-zinc-400">ollama pull llama3.1</code>
+        </p>
+      </div>
+
+      {/* Test button */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => void handleTest()}
+          disabled={testState === 'testing'}
+          className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          {testState === 'testing' ? (
+            <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Testing…</span>
+          ) : 'Test Connection'}
+        </button>
+        {testState === 'ok' && (
+          <span className="flex items-center gap-1 text-xs text-emerald-400">
+            <Check size={12} /> Working
+          </span>
+        )}
+        {testState === 'fail' && (
+          <span className="flex items-center gap-1 text-xs text-red-400" title={testError}>
+            <X size={12} /> {testError.slice(0, 50) || 'Failed'}
+          </span>
+        )}
+      </div>
+
+      <p className="text-xs text-zinc-600">
+        Ollama runs locally — completely free, no API keys needed. Your data never leaves your machine.
+      </p>
+    </div>
+  )
+}
+
 function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
-  const [provider, setProvider] = useState<'anthropic' | 'openai' | null>(null)
+  const [provider, setProvider] = useState<Provider | null>(null)
 
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d: { provider?: string }) => {
-        setProvider(d.provider === 'openai' ? 'openai' : 'anthropic')
+        const p = d.provider
+        setProvider(p === 'openai' ? 'openai' : p === 'ollama' ? 'ollama' : 'anthropic')
       })
       .catch(() => setProvider('anthropic'))
   }, [])
 
-  async function handleProviderChange(newProvider: 'anthropic' | 'openai') {
+  async function handleProviderChange(newProvider: Provider) {
     const prev = provider
     setProvider(newProvider)
     try {
@@ -544,7 +769,8 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
         body: JSON.stringify({ provider: newProvider }),
       })
       if (!res.ok) throw new Error('Failed to save provider')
-      onToast({ type: 'success', message: `Switched to ${newProvider === 'openai' ? 'OpenAI' : 'Anthropic'}` })
+      const labels: Record<Provider, string> = { anthropic: 'Anthropic', openai: 'OpenAI', ollama: 'Ollama' }
+      onToast({ type: 'success', message: `Switched to ${labels[newProvider]}` })
     } catch {
       setProvider(prev) // revert on failure
       onToast({ type: 'error', message: 'Failed to save provider preference' })
@@ -598,7 +824,7 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
             </div>
           </div>
         </>
-      ) : (
+      ) : provider === 'openai' ? (
         <>
           <CodexCliStatusBox />
           <div className="space-y-5">
@@ -622,6 +848,8 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
             </div>
           </div>
         </>
+      ) : (
+        <OllamaSettingsPanel onToast={onToast} />
       )}
       <p className="text-xs text-zinc-600 mt-4">Keys are stored in plaintext in your local SQLite database (<code className="font-mono">prisma/dev.db</code>). Do not expose the database file.</p>
     </Section>
@@ -756,7 +984,7 @@ function DangerZoneSection({ onToast }: { onToast: (t: Toast) => void }) {
 const TECH_STACK = [
   { label: 'Next.js 15', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
   { label: 'Prisma + SQLite', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
-  { label: 'Anthropic / OpenAI', color: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
+  { label: 'Anthropic / OpenAI / Ollama', color: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
   { label: 'React Flow', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
   { label: 'Tailwind CSS', color: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' },
 ]
