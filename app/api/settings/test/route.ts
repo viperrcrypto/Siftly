@@ -76,5 +76,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  if (provider === 'ollama') {
+    try {
+      const { resolveOllamaClient } = await import('@/lib/ai-client')
+      const { getOllamaBaseUrl, getOllamaModel } = await import('@/lib/settings')
+      const baseUrl = await getOllamaBaseUrl()
+      const model = await getOllamaModel()
+      const client = await resolveOllamaClient(baseUrl)
+
+      await client.chat.completions.create({
+        model,
+        max_tokens: 5,
+        messages: [{ role: 'user', content: 'hi' }],
+      })
+      return NextResponse.json({ working: true })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const friendly = msg.includes('ECONNREFUSED')
+        ? 'Cannot connect to Ollama — is it running? (ollama serve)'
+        : msg.includes('model')
+        ? `Model not found — run: ollama pull <model-name>`
+        : msg.slice(0, 120)
+      return NextResponse.json({ working: false, error: friendly })
+    }
+  }
+
   return NextResponse.json({ error: 'Unknown provider' }, { status: 400 })
 }

@@ -18,16 +18,26 @@ npx next dev
 
 App runs at **http://localhost:3000**
 
-## AI Authentication — No API Key Needed
+## AI Providers
 
-If the user is signed into Claude Code CLI, **Siftly uses their Claude subscription automatically**. No API key configuration required.
+Siftly supports three AI providers — switch between them in Settings:
 
-How it works:
-- `lib/claude-cli-auth.ts` reads the OAuth token from the macOS keychain (`Claude Code-credentials`)
-- Uses `authToken` + `anthropic-beta: oauth-2025-04-20` header in the Anthropic SDK
+### Ollama (Local LLMs — Free, Private)
+1. Install Ollama: https://ollama.com
+2. Start the server: `ollama serve`
+3. Pull a model: `ollama pull llama3.1`
+4. In Siftly Settings, select **Ollama** and pick your model
+5. No API key needed — everything runs locally
+
+### Claude (Anthropic)
+If signed into Claude Code CLI, **Siftly uses your Claude subscription automatically**. No API key needed.
+- `lib/claude-cli-auth.ts` reads the OAuth token from the macOS keychain
 - Falls back to: DB-saved API key → `ANTHROPIC_API_KEY` env var → local proxy
 
-To verify it's working, hit: `GET /api/settings/cli-status`
+### OpenAI
+Set your OpenAI API key in Settings, or use Codex CLI auth.
+
+To verify provider status: `GET /api/settings/cli-status`
 
 ## Key Commands
 
@@ -78,7 +88,7 @@ prisma/schema.prisma  # SQLite schema (Bookmark, Category, MediaItem, Setting, I
 
 - **Next.js 16** (App Router, TypeScript)
 - **Prisma 7** + **SQLite** (local, zero setup, FTS5 built in)
-- **Anthropic SDK** — vision, tagging, categorization, search
+- **Anthropic SDK / OpenAI SDK / Ollama** — vision, tagging, categorization, search
 - **@xyflow/react** — mindmap graph
 - **Tailwind CSS v4**
 

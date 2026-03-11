@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import { resolveAnthropicClient } from './claude-cli-auth'
 import { resolveOpenAIClient } from './openai-auth'
-import { getProvider } from './settings'
+import { getProvider, getOllamaBaseUrl, type AIProvider } from './settings'
 
 export interface AIContentBlock {
   type: 'text' | 'image'
@@ -20,7 +20,7 @@ export interface AIResponse {
 }
 
 export interface AIClient {
-  provider: 'anthropic' | 'openai'
+  provider: AIProvider
   createMessage(params: {
     model: string
     max_tokens: number
@@ -65,10 +65,12 @@ export class AnthropicAIClient implements AIClient {
   }
 }
 
-// Wrap OpenAI SDK
+// Wrap OpenAI SDK (also used for Ollama via OpenAI-compatible API)
 export class OpenAIAIClient implements AIClient {
-  provider = 'openai' as const
-  constructor(private sdk: OpenAI) {}
+  provider: AIProvider
+  constructor(private sdk: OpenAI, provider: AIProvider = 'openai') {
+    this.provider = provider
+  }
 
   async createMessage(params: { model: string; max_tokens: number; messages: AIMessage[] }): Promise<AIResponse> {
     const messages: OpenAI.ChatCompletionMessageParam[] = params.messages.map((m): OpenAI.ChatCompletionMessageParam => {
@@ -99,11 +101,24 @@ export class OpenAIAIClient implements AIClient {
   }
 }
 
+export async function resolveOllamaClient(baseUrl?: string): Promise<OpenAI> {
+  const ollamaBase = baseUrl ?? await getOllamaBaseUrl()
+  return new OpenAI({
+    baseURL: `${ollamaBase}/v1`,
+    apiKey: 'ollama', // Ollama doesn't need a real key, but the SDK requires one
+  })
+}
+
 export async function resolveAIClient(options: {
   overrideKey?: string
   dbKey?: string
 } = {}): Promise<AIClient> {
   const provider = await getProvider()
+
+  if (provider === 'ollama') {
+    const client = await resolveOllamaClient()
+    return new OpenAIAIClient(client, 'ollama')
+  }
 
   if (provider === 'openai') {
     const client = resolveOpenAIClient(options)

@@ -32,6 +32,7 @@ let _categoriesCacheExpiry = 0
 async function getDbApiKey(): Promise<string> {
   if (_apiKey !== null && Date.now() < _apiKeyExpiry) return _apiKey
   const provider = await getProvider()
+  if (provider === 'ollama') { _apiKey = ''; _apiKeyExpiry = Date.now() + 60_000; return '' }
   const keyName = provider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
   const setting = await prisma.setting.findUnique({ where: { key: keyName } })
   const fromDb = setting?.value?.trim() ?? ''
@@ -350,9 +351,12 @@ Constraints:
       : { matches: [], explanation: 'No results found.' }
   }
 
+  // Ollama and other providers: skip CLI path for Ollama (it uses SDK directly)
   // Try CLI first (works with ChatGPT OAuth), then fall back to SDK
   let cliSucceeded = false
-  if (provider === 'openai' && await getCodexCliAvailability()) {
+  if (provider === 'ollama') {
+    // Ollama always uses the SDK path (OpenAI-compatible), skip CLI
+  } else if (provider === 'openai' && await getCodexCliAvailability()) {
     try {
       const result = await codexPrompt(prompt, { timeoutMs: 90_000 })
       if (result.success && result.data) {
