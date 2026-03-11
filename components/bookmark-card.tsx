@@ -630,11 +630,11 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
     (firstMedia.type === 'photo' || isVideoUrl(firstMedia.url))
 
   return (
-    <div className="group relative bg-zinc-900 border border-zinc-800 rounded-2xl hover:border-zinc-700 hover:shadow-xl hover:shadow-black/30 transition-all duration-200 overflow-hidden flex flex-col flex-1">
+    <div className="group relative bg-zinc-900 border border-zinc-800 rounded-2xl hover:border-zinc-700 hover:shadow-xl hover:shadow-black/30 transition-all duration-200 flex flex-col flex-1">
 
       {/* Top media — full bleed, no padding */}
       {firstMedia && (
-        <div className="border-b border-zinc-800/60 flex-shrink-0">
+        <div className="border-b border-zinc-800/60 rounded-t-2xl overflow-hidden shrink-0">
           <TopMediaSlot item={firstMedia} tweetUrl={tweetUrl} />
         </div>
       )}
