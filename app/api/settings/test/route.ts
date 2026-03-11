@@ -53,7 +53,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     let client
     try {
-      client = resolveOpenAIClient({ dbKey })
+      client = await resolveOpenAIClient({ dbKey })
     } catch {
       return NextResponse.json({ working: false, error: 'No OpenAI API key found. Add one in Settings or set up Codex CLI.' })
     }
