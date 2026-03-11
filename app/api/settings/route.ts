@@ -24,7 +24,7 @@ const ALLOWED_OPENAI_MODELS = [
 
 export async function GET(): Promise<NextResponse> {
   try {
-    const [anthropic, anthropicModel, provider, openai, openaiModel, xClientId, xClientSecret] = await Promise.all([
+    const [anthropic, anthropicModel, provider, openai, openaiModel, xClientId, xClientSecret, obsidianVaultPath] = await Promise.all([
       prisma.setting.findUnique({ where: { key: 'anthropicApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'anthropicModel' } }),
       prisma.setting.findUnique({ where: { key: 'aiProvider' } }),
@@ -32,6 +32,7 @@ export async function GET(): Promise<NextResponse> {
       prisma.setting.findUnique({ where: { key: 'openaiModel' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_id' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_secret' } }),
+      prisma.setting.findUnique({ where: { key: 'obsidianVaultPath' } }),
     ])
 
     return NextResponse.json({
@@ -45,6 +46,7 @@ export async function GET(): Promise<NextResponse> {
       xOAuthClientId: maskKey(xClientId?.value ?? null),
       xOAuthClientSecret: maskKey(xClientSecret?.value ?? null),
       hasXOAuth: !!xClientId?.value,
+      obsidianVaultPath: obsidianVaultPath?.value ?? null,
     })
   } catch (err) {
     console.error('Settings GET error:', err)
@@ -159,6 +161,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 500 }
       )
     }
+  }
+
+  // Save Obsidian vault path if provided
+  if ('obsidianVaultPath' in body) {
+    const vaultPath = (body as { obsidianVaultPath?: string }).obsidianVaultPath
+    if (typeof vaultPath !== 'string' || vaultPath.trim() === '') {
+      return NextResponse.json({ error: 'Invalid obsidianVaultPath value' }, { status: 400 })
+    }
+    await prisma.setting.upsert({
+      where: { key: 'obsidianVaultPath' },
+      update: { value: vaultPath.trim() },
+      create: { key: 'obsidianVaultPath', value: vaultPath.trim() },
+    })
+    return NextResponse.json({ saved: true })
   }
 
   // Save X OAuth credentials if provided
