@@ -2,8 +2,7 @@ import prisma from '@/lib/db'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const BEARER =
-  'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA'
+const BEARER = process.env.X_BEARER_TOKEN ?? ''
 
 const FEATURES = JSON.stringify({
   graphql_timeline_v2_bookmark_timeline: true,

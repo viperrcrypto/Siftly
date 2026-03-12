@@ -3,7 +3,7 @@
 
   <h1>Siftly</h1>
 
-  <p><strong>Self-hosted Twitter/X bookmark manager with AI-powered organization</strong></p>
+  <p><strong>Self-hosted Twitter/X bookmark & likes manager with AI-powered organization</strong></p>
 
   <p>Import · Analyze · Categorize · Search · Explore</p>
 
@@ -20,26 +20,26 @@
 
 ## What is Siftly?
 
-Siftly turns your Twitter/X bookmarks into a **searchable, categorized, visual knowledge base** — running entirely on your machine. No cloud, no subscriptions, no browser extensions required. Everything stays local except the AI API calls you configure.
+Siftly turns your Twitter/X **bookmarks and likes** into a **searchable, categorized, visual knowledge base** — running entirely on your machine. No cloud, no subscriptions, no browser extensions required. Everything stays local except the AI API calls you configure.
 
-It runs a **4-stage AI pipeline** on your bookmarks:
+It runs a **4-stage AI pipeline** on your tweets:
 
 ```
-📥 Import (built-in bookmarklet or console script — no extensions needed)
+📥 Import (bookmarklet, file upload, Twitter archive, or Live Import API)
     ↓
 🏷️  Entity Extraction   — mines hashtags, URLs, mentions, and 100+ known tools from raw tweet data (free, zero API calls)
     ↓
 👁️  Vision Analysis      — reads text, objects, and context from every image/GIF/video thumbnail (30–40 visual tags per image)
     ↓
-🧠 Semantic Tagging     — generates 25–35 searchable tags per bookmark for AI-powered search
+🧠 Semantic Tagging     — generates 25–35 searchable tags per tweet for AI-powered search
     ↓
-📂 Categorization       — assigns each bookmark to 1–3 categories with confidence scores
+📂 Categorization       — assigns each tweet to 1–3 categories with confidence scores
 ```
 
 After the pipeline runs, you get:
-- **AI search** — find bookmarks by meaning, not just keywords (*"funny meme about crypto crashing"*)
-- **Interactive mindmap** — explore your entire bookmark graph visually
-- **Filtered browsing** — grid or list view, filter by category, media type, and date
+- **AI search** — find tweets by meaning, not just keywords (*"funny meme about crypto crashing"*)
+- **Interactive mindmap** — explore your entire tweet graph visually
+- **Filtered browsing** — grid or list view, filter by category, source (bookmarks/likes), media type, and date
 - **Export tools** — download media, export as CSV / JSON / ZIP
 
 ---
@@ -120,33 +120,55 @@ New accounts include $5 free credit — enough for thousands of bookmarks at Hai
 
 ---
 
-## Importing Your Bookmarks
+## Importing Your Tweets
 
-Siftly has **built-in import tools** — no browser extensions required. Go to the **Import** page and choose either method:
+Siftly supports **4 import methods** for both bookmarks and likes — no browser extensions required.
 
 ### Method A — Bookmarklet *(Recommended)*
 
 1. Go to **Import** in the Siftly sidebar
 2. Drag the **"Export X Bookmarks"** link to your browser's bookmark bar
-   *(or right-click the bookmark bar → Add Bookmark → paste the URL)*
-3. Go to [x.com/i/bookmarks](https://x.com/i/bookmarks) while logged in to X
-4. Click **"Export X Bookmarks"** in your bookmark bar — a purple button appears on the page
-5. Click **"▶ Auto-scroll"** — the tool scrolls through and captures all your bookmarks automatically
-6. When complete, click the purple **"Export N bookmarks"** button — `bookmarks.json` downloads
-7. Back in Siftly → **Import** → drop or upload the file
+3. Navigate to [x.com/i/bookmarks](https://x.com/i/bookmarks) (or your likes page) while logged in
+4. Click the bookmarklet — a purple capture button appears on the page
+5. Click **"▶ Auto-scroll"** — captures all visible tweets automatically
+6. Export → upload to Siftly
+
+The bookmarklet also captures **quoted tweet content** for more accurate categorization.
 
 ### Method B — Browser Console Script
 
-1. Go to [x.com/i/bookmarks](https://x.com/i/bookmarks) while logged in to X
-2. Open DevTools: press `F12` (Windows/Linux) or `⌘⌥J` (Mac), then go to the **Console** tab
-3. Copy the console script from the Siftly Import page, paste it into the console, and press Enter
-4. Click **"▶ Auto-scroll"** and wait for all bookmarks to be captured
-5. Click the export button — `bookmarks.json` downloads automatically
-6. Back in Siftly → **Import** → upload the file
+1. Open [x.com/i/bookmarks](https://x.com/i/bookmarks) with DevTools Console (`F12` or `⌘⌥J`)
+2. Paste the console script from the Import page, press Enter
+3. Auto-scroll → export → upload
 
-### Re-importing
+### Method C — Twitter Data Archive
 
-Re-import anytime — Siftly automatically skips duplicates and only adds new bookmarks.
+1. Request your data archive from Twitter: Settings → Your Account → Download an archive
+2. Extract the ZIP and find `like.js` or `bookmarks.js`
+3. Upload the `.js` file (or the whole `.zip`) directly to Siftly
+
+Siftly auto-detects the source (bookmarks vs likes) from the archive filename.
+
+### Method D — Live Import API
+
+For direct API access using your Twitter session cookies:
+
+```bash
+curl -X POST http://localhost:3000/api/import/twitter \
+  -H 'Content-Type: application/json' \
+  -d '{"authToken":"YOUR_AUTH_TOKEN","ct0":"YOUR_CT0","source":"bookmark"}'
+```
+
+For likes, add `"source":"like"` and `"userId":"YOUR_USER_ID"`.
+
+> Requires `X_BEARER_TOKEN` in your `.env` file — see `.env.example`.
+
+### Smart Re-importing
+
+Re-import anytime — Siftly handles deduplication intelligently:
+- **Skips** tweets that already exist with equal or better data
+- **Updates** existing tweets when incoming data is richer (longer text from quoted tweets, real author handles replacing `@unknown`, new media)
+- Updated tweets are automatically re-queued for AI categorization
 
 ---
 
@@ -155,7 +177,7 @@ Re-import anytime — Siftly automatically skips duplicates and only adds new bo
 **Categorization starts automatically as soon as you import.** You can also trigger it manually from:
 
 - The **Import** page (after upload)
-- The **Mindmap** page (when bookmarks are uncategorized)
+- The **Mindmap** page (when tweets are uncategorized)
 - The **Categorize** page in the sidebar
 
 ### The 4-Stage Pipeline
@@ -164,10 +186,14 @@ Re-import anytime — Siftly automatically skips duplicates and only adds new bo
 |-------|-------------|
 | **Entity Extraction** | Mines hashtags, URLs, @mentions, and 100+ known tool/product names from stored tweet JSON — free, zero API calls |
 | **Vision Analysis** | Analyzes every image, GIF, and video thumbnail — OCR text, objects, scene, mood, meme templates, 30–40 visual tags per image |
-| **Semantic Tagging** | Generates 25–35 precise search tags per bookmark by combining tweet text + image context. Also extracts sentiment, people, and company names. |
-| **Categorization** | Assigns 1–3 categories per bookmark with confidence scores using all enriched data |
+| **Semantic Tagging** | Generates 25–35 precise search tags per tweet by combining tweet text + image context. Also extracts sentiment, people, and company names. |
+| **Categorization** | Assigns 1–3 categories per tweet with confidence scores using all enriched data |
 
-The pipeline is **incremental** — if interrupted, it picks up where it left off. Use **"Re-run everything (force all)"** to re-analyze bookmarks that were already processed.
+The pipeline is **incremental** — if interrupted, it picks up where it left off. Use **"Re-run everything (force all)"** to re-analyze tweets that were already processed.
+
+### Quote Tweets
+
+Siftly extracts quoted tweet content and appends it to the parent tweet text for better categorization. A tweet that says "The sleep debt is real" but quotes a thread about Claude Code will correctly be categorized as tech — not health.
 
 ---
 
@@ -175,7 +201,7 @@ The pipeline is **incremental** — if interrupted, it picks up where it left of
 
 ### 🔍 AI Search
 
-Natural language queries across all bookmark data:
+Natural language queries across all tweet data:
 
 - *"funny meme about crypto crashing"*
 - *"react hooks tutorial"*
@@ -186,17 +212,17 @@ Searches tweet text, image OCR, visual tags, semantic tags, and categories simul
 
 ### 🗺️ Mindmap
 
-Interactive force-directed graph showing all bookmarks organized by category:
+Interactive force-directed graph showing all tweets organized by category:
 
-- Expand/collapse any category to reveal its bookmarks
-- Click a bookmark node to open the original tweet on X
+- Expand/collapse any category to reveal its tweets
+- Click a tweet node to open the original on X
 - Color-coded legend by category
-- If bookmarks aren't categorized yet, an inline **AI Categorize** button starts the pipeline without leaving the page
+- If tweets aren't categorized yet, an inline **AI Categorize** button starts the pipeline without leaving the page
 
 ### 📚 Browse & Filter
 
 - **Grid view** (masonry layout) or **List view**
-- Filter by category, media type (photo / video), or search text
+- Filter by category, source (bookmarks / likes), media type (photo / video), or search text
 - Sort by newest or oldest
 - Pagination with 24 items per page
 - Active filter chips — removable individually or all at once
@@ -241,6 +267,7 @@ All settings are manageable in the **Settings** page at `/settings` or via envir
 | API Base URL | `ANTHROPIC_BASE_URL` | Custom endpoint for proxies or local Anthropic-compatible models |
 | AI Model | Settings page only | Haiku 4.5 (default, fastest/cheapest), Sonnet 4.6, Opus 4.6 |
 | OpenAI Key | Settings page only | Alternative provider if no Anthropic key is set |
+| X Bearer Token | `X_BEARER_TOKEN` | Required for Live Import API only (see `.env.example`) |
 | Database | `DATABASE_URL` | SQLite file path (default: `file:./prisma/dev.db`) |
 
 ### Custom API Endpoint
@@ -266,9 +293,9 @@ siftly/
 │   │   │   └── [slug]/       # Individual category operations
 │   │   ├── categorize/       # 4-stage AI pipeline (start, status, stop)
 │   │   ├── export/           # CSV, JSON, ZIP export
-│   │   ├── import/           # JSON file import with dedup + auto-pipeline trigger
+│   │   ├── import/           # Multi-format import with dedup + update-on-reimport
 │   │   │   ├── bookmarklet/  # Bookmarklet-specific import endpoint
-│   │   │   └── twitter/      # Twitter-specific import endpoint
+│   │   │   └── twitter/      # Live Import via Twitter GraphQL API (bookmarks + likes)
 │   │   ├── link-preview/     # Server-side OG metadata scraper
 │   │   ├── media/            # Media proxy/download endpoint
 │   │   ├── mindmap/          # Graph nodes + edges for visualization
@@ -306,7 +333,7 @@ siftly/
 │   ├── image-context.ts      # Shared image context builder
 │   ├── fts.ts                # SQLite FTS5 full-text search index
 │   ├── rawjson-extractor.ts  # Entity extraction from raw tweet JSON
-│   ├── parser.ts             # Multi-format JSON parser
+│   ├── parser.ts             # Multi-format JSON parser (bookmarklet, console, Twitter archive)
 │   ├── exporter.ts           # CSV, JSON, ZIP export
 │   ├── types.ts              # Shared TypeScript types
 │   └── db.ts                 # Prisma client singleton
@@ -321,7 +348,7 @@ siftly/
 ### Database Schema
 
 ```
-Bookmark          — tweet text, author, date, raw JSON, semantic tags, enrichment metadata
+Bookmark          — tweet text, author, date, source (bookmark/like), raw JSON, semantic tags, enrichment metadata
   ├── MediaItem   — images / videos / GIFs with AI-generated image tags
   └── BookmarkCategory — category assignments with confidence scores (0–1)
 
@@ -377,6 +404,9 @@ npx next dev
 # Type check
 npx tsc --noEmit
 
+# Run tests
+npm test
+
 # Open database GUI
 npx prisma studio
 
@@ -410,7 +440,7 @@ Add domain strings to `KNOWN_TOOL_DOMAINS` in `lib/rawjson-extractor.ts` to have
 - All data is stored **locally** in a SQLite file on your machine
 - The only external calls are to the AI provider you configure (tweet text + image data)
 - No telemetry, no tracking, no accounts required
-- Your bookmarks never touch any third-party server except your configured AI endpoint
+- Your tweets never touch any third-party server except your configured AI endpoint
 
 ---
 

@@ -2,11 +2,11 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import Link from 'next/link'
-import { Upload, CheckCircle, ChevronRight, Loader2, Copy, Check, ExternalLink, Sparkles, Eye, Tag, Brain, Layers, StopCircle, RefreshCw, Clock, KeyRound, Trash2, AlertCircle, User, LogOut } from 'lucide-react'
+import { Upload, CheckCircle, ChevronRight, Loader2, Copy, Check, ExternalLink, Sparkles, Eye, Tag, Brain, Layers, StopCircle, RefreshCw, Clock, AlertCircle, User, LogOut } from 'lucide-react'
 import * as Progress from '@radix-ui/react-progress'
 
 type Step = 1 | 2 | 3
-type Method = 'bookmarklet' | 'console' | 'live'
+type Method = 'bookmarklet' | 'console' | 'live' | 'archive'
 
 interface ImportResult {
   imported: number
@@ -48,12 +48,12 @@ const STAGE_INFO: Record<NonNullable<Stage>, { label: string; icon: React.ReactN
   enrichment: {
     label: 'Generating semantic tags',
     icon: <Brain size={14} />,
-    desc: 'Creating 30-50 searchable tags per bookmark for AI search',
+    desc: 'Creating 30-50 searchable tags per tweet for AI search',
   },
   categorize: {
     label: 'Categorizing',
     icon: <Layers size={14} />,
-    desc: 'Assigning each bookmark to the most relevant categories',
+    desc: 'Assigning each tweet to the most relevant categories',
   },
   parallel: {
     label: 'Processing all stages in parallel',
@@ -106,11 +106,17 @@ const BOOKMARKLET_SCRIPT = `(async function(){
       }
       return thumb?{type:'photo',url:thumb}:null;
     }).filter(Boolean);
+    var qt=t.quoted_status_result&&t.quoted_status_result.result;
+    var qtLeg=qt&&(qt.legacy||{});
+    var qtUsr=qt&&qt.core&&qt.core.user_results&&qt.core.user_results.result&&qt.core.user_results.result.legacy||{};
+    var quotedText=qtLeg&&qtLeg.full_text?qtLeg.full_text:'';
+    var quotedAuthor=qtUsr.screen_name||'';
     all.push({id:t.rest_id,author:usr.name||'Unknown',handle:'@'+(usr.screen_name||'unknown'),
       avatar:usr.profile_image_url_https||'',timestamp:leg.created_at||'',
       text:leg.full_text||leg.text||'',media:media,
       hashtags:(leg.entities&&leg.entities.hashtags||[]).map(function(h){return h.text;}),
-      urls:(leg.entities&&leg.entities.urls||[]).map(function(u){return u.expanded_url;}).filter(Boolean)});
+      urls:(leg.entities&&leg.entities.urls||[]).map(function(u){return u.expanded_url;}).filter(Boolean),
+      quotedText:quotedText,quotedAuthor:quotedAuthor});
     btn.textContent='Export '+all.length+' '+label+' \u2192';
   }
   function processEntry(e){
@@ -234,11 +240,17 @@ const CONSOLE_SCRIPT = `(async function() {
       }
       return thumb ? { type: 'photo', url: thumb } : null;
     }).filter(Boolean);
+    const qt = t.quoted_status_result?.result;
+    const qtLeg = qt?.legacy ?? {};
+    const qtUsr = qt?.core?.user_results?.result?.legacy ?? {};
+    const quotedText = qtLeg.full_text ?? '';
+    const quotedAuthor = qtUsr.screen_name ?? '';
     all.push({
       id: t.rest_id, author: usr.name ?? 'Unknown', handle: '@' + (usr.screen_name ?? 'unknown'),
       timestamp: leg.created_at ?? '', text: leg.full_text ?? leg.text ?? '', media,
       hashtags: (leg.entities?.hashtags ?? []).map(h => h.text),
-      urls: (leg.entities?.urls ?? []).map(u => u.expanded_url).filter(Boolean)
+      urls: (leg.entities?.urls ?? []).map(u => u.expanded_url).filter(Boolean),
+      quotedText, quotedAuthor
     });
     btn.textContent = \`Export \${all.length} \${label} →\`;
   }
@@ -448,7 +460,7 @@ function UploadZone({ onFile }: { onFile: (file: File) => void }) {
     e.preventDefault()
     setDragging(false)
     const file = e.dataTransfer.files[0]
-    if (file && file.name.endsWith('.json')) onFile(file)
+    if (file && (file.name.endsWith('.json') || file.name.endsWith('.js') || file.name.endsWith('.zip'))) onFile(file)
   }, [onFile])
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -467,9 +479,9 @@ function UploadZone({ onFile }: { onFile: (file: File) => void }) {
       }`}
     >
       <Upload size={28} className="mx-auto mb-3 text-zinc-500" />
-      <p className="text-zinc-300 font-medium text-sm">Drop your JSON file here</p>
+      <p className="text-zinc-300 font-medium text-sm">Drop your JSON, JS, or ZIP file here</p>
       <p className="text-zinc-600 text-xs mt-1">or click to browse</p>
-      <input ref={inputRef} type="file" accept=".json" className="hidden" onChange={handleFileChange} />
+      <input ref={inputRef} type="file" accept=".json,.js,.zip" className="hidden" onChange={handleFileChange} />
     </div>
   )
 }
@@ -879,15 +891,106 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
   )
 }
 
-function InstructionsStep({ onFile, importSource, onLiveSynced }: { onFile: (file: File) => void; importSource: 'bookmark' | 'like'; onLiveSynced: (result: ImportResult) => void }) {
+function ArchiveTab({ onFile }: { onFile: (file: File) => void }) {
+  const steps = [
+    {
+      num: 1,
+      title: (
+        <span>
+          Go to{' '}
+          <a
+            href="https://x.com/settings/download_your_data"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-indigo-400 hover:underline inline-flex items-center gap-1"
+          >
+            x.com → Settings → Download an archive of your data <ExternalLink size={11} />
+          </a>
+        </span>
+      ),
+      content: (
+        <p className="text-xs text-zinc-500 mt-1">
+          You may need to re-verify your password. Click <strong className="text-zinc-300">Request archive</strong> if you haven&apos;t already.
+        </p>
+      ),
+    },
+    {
+      num: 2,
+      title: 'Wait for the email from X, then download and extract the ZIP',
+      content: (
+        <p className="text-xs text-zinc-500 mt-1">
+          X will email you when your archive is ready. This can take anywhere from a few minutes to 24+ hours. Download and unzip the file.
+        </p>
+      ),
+    },
+    {
+      num: 3,
+      title: (
+        <span>
+          Upload <code className="text-xs bg-zinc-800 px-1 py-0.5 rounded">like.js</code> or{' '}
+          <code className="text-xs bg-zinc-800 px-1 py-0.5 rounded">bookmark.js</code> from the{' '}
+          <code className="text-xs bg-zinc-800 px-1 py-0.5 rounded">data/</code> folder
+        </span>
+      ),
+      content: (
+        <div className="text-xs text-zinc-500 mt-1 space-y-1">
+          <p>
+            Inside the extracted archive, look for <code className="text-xs bg-zinc-800 px-1 py-0.5 rounded">data/like.js</code> (your likes) or{' '}
+            <code className="text-xs bg-zinc-800 px-1 py-0.5 rounded">data/bookmark.js</code> (your bookmarks).
+          </p>
+          <p>You can also upload the whole ZIP file directly — Siftly will extract the right files automatically.</p>
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <div className="space-y-6">
+      <div className="text-xs text-zinc-500 space-y-1.5 bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4">
+        <p className="text-zinc-300 font-medium text-sm mb-2 flex items-center gap-2">
+          <Clock size={14} className="text-indigo-400" />
+          Twitter/X Archive Import
+        </p>
+        <p>Import from your official X data archive. This includes all your likes and bookmarks — even very old ones that may no longer load on the website.</p>
+        <p className="text-zinc-600 mt-1">The source (likes vs bookmarks) is detected automatically from the file.</p>
+      </div>
+
+      <ol className="space-y-4">
+        {steps.map((step, i) => (
+          <li key={i} className="flex gap-3">
+            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-400 mt-0.5">
+              {step.num}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm text-zinc-300 leading-relaxed">{step.title}</p>
+              {step.content}
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <div className="border-t border-zinc-800 pt-5">
+        <p className="text-xs text-zinc-500 mb-3 uppercase tracking-wider font-medium">Upload your archive file</p>
+        <UploadZone onFile={onFile} />
+      </div>
+    </div>
+  )
+}
+
+function InstructionsStep({ onFile, importSource, onLiveSynced, onMethodChange }: { onFile: (file: File) => void; importSource: 'bookmark' | 'like'; onLiveSynced: (result: ImportResult) => void; onMethodChange?: (method: Method) => void }) {
   const [method, setMethod] = useState<Method>('bookmarklet')
+
+  function changeMethod(m: Method) {
+    setMethod(m)
+    onMethodChange?.(m)
+  }
 
   return (
     <div>
       {/* Method tabs */}
       <div className="flex gap-1 mb-6 p-1 bg-zinc-800 rounded-xl">
         <button
-          onClick={() => setMethod('live')}
+          onClick={() => changeMethod('live')}
           className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
             method === 'live'
               ? 'bg-zinc-900 text-zinc-100 shadow-sm'
@@ -899,7 +1002,7 @@ function InstructionsStep({ onFile, importSource, onLiveSynced }: { onFile: (fil
           <span className="ml-1.5 text-xs text-indigo-400 font-normal">Recommended</span>
         </button>
         <button
-          onClick={() => setMethod('bookmarklet')}
+          onClick={() => changeMethod('bookmarklet')}
           className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
             method === 'bookmarklet'
               ? 'bg-zinc-900 text-zinc-100 shadow-sm'
@@ -909,7 +1012,7 @@ function InstructionsStep({ onFile, importSource, onLiveSynced }: { onFile: (fil
           Bookmarklet
         </button>
         <button
-          onClick={() => setMethod('console')}
+          onClick={() => changeMethod('console')}
           className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
             method === 'console'
               ? 'bg-zinc-900 text-zinc-100 shadow-sm'
@@ -918,10 +1021,23 @@ function InstructionsStep({ onFile, importSource, onLiveSynced }: { onFile: (fil
         >
           {'</>'} Console
         </button>
+        <button
+          onClick={() => changeMethod('archive')}
+          className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+            method === 'archive'
+              ? 'bg-zinc-900 text-zinc-100 shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-300'
+          }`}
+        >
+          <Clock size={13} className="inline -mt-0.5 mr-1" />
+          Archive
+        </button>
       </div>
 
       {method === 'live' ? (
         <LiveImportTab onSynced={onLiveSynced} />
+      ) : method === 'archive' ? (
+        <ArchiveTab onFile={onFile} />
       ) : method === 'bookmarklet' ? (
         <BookmarkletTab onFile={onFile} importSource={importSource} />
       ) : (
@@ -1204,14 +1320,14 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
           </div>
           <div className="text-center">
             <p className="text-xl font-bold text-zinc-100">Already up to date</p>
-            <p className="text-zinc-500 text-sm mt-1">All bookmarks in this file were already imported</p>
+            <p className="text-zinc-500 text-sm mt-1">All tweets in this file were already imported</p>
           </div>
           <div className="flex items-center gap-3">
             <Link
               href="/bookmarks"
               className="flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
             >
-              View your bookmarks
+              View your tweets
               <ChevronRight size={16} />
             </Link>
             <button
@@ -1256,7 +1372,7 @@ function UncategorizedBanner({ onCategorize, onReprocess }: { onCategorize: () =
           <div className="flex items-center gap-2.5 min-w-0">
             <Sparkles size={15} className="text-indigo-400 shrink-0" />
             <p className="text-sm text-indigo-300">
-              <span className="font-semibold">{uncategorized.toLocaleString()}</span> bookmarks not yet processed
+              <span className="font-semibold">{uncategorized.toLocaleString()}</span> tweets not yet processed
             </p>
           </div>
           <button
@@ -1272,7 +1388,7 @@ function UncategorizedBanner({ onCategorize, onReprocess }: { onCategorize: () =
         <div className="flex items-center gap-2.5 min-w-0">
           <RefreshCw size={15} className="text-zinc-400 shrink-0" />
           <p className="text-sm text-zinc-400">
-            Re-analyze all <span className="font-semibold text-zinc-300">{totalBookmarks.toLocaleString()}</span> bookmarks from scratch
+            Re-analyze all <span className="font-semibold text-zinc-300">{totalBookmarks.toLocaleString()}</span> tweets from scratch
           </p>
         </div>
         <button
@@ -1294,6 +1410,7 @@ export default function ImportPage() {
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState('')
   const [forceReprocess, setForceReprocess] = useState(false)
+  const [currentMethod, setCurrentMethod] = useState<Method>('bookmarklet')
 
   // Auto-resume to step 3 if the pipeline is already running (e.g. user navigated away and back)
   useEffect(() => {
@@ -1317,9 +1434,16 @@ export default function ImportPage() {
     setImportError('')
 
     try {
+      // Detect archive files (.js like like.js/bookmark.js) and auto-set source
+      const isArchiveJs = file.name.endsWith('.js')
+      if (isArchiveJs) {
+        if (file.name.startsWith('like')) setImportSource('like')
+        else if (file.name.startsWith('bookmark')) setImportSource('bookmark')
+      }
+
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('source', importSource)
+      formData.append('source', isArchiveJs && file.name.startsWith('like') ? 'like' : importSource)
 
       const res = await fetch('/api/import', { method: 'POST', body: formData })
       const data = await res.json()
@@ -1339,7 +1463,7 @@ export default function ImportPage() {
 
       if (parsed === 0) {
         // Parser couldn't extract any bookmarks — likely wrong format
-        throw new Error('Could not parse any bookmarks from this file. Make sure you\'re uploading a Twitter/X bookmarks JSON export.')
+        throw new Error('Could not parse any bookmarks from this file. Make sure you\'re uploading a Twitter/X bookmarks or likes export.')
       }
 
       // Auto-advance to categorization after a brief moment to show the result
@@ -1360,8 +1484,8 @@ export default function ImportPage() {
         <p className="text-zinc-400 mt-1">Export your X/Twitter {importSource === 'like' ? 'likes' : 'bookmarks'} as JSON, then upload below.</p>
       </div>
 
-      {/* Source selector */}
-      {step === 1 && (
+      {/* Source selector — hidden for archive (source is auto-detected from file) */}
+      {step === 1 && currentMethod !== 'archive' && (
         <div className="flex gap-2 mb-6">
           <button
             onClick={() => setImportSource('bookmark')}
@@ -1397,7 +1521,7 @@ export default function ImportPage() {
       <StepIndicator current={step} />
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-        {step === 1 && <InstructionsStep onFile={handleFile} importSource={importSource} onLiveSynced={handleLiveSynced} />}
+        {step === 1 && <InstructionsStep onFile={handleFile} importSource={importSource} onLiveSynced={handleLiveSynced} onMethodChange={setCurrentMethod} />}
         {step === 2 && (
           <ImportingStep
             result={importing ? null : importResult}

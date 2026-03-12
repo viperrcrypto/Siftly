@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import prisma from '@/lib/db'
+import { upsertTweets, type IncomingTweet } from '@/lib/upsert-tweet'
 
-const BEARER = 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I%2BxMb1nYFAA%3DUognEfK4ZPxYowpr4nMskopkC%2FDO'
+const BEARER = process.env.X_BEARER_TOKEN ?? ''
 
 const FEATURES = JSON.stringify({
   graphql_timeline_v2_bookmark_timeline: true,
@@ -32,7 +32,7 @@ const FEATURES = JSON.stringify({
 // filter by "graphql", find the "Likes" request, and grab the ID from the URL path.
 const ENDPOINTS = {
   bookmark: {
-    queryId: 'j5KExFXy1niL_uGnBhHNxA',
+    queryId: 'BBxBluh79axE_HJzZPcBDw',
     operationName: 'Bookmarks',
     referer: 'https://x.com/i/bookmarks',
     getInstructions: (d: Record<string, unknown>): unknown[] =>
@@ -40,14 +40,14 @@ const ENDPOINTS = {
       (d as any)?.data?.bookmark_timeline_v2?.timeline?.instructions ?? [],
   },
   like: {
-    // PLACEHOLDER — you must replace this with the real query ID from x.com Network tab
-    queryId: 'REPLACE_ME',
+    queryId: 'zPJ36q7-jHyvvHcmx8yymg',
     operationName: 'Likes',
     referer: 'https://x.com',
     getInstructions: (d: Record<string, unknown>): unknown[] => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const a = d as any
-      return a?.data?.user?.result?.timeline_v2?.timeline?.instructions
+      return a?.data?.user?.result?.timeline?.timeline?.instructions
+        ?? a?.data?.user?.result?.timeline_v2?.timeline?.instructions
         ?? a?.data?.liked_tweets_timeline?.timeline?.instructions
         ?? []
     },
@@ -94,14 +94,27 @@ interface ArticleResult {
   content_state?: { blocks?: ArticleBlock[] }
 }
 
+interface UserResult {
+  legacy?: UserLegacy
+  core?: UserLegacy // New Twitter structure puts screen_name/name here
+}
+
 interface TweetResult {
   __typename?: string
   rest_id?: string
   legacy?: TweetLegacy
-  core?: { user_results?: { result?: { legacy?: UserLegacy } } }
+  core?: { user_results?: { result?: UserResult } }
   note_tweet?: { note_tweet_results?: { result?: { text?: string } } }
   article?: { article_results?: { result?: ArticleResult } }
+  quoted_status_result?: { result?: TweetResult }
   tweet?: TweetResult
+}
+
+function getUserInfo(userResult?: UserResult): { screen_name: string; name: string } {
+  return {
+    screen_name: userResult?.legacy?.screen_name ?? userResult?.core?.screen_name ?? 'unknown',
+    name: userResult?.legacy?.name ?? userResult?.core?.name ?? 'Unknown',
+  }
 }
 
 async function fetchPage(authToken: string, ct0: string, source: Source, cursor?: string, userId?: string) {
@@ -193,24 +206,42 @@ function articleBlocksText(article: ArticleResult): string {
 }
 
 function tweetFullText(tweet: TweetResult): string {
+  let text: string
   if (tweet.note_tweet?.note_tweet_results?.result?.text) {
-    return decodeHtmlEntities(tweet.note_tweet.note_tweet_results.result.text)
-  }
-  const article = tweet.article?.article_results?.result
-  if (article) {
-    const parts: string[] = []
-    if (article.title) parts.push(article.title)
-    if (article.content) parts.push(article.content)
+    text = decodeHtmlEntities(tweet.note_tweet.note_tweet_results.result.text)
+  } else {
+    const article = tweet.article?.article_results?.result
+    if (article) {
+      const parts: string[] = []
+      if (article.title) parts.push(article.title)
+      if (article.content) parts.push(article.content)
 
-    // Fallback: some X articles ship content in content_state.blocks
-    if (parts.length === 0) {
-      const blocks = articleBlocksText(article)
-      if (blocks) parts.push(blocks)
+      // Fallback: some X articles ship content in content_state.blocks
+      if (parts.length === 0) {
+        const blocks = articleBlocksText(article)
+        if (blocks) parts.push(blocks)
+      }
+
+      text = parts.length > 0 ? decodeHtmlEntities(parts.join('\n\n')) : decodeHtmlEntities(tweet.legacy?.full_text ?? '')
+    } else {
+      text = decodeHtmlEntities(tweet.legacy?.full_text ?? '')
     }
-
-    if (parts.length > 0) return decodeHtmlEntities(parts.join('\n\n'))
   }
-  return decodeHtmlEntities(tweet.legacy?.full_text ?? '')
+
+  // Append quoted tweet content for better categorization
+  let qt = tweet.quoted_status_result?.result
+  if (qt?.__typename === 'TweetWithVisibilityResults' && qt.tweet) {
+    qt = qt.tweet
+  }
+  if (qt) {
+    const qtText = qt.legacy?.full_text || qt.note_tweet?.note_tweet_results?.result?.text
+    const qtAuthor = getUserInfo(qt.core?.user_results?.result).screen_name
+    if (qtText) {
+      text += `\n\n[Quote @${qtAuthor}]: ${decodeHtmlEntities(qtText)}`
+    }
+  }
+
+  return text
 }
 
 function extractMedia(tweet: TweetResult) {
@@ -254,6 +285,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const source: Source = body.source === 'like' ? 'like' : 'bookmark'
   const userId = body.userId?.trim()
 
+  if (!BEARER) {
+    return NextResponse.json({ error: 'X_BEARER_TOKEN is not configured. Add it to your .env file.' }, { status: 500 })
+  }
+
   if (!authToken?.trim() || !ct0?.trim()) {
     return NextResponse.json({ error: 'authToken and ct0 are required' }, { status: 400 })
   }
@@ -264,6 +299,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   let imported = 0
   let skipped = 0
+  let updated = 0
+  let errored = 0
   let cursor: string | undefined
 
   try {
@@ -271,49 +308,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const data = await fetchPage(authToken.trim(), ct0.trim(), source, cursor, userId)
       const { tweets, nextCursor } = parsePage(data, source)
 
-      for (const tweet of tweets) {
-        if (!tweet.rest_id) continue
-
-        const exists = await prisma.bookmark.findUnique({
-          where: { tweetId: tweet.rest_id },
-          select: { id: true },
-        })
-
-        if (exists) {
-          skipped++
-          continue
-        }
-
-        const media = extractMedia(tweet)
-        const userLegacy = tweet.core?.user_results?.result?.legacy ?? {}
-
-        const created = await prisma.bookmark.create({
-          data: {
-            tweetId: tweet.rest_id,
+      // Convert raw tweets to IncomingTweet format for the shared upsert
+      const incoming: IncomingTweet[] = tweets
+        .filter((t) => t.rest_id)
+        .map((tweet) => {
+          const { screen_name, name } = getUserInfo(tweet.core?.user_results?.result)
+          return {
+            tweetId: tweet.rest_id!,
             text: tweetFullText(tweet),
-            authorHandle: userLegacy.screen_name ?? 'unknown',
-            authorName: userLegacy.name ?? 'Unknown',
+            authorHandle: screen_name,
+            authorName: name,
             tweetCreatedAt: tweet.legacy?.created_at
               ? new Date(tweet.legacy.created_at)
               : null,
             rawJson: JSON.stringify(tweet),
             source,
-          },
+            media: extractMedia(tweet),
+          }
         })
 
-        if (media.length > 0) {
-          await prisma.mediaItem.createMany({
-            data: media.map((m) => ({
-              bookmarkId: created.id,
-              type: m.type,
-              url: m.url,
-              thumbnailUrl: m.thumbnailUrl ?? null,
-            })),
-          })
-        }
-
-        imported++
-      }
+      const result = await upsertTweets(incoming)
+      imported += result.imported
+      skipped += result.skipped
+      updated += result.updated
+      errored += result.errored
 
       if (!nextCursor || tweets.length === 0) break
       cursor = nextCursor
@@ -325,5 +343,5 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     )
   }
 
-  return NextResponse.json({ imported, skipped })
+  return NextResponse.json({ imported, skipped, updated, errored })
 }

@@ -38,12 +38,12 @@ const STAGE_INFO: Record<NonNullable<Stage>, { label: string; icon: React.ReactN
   enrichment: {
     label: 'Generating semantic tags',
     icon: <Brain size={14} />,
-    desc: 'Creating 30-50 searchable tags per bookmark for AI search',
+    desc: 'Creating 30-50 searchable tags per tweet for AI search',
   },
   categorize: {
     label: 'Categorizing',
     icon: <Layers size={14} />,
-    desc: 'Assigning each bookmark to the most relevant categories',
+    desc: 'Assigning each tweet to the most relevant categories',
   },
   parallel: {
     label: 'Processing all stages in parallel',
@@ -139,7 +139,7 @@ export default function CategorizePage() {
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-medium mb-4">
           <Sparkles size={12} /> AI Categorization
         </div>
-        <h1 className="text-2xl font-bold text-zinc-100">Categorize Bookmarks</h1>
+        <h1 className="text-2xl font-bold text-zinc-100">Categorize Tweets</h1>
         <p className="text-zinc-400 mt-1 text-sm">
           4-stage AI pipeline: vision analysis → entity extraction → semantic tagging → categorization.
         </p>

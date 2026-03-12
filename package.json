@@ -12,7 +12,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "siftly": "tsx cli/siftly.ts"
+    "siftly": "tsx cli/siftly.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -46,6 +47,7 @@
     "prisma": "^7.4.2",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.0.18"
   }
 }

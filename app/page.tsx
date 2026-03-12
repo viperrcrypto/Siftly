@@ -210,7 +210,7 @@ export default async function DashboardPage() {
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          label={data.likeSourceCount > 0 ? `${data.bookmarkSourceCount.toLocaleString()} bookmarks · ${data.likeSourceCount.toLocaleString()} likes` : 'Total Bookmarks'}
+          label={data.likeSourceCount > 0 ? `${data.bookmarkSourceCount.toLocaleString()} bookmarks · ${data.likeSourceCount.toLocaleString()} likes` : 'Total Tweets'}
           value={data.totalBookmarks}
           icon={BookmarkIcon}
           iconColor="text-indigo-400"
@@ -318,10 +318,10 @@ function EmptyState() {
         <div className="flex items-center justify-center w-20 h-20 rounded-3xl bg-indigo-500/10 mx-auto mb-6">
           <BookmarkIcon size={36} className="text-indigo-400 opacity-80" />
         </div>
-        <h2 className="text-2xl font-bold text-zinc-100 mb-3">No bookmarks yet</h2>
+        <h2 className="text-2xl font-bold text-zinc-100 mb-3">No tweets saved yet</h2>
         <p className="text-zinc-400 mb-8 leading-relaxed">
-          Import your Twitter bookmarks to get started. Once imported, use AI to automatically
-          categorize and organize them.
+          Import your Twitter/X bookmarks or likes to get started. Once imported, use AI to
+          automatically categorize and organize them.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Link
@@ -329,7 +329,7 @@ function EmptyState() {
             className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-colors"
           >
             <Upload size={16} />
-            Import bookmarks
+            Import tweets
           </Link>
           <Link
             href="/settings"

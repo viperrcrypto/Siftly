@@ -1,6 +1,6 @@
 # Siftly
 
-Self-hosted Twitter/X bookmark manager with AI-powered categorization, search, and visualization.
+Self-hosted Twitter/X bookmark & likes manager with AI-powered categorization, search, and visualization.
 
 ## Quick Setup
 
@@ -34,6 +34,7 @@ To verify it's working, hit: `GET /api/settings/cli-status`
 ```bash
 npx next dev          # Start dev server (port 3000)
 npx tsc --noEmit      # Type check
+npm test              # Run parser tests (vitest)
 npx prisma studio     # Database GUI
 npx prisma db push    # Apply schema changes to DB
 npm run build         # Production build
@@ -45,7 +46,8 @@ npm run build         # Production build
 app/
   api/
     categorize/       # 4-stage AI pipeline (start/stop/status via SSE)
-    import/           # Bookmark JSON import + dedup
+    import/           # Multi-format import (JSON, .js, .zip) with dedup + update-on-reimport
+      twitter/        # Live Import via Twitter GraphQL API (bookmarks + likes)
     search/ai/        # FTS5 + Claude semantic search
     settings/
       cli-status/     # GET — returns Claude CLI auth status
@@ -68,7 +70,7 @@ lib/
   vision-analyzer.ts  # Image vision + semantic tagging
   fts.ts              # SQLite FTS5 full-text search
   rawjson-extractor.ts # Entity extraction from tweet JSON
-  parser.ts           # Multi-format bookmark JSON parser
+  parser.ts           # Multi-format parser (bookmarklet, console, Twitter archive .js/.zip)
   exporter.ts         # CSV / JSON / ZIP export
 
 prisma/schema.prisma  # SQLite schema (Bookmark, Category, MediaItem, Setting, ImportJob)

@@ -660,7 +660,7 @@ function DataSection() {
     <Section
       icon={Database}
       title="Data Management"
-      description="Export all your bookmarks and category data for backup or migration."
+      description="Export all your tweets and category data for backup or migration."
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <ExportButton
@@ -712,8 +712,8 @@ function DangerZoneSection({ onToast }: { onToast: (t: Toast) => void }) {
     >
       <div className="flex items-center justify-between p-4 rounded-xl bg-red-900/20 border border-red-800/40">
         <div>
-          <p className="text-sm font-medium text-zinc-300">Clear all bookmarks</p>
-          <p className="text-xs text-zinc-500 mt-0.5">Permanently delete all imported bookmarks</p>
+          <p className="text-sm font-medium text-zinc-300">Clear all tweets</p>
+          <p className="text-xs text-zinc-500 mt-0.5">Permanently delete all imported tweets</p>
         </div>
         {cleared ? (
           <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
@@ -774,12 +774,12 @@ function AboutSection() {
   }
 
   return (
-    <Section icon={Info} title="About Siftly" description="Self-hosted Twitter bookmark manager">
+    <Section icon={Info} title="About Siftly" description="Self-hosted Twitter/X bookmark & likes manager">
       <p className="text-sm text-zinc-400 leading-relaxed mb-5">
         <strong className="text-zinc-100 font-semibold">Siftly</strong> is a self-hosted app for
-        organizing your Twitter/X bookmarks. Use the built-in bookmarklet or console script to import,
-        then run the 4-stage AI pipeline to analyze images, extract entities, generate semantic tags, and
-        auto-categorize — then explore connections through the interactive mindmap.
+        organizing your Twitter/X bookmarks and likes. Import via bookmarklet, console script, file upload,
+        or the Live Import API — then run the 4-stage AI pipeline to analyze images, extract entities,
+        generate semantic tags, and auto-categorize. Explore connections through the interactive mindmap.
       </p>
 
       {/* Builder + support row */}
@@ -904,7 +904,7 @@ function XOAuthSection({ onToast }: { onToast: (t: Toast) => void }) {
     <Section
       icon={Shield}
       title="X (Twitter) OAuth 2.0"
-      description="Connect your X account to import bookmarks using the official API."
+      description="Connect your X account to import bookmarks and likes using the official API."
     >
       <div className="space-y-4">
         {savedId ? (

@@ -398,11 +398,11 @@ function BookmarksPageInner() {
               {total > 0 ? (
                 <>
                   <span className="text-zinc-200 font-semibold">{total.toLocaleString()}</span>
-                  {' '}bookmark{total !== 1 ? 's' : ''}
+                  {' '}tweet{total !== 1 ? 's' : ''}
                   {filters.q && <span className="text-zinc-600"> for "{filters.q}"</span>}
                 </>
               ) : (
-                'No bookmarks found'
+                'No tweets found'
               )}
             </p>
           </div>
@@ -421,7 +421,7 @@ function BookmarksPageInner() {
             <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mb-5">
               <BookmarkX size={26} className="text-zinc-700" />
             </div>
-            <h3 className="text-base font-semibold text-zinc-400 mb-2">No bookmarks match your filters</h3>
+            <h3 className="text-base font-semibold text-zinc-400 mb-2">No tweets match your filters</h3>
             <p className="text-zinc-600 text-sm mb-6 max-w-xs">
               Try adjusting your search or removing some filters.
             </p>
