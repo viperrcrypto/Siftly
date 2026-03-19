@@ -32,12 +32,12 @@ let _categoriesCacheExpiry = 0
 async function getDbApiKey(): Promise<string> {
   if (_apiKey !== null && Date.now() < _apiKeyExpiry) return _apiKey
   const provider = await getProvider()
-  const keyName = provider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
+  const keyName = provider === 'openai' ? 'openaiApiKey' : provider === 'pi-ai' ? 'piAiApiKey' : 'anthropicApiKey'
   const setting = await prisma.setting.findUnique({ where: { key: keyName } })
   const fromDb = setting?.value?.trim() ?? ''
   _apiKey = fromDb
   _apiKeyExpiry = Date.now() + 60_000
-  return _apiKey
+  return fromDb
 }
 async function getAllCategories() {
   if (_categoriesCache && Date.now() < _categoriesCacheExpiry) return _categoriesCache

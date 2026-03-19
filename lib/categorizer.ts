@@ -209,25 +209,45 @@ ${JSON.stringify(tweetData, null, 1)}`
 }
 
 function parseCategorizationResponse(text: string, validSlugs: Set<string>): CategorizationResult[] {
-  const jsonMatch = text.match(/\[[\s\S]*\]/)
-  if (!jsonMatch) throw new Error('No JSON array found in AI response')
+  const stripped = text.replace(/```[a-zA-Z]*\s*/g, '').replace(/```/g, '')
+  const objectArrayCandidates = stripped.match(/\[\s*\{[\s\S]*?\}\s*\]/g) ?? []
+  const anyArrayCandidates = stripped.match(/\[[\s\S]*?\]/g) ?? []
+  const objectCandidates = stripped.match(/\{[\s\S]*?\}/g) ?? []
+  const candidates = objectArrayCandidates.length
+    ? objectArrayCandidates
+    : (anyArrayCandidates.length ? anyArrayCandidates : objectCandidates)
 
-  const parsed: unknown = JSON.parse(jsonMatch[0])
-  if (!Array.isArray(parsed)) throw new Error('Claude response is not an array')
+  for (const raw of candidates) {
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      const asArray: Record<string, unknown>[] = Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>[])
+        : (typeof parsed === 'object' && parsed !== null ? [parsed as Record<string, unknown>] : [])
 
-  return (parsed as Record<string, unknown>[]).map((item): CategorizationResult => {
-    const tweetId = String(item.tweetId ?? '')
-    const rawAssignments = Array.isArray(item.assignments) ? item.assignments : []
+      if (asArray.length === 0) continue
 
-    const assignments: CategoryAssignment[] = (rawAssignments as Record<string, unknown>[])
-      .map((a) => ({
-        category: String(a.category ?? ''),
-        confidence: typeof a.confidence === 'number' ? Math.min(1, Math.max(0.5, a.confidence)) : 0.8,
-      }))
-      .filter((a) => validSlugs.has(a.category))
+      const results = asArray.map((item): CategorizationResult => {
+        const tweetId = String(item.tweetId ?? item.id ?? '')
+        const rawAssignments = Array.isArray(item.assignments) ? item.assignments : []
 
-    return { tweetId, assignments }
-  })
+        const assignments: CategoryAssignment[] = (rawAssignments as Record<string, unknown>[])
+          .map((a) => ({
+            category: String(a.category ?? ''),
+            confidence: typeof a.confidence === 'number' ? Math.min(1, Math.max(0.5, a.confidence)) : 0.8,
+          }))
+          .filter((a) => validSlugs.has(a.category))
+
+        return { tweetId, assignments }
+      }).filter((r) => r.tweetId)
+
+      if (results.length === 0) continue
+      return results
+    } catch {
+      // try next candidate
+    }
+  }
+
+  throw new Error('No JSON object/array found in AI response')
 }
 
 export async function categorizeBatch(
@@ -255,7 +275,7 @@ export async function categorizeBatch(
         console.warn('[categorize] Codex CLI failed, falling back to SDK:', result.error)
       }
     }
-  } else {
+  } else if (provider === 'anthropic') {
     if (await getCliAvailability()) {
       const model = await getActiveModel()
       const cliModel = modelNameToCliAlias(model)
@@ -275,7 +295,11 @@ export async function categorizeBatch(
 
   // Fallback to SDK (requires API key)
   if (!client) {
-    throw new Error('No CLI available and no API key configured.')
+    if (provider === 'pi-ai') {
+      client = await resolveAIClient()
+    } else {
+      throw new Error('No CLI available and no API key configured.')
+    }
   }
 
   const model = await getActiveModel()
@@ -285,9 +309,20 @@ export async function categorizeBatch(
     messages: [{ role: 'user', content: prompt }],
   })
 
-  if (!response.text) throw new Error('No text content in AI response')
+  if (!response.text) {
+    throw new Error(`No text content in AI response (provider=${provider} model=${model})`)
+  }
 
-  return parseCategorizationResponse(response.text, new Set(allSlugs))
+  try {
+    return parseCategorizationResponse(response.text, new Set(allSlugs))
+  } catch (err) {
+    const preview = response.text.replace(/\s+/g, ' ').slice(0, 700)
+    console.warn(
+      `[categorize] response parse failed provider=${provider} model=${model} len=${response.text.length} ` +
+        `preview=${JSON.stringify(preview)}`,
+    )
+    throw err
+  }
 }
 
 export async function writeCategoryResults(results: CategorizationResult[]): Promise<void> {
@@ -399,7 +434,7 @@ export async function categorizeAll(
 
   // Resolve auth once — avoids re-resolving inside every batch call
   const provider = await getProvider()
-  const keyName = provider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
+  const keyName = provider === 'openai' ? 'openaiApiKey' : provider === 'pi-ai' ? 'piAiApiKey' : 'anthropicApiKey'
   const apiKeySetting = await prisma.setting.findUnique({ where: { key: keyName } })
   let client: AIClient | null = null
   try {

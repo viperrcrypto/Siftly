@@ -24,12 +24,18 @@ const ALLOWED_OPENAI_MODELS = [
 
 export async function GET(): Promise<NextResponse> {
   try {
-    const [anthropic, anthropicModel, provider, openai, openaiModel, xClientId, xClientSecret] = await Promise.all([
+    const [anthropic, anthropicModel, provider, openai, openaiModel, piAiKey, piAiProvider, piAiModel, piAiBaseUrl, piAiHeaders, piAiCompat, xClientId, xClientSecret] = await Promise.all([
       prisma.setting.findUnique({ where: { key: 'anthropicApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'anthropicModel' } }),
       prisma.setting.findUnique({ where: { key: 'aiProvider' } }),
       prisma.setting.findUnique({ where: { key: 'openaiApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'openaiModel' } }),
+      prisma.setting.findUnique({ where: { key: 'piAiApiKey' } }),
+      prisma.setting.findUnique({ where: { key: 'piAiProvider' } }),
+      prisma.setting.findUnique({ where: { key: 'piAiModel' } }),
+      prisma.setting.findUnique({ where: { key: 'piAiBaseUrl' } }),
+      prisma.setting.findUnique({ where: { key: 'piAiHeaders' } }),
+      prisma.setting.findUnique({ where: { key: 'piAiCompat' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_id' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_secret' } }),
     ])
@@ -42,6 +48,13 @@ export async function GET(): Promise<NextResponse> {
       openaiApiKey: maskKey(openai?.value ?? null),
       hasOpenaiKey: openai !== null,
       openaiModel: openaiModel?.value ?? 'gpt-4.1-mini',
+      piAiApiKey: maskKey(piAiKey?.value ?? null),
+      hasPiAiKey: piAiKey !== null,
+      piAiProvider: piAiProvider?.value ?? 'openai',
+      piAiModel: piAiModel?.value ?? 'gpt-4o-mini',
+      piAiBaseUrl: piAiBaseUrl?.value ?? null,
+      piAiHeaders: piAiHeaders?.value ?? null,
+      piAiCompat: piAiCompat?.value ?? null,
       xOAuthClientId: maskKey(xClientId?.value ?? null),
       xOAuthClientSecret: maskKey(xClientSecret?.value ?? null),
       hasXOAuth: !!xClientId?.value,
@@ -62,6 +75,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     provider?: string
     openaiApiKey?: string
     openaiModel?: string
+    piAiApiKey?: string
+    piAiProvider?: string
+    piAiModel?: string
+    piAiBaseUrl?: string
+    piAiHeaders?: string
+    piAiCompat?: string
     xOAuthClientId?: string
     xOAuthClientSecret?: string
   } = {}
@@ -75,7 +94,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Save provider if provided
   if (provider !== undefined) {
-    if (provider !== 'anthropic' && provider !== 'openai') {
+    if (provider !== 'anthropic' && provider !== 'openai' && provider !== 'pi-ai') {
       return NextResponse.json({ error: 'Invalid provider' }, { status: 400 })
     }
     await prisma.setting.upsert({
@@ -83,6 +102,91 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       update: { value: provider },
       create: { key: 'aiProvider', value: provider },
     })
+    invalidateSettingsCache()
+    return NextResponse.json({ saved: true })
+  }
+
+  // Save pi-ai fields if provided
+  const { piAiApiKey, piAiProvider, piAiModel, piAiBaseUrl, piAiHeaders, piAiCompat } = body
+
+  const hasAnyPiAiField =
+    piAiApiKey !== undefined ||
+    piAiProvider !== undefined ||
+    piAiModel !== undefined ||
+    piAiBaseUrl !== undefined ||
+    piAiHeaders !== undefined ||
+    piAiCompat !== undefined
+
+  if (hasAnyPiAiField) {
+    if (piAiApiKey !== undefined) {
+      if (typeof piAiApiKey !== 'string' || piAiApiKey.trim() === '') {
+        return NextResponse.json({ error: 'Invalid piAiApiKey value' }, { status: 400 })
+      }
+    }
+    if (piAiProvider !== undefined) {
+      if (typeof piAiProvider !== 'string' || piAiProvider.trim() === '') {
+        return NextResponse.json({ error: 'Invalid piAiProvider value' }, { status: 400 })
+      }
+    }
+    if (piAiModel !== undefined) {
+      if (typeof piAiModel !== 'string' || piAiModel.trim() === '') {
+        return NextResponse.json({ error: 'Invalid piAiModel value' }, { status: 400 })
+      }
+    }
+    if (piAiBaseUrl !== undefined) {
+      if (typeof piAiBaseUrl !== 'string') {
+        return NextResponse.json({ error: 'Invalid piAiBaseUrl value' }, { status: 400 })
+      }
+    }
+    if (piAiHeaders !== undefined) {
+      if (typeof piAiHeaders !== 'string') {
+        return NextResponse.json({ error: 'Invalid piAiHeaders value' }, { status: 400 })
+      }
+      const trimmed = piAiHeaders.trim()
+      if (trimmed) {
+        try {
+          const parsed = JSON.parse(trimmed) as unknown
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+            return NextResponse.json({ error: 'piAiHeaders must be a JSON object' }, { status: 400 })
+          }
+        } catch {
+          return NextResponse.json({ error: 'piAiHeaders must be valid JSON' }, { status: 400 })
+        }
+      }
+    }
+    if (piAiCompat !== undefined) {
+      if (typeof piAiCompat !== 'string') {
+        return NextResponse.json({ error: 'Invalid piAiCompat value' }, { status: 400 })
+      }
+      const trimmed = piAiCompat.trim()
+      if (trimmed) {
+        try {
+          const parsed = JSON.parse(trimmed) as unknown
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+            return NextResponse.json({ error: 'piAiCompat must be a JSON object' }, { status: 400 })
+          }
+        } catch {
+          return NextResponse.json({ error: 'piAiCompat must be valid JSON' }, { status: 400 })
+        }
+      }
+    }
+
+    const toUpsert: { key: string; value: string }[] = []
+    if (piAiApiKey !== undefined) toUpsert.push({ key: 'piAiApiKey', value: piAiApiKey.trim() })
+    if (piAiProvider !== undefined) toUpsert.push({ key: 'piAiProvider', value: piAiProvider.trim() })
+    if (piAiModel !== undefined) toUpsert.push({ key: 'piAiModel', value: piAiModel.trim() })
+    if (piAiBaseUrl !== undefined) toUpsert.push({ key: 'piAiBaseUrl', value: piAiBaseUrl.trim() })
+    if (piAiHeaders !== undefined) toUpsert.push({ key: 'piAiHeaders', value: piAiHeaders.trim() })
+    if (piAiCompat !== undefined) toUpsert.push({ key: 'piAiCompat', value: piAiCompat.trim() })
+
+    for (const { key, value } of toUpsert) {
+      await prisma.setting.upsert({
+        where: { key },
+        update: { value },
+        create: { key, value },
+      })
+    }
+
     invalidateSettingsCache()
     return NextResponse.json({ saved: true })
   }
@@ -198,7 +302,7 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const allowed = ['anthropicApiKey', 'openaiApiKey', 'x_oauth_client_id', 'x_oauth_client_secret']
+  const allowed = ['anthropicApiKey', 'openaiApiKey', 'piAiApiKey', 'piAiProvider', 'piAiModel', 'piAiBaseUrl', 'piAiHeaders', 'piAiCompat', 'x_oauth_client_id', 'x_oauth_client_secret']
   if (!body.key || !allowed.includes(body.key)) {
     return NextResponse.json({ error: 'Invalid key' }, { status: 400 })
   }

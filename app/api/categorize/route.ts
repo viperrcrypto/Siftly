@@ -111,7 +111,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   if (apiKey && typeof apiKey === 'string' && apiKey.trim() !== '') {
     const currentProvider = await getProvider()
-    const keySlot = currentProvider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
+    const keySlot = currentProvider === 'openai' ? 'openaiApiKey' : currentProvider === 'pi-ai' ? 'piAiApiKey' : 'anthropicApiKey'
     await prisma.setting.upsert({
       where: { key: keySlot },
       update: { value: apiKey.trim() },
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   })
 
   const provider = await getProvider()
-  const keyName = provider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
+  const keyName = provider === 'openai' ? 'openaiApiKey' : provider === 'pi-ai' ? 'piAiApiKey' : 'anthropicApiKey'
   const dbApiKey =
     (await prisma.setting.findUnique({ where: { key: keyName } }))?.value?.trim() || ''
 

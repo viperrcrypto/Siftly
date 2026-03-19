@@ -88,7 +88,9 @@ async function analyzeImageViaCli(imageUrl: string): Promise<string> {
     const jsonMatch = result.data.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return ''
     try { JSON.parse(jsonMatch[0]); return jsonMatch[0] } catch { return '' }
-  } else {
+  }
+
+  if (provider === 'anthropic') {
     if (!(await getCliAvailability())) return ''
     const model = await getActiveModel()
     const cliModel = modelNameToCliAlias(model)
@@ -98,6 +100,8 @@ async function analyzeImageViaCli(imageUrl: string): Promise<string> {
     if (!jsonMatch) return ''
     try { JSON.parse(jsonMatch[0]); return jsonMatch[0] } catch { return '' }
   }
+
+  return ''
 }
 
 async function analyzeImageWithRetry(
@@ -381,18 +385,33 @@ export async function enrichBatchSemanticTags(
   const provider = await getProvider()
 
   // Helper to parse enrichment response
-  const parseResponse = (text: string): EnrichmentResult[] => {
-    const match = text.match(/\[[\s\S]*\]/)
-    if (!match) return []
-    const parsed: unknown = JSON.parse(match[0])
-    if (!Array.isArray(parsed)) return []
-    return (parsed as Record<string, unknown>[]).map((item): EnrichmentResult => ({
-      id: String(item.id ?? ''),
-      tags: Array.isArray(item.tags) ? (item.tags as unknown[]).map(String).filter(Boolean) : [],
-      sentiment: String(item.sentiment ?? 'neutral'),
-      people: Array.isArray(item.people) ? (item.people as unknown[]).map(String).filter(Boolean) : [],
-      companies: Array.isArray(item.companies) ? (item.companies as unknown[]).map(String).filter(Boolean) : [],
-    })).filter((r) => r.id)
+  const parseResponse = (text: string): { results: EnrichmentResult[]; candidates: string[] } => {
+    const stripped = text.replace(/```[a-zA-Z]*\s*/g, '').replace(/```/g, '')
+    const objectArrayCandidates = stripped.match(/\[\s*\{[\s\S]*?\}\s*\]/g) ?? []
+    const anyArrayCandidates = stripped.match(/\[[\s\S]*?\]/g) ?? []
+    const candidates = objectArrayCandidates.length ? objectArrayCandidates : anyArrayCandidates
+
+    for (const raw of candidates) {
+      try {
+        const parsed: unknown = JSON.parse(raw)
+        if (!Array.isArray(parsed)) continue
+        const results = (parsed as Record<string, unknown>[])
+          .map((item): EnrichmentResult => ({
+            id: String(item.id ?? ''),
+            tags: Array.isArray(item.tags) ? (item.tags as unknown[]).map(String).filter(Boolean) : [],
+            sentiment: String(item.sentiment ?? 'neutral'),
+            people: Array.isArray(item.people) ? (item.people as unknown[]).map(String).filter(Boolean) : [],
+            companies: Array.isArray(item.companies) ? (item.companies as unknown[]).map(String).filter(Boolean) : [],
+          }))
+          .filter((r) => r.id)
+
+        if (results.length === 0) continue
+        return { results, candidates }
+      } catch {
+        // try next candidate
+      }
+    }
+    return { results: [], candidates }
   }
 
   // Prefer CLI over SDK
@@ -400,18 +419,18 @@ export async function enrichBatchSemanticTags(
     if (await getCodexCliAvailability()) {
       const result = await codexPrompt(prompt, { timeoutMs: 90_000 })
       if (result.success && result.data) {
-        try { return parseResponse(result.data) }
+        try { return parseResponse(result.data).results }
         catch { console.warn('[enrich] Codex CLI response parse failed, falling back to SDK') }
       }
     }
-  } else {
+  } else if (provider === 'anthropic') {
     if (await getCliAvailability()) {
       const model = await getActiveModel()
       const cliModel = modelNameToCliAlias(model)
 
       const result = await claudePrompt(prompt, { model: cliModel, timeoutMs: 90_000 })
       if (result.success && result.data) {
-        try { return parseResponse(result.data) }
+        try { return parseResponse(result.data).results }
         catch { console.warn('[enrich] CLI response parse failed, falling back to SDK') }
       }
     }
@@ -433,9 +452,17 @@ export async function enrichBatchSemanticTags(
         max_tokens: 4096,
         messages: [{ role: 'user', content: prompt }],
       })
-      const results = parseResponse(response.text)
+      const parsed = parseResponse(response.text)
+      const results = parsed.results
       if (results.length > 0) return results
-      console.warn(`[enrich] no JSON array in response (attempt ${attempt + 1})`)
+      const preview = response.text
+        .replace(/\s+/g, ' ')
+        .slice(0, 700)
+
+      console.warn(
+        `[enrich] no JSON array in response (attempt ${attempt + 1}) provider=${provider} model=${model} ` +
+          `len=${response.text.length} candidates=${parsed.candidates.length} preview=${JSON.stringify(preview)}`,
+      )
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
       console.warn(`[enrich] batch failed (attempt ${attempt + 1}): ${errMsg.slice(0, 120)}`)

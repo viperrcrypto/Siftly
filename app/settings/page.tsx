@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ChangeEvent } from 'react'
 import {
   Eye,
   EyeOff,
@@ -106,7 +106,7 @@ function ApiKeyField({
 }: {
   label: string
   placeholder: string
-  fieldKey: 'anthropicApiKey' | 'openaiApiKey'
+  fieldKey: 'anthropicApiKey' | 'openaiApiKey' | 'piAiApiKey'
   hint: string
   docHref: string
   onToast: (t: Toast) => void
@@ -125,7 +125,11 @@ function ApiKeyField({
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d: Record<string, unknown>) => {
-        const hasKeyField = fieldKey === 'openaiApiKey' ? 'hasOpenaiKey' : 'hasAnthropicKey'
+        const hasKeyField = fieldKey === 'openaiApiKey'
+          ? 'hasOpenaiKey'
+          : fieldKey === 'piAiApiKey'
+          ? 'hasPiAiKey'
+          : 'hasAnthropicKey'
         const hasKey = d[hasKeyField]
         const masked = d[fieldKey] as string | null
         if (hasKey && masked) setSavedMasked(masked)
@@ -344,7 +348,7 @@ function ModelSelector({
         <div className="relative flex-1">
           <select
             value={value}
-            onChange={(e) => void handleChange(e.target.value)}
+            onChange={(e: ChangeEvent<HTMLSelectElement>) => void handleChange(e.target.value)}
             className="w-full appearance-none pl-3 pr-8 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
           >
             {models.map((m) => (
@@ -495,7 +499,7 @@ function CodexCliStatusBox() {
   )
 }
 
-function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; onChange: (v: 'anthropic' | 'openai') => void }) {
+function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai' | 'pi-ai'; onChange: (v: 'anthropic' | 'openai' | 'pi-ai') => void }) {
   return (
     <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-800 border border-zinc-700 mb-5">
       <button
@@ -518,23 +522,133 @@ function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; on
       >
         OpenAI (GPT)
       </button>
+      <button
+        onClick={() => onChange('pi-ai')}
+        className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          value === 'pi-ai'
+            ? 'bg-zinc-700 text-white shadow-sm'
+            : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+      >
+        pi-ai (Multi-model)
+      </button>
     </div>
   )
 }
 
 function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
-  const [provider, setProvider] = useState<'anthropic' | 'openai' | null>(null)
+  const [provider, setProvider] = useState<'anthropic' | 'openai' | 'pi-ai' | null>(null)
+  const [piAiPreset, setPiAiPreset] = useState('')
+  const [piAiProvider, setPiAiProvider] = useState('openai')
+  const [piAiModel, setPiAiModel] = useState('gpt-4o-mini')
+  const [piAiBaseUrl, setPiAiBaseUrl] = useState('')
+  const [piAiHeaders, setPiAiHeaders] = useState('')
+  const [piAiCompat, setPiAiCompat] = useState('')
+  const [piAiSaved, setPiAiSaved] = useState(false)
+  const [piAiTesting, setPiAiTesting] = useState(false)
+  const [piAiTestStatus, setPiAiTestStatus] = useState<'idle' | 'ok' | 'fail'>('idle')
+  const [piAiTestError, setPiAiTestError] = useState('')
+
+  async function testPiAiConfig() {
+    if (piAiTesting) return
+    setPiAiTesting(true)
+    setPiAiTestStatus('idle')
+    setPiAiTestError('')
+    try {
+      const res = await fetch('/api/settings/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'pi-ai',
+          message: 'ping',
+          ...(piAiProvider.trim() ? { piAiProvider } : {}),
+          ...(piAiModel.trim() ? { piAiModel } : {}),
+          ...(piAiBaseUrl.trim() ? { piAiBaseUrl } : {}),
+          ...(piAiHeaders.trim() ? { piAiHeaders } : {}),
+          ...(piAiCompat.trim() ? { piAiCompat } : {}),
+        }),
+      })
+
+      const data = await res.json().catch(() => ({})) as { working?: boolean; error?: string }
+      const errMsg = data.error ?? 'pi-ai ping failed'
+
+      if (!res.ok) {
+        setPiAiTestStatus('fail')
+        setPiAiTestError(errMsg)
+        onToast({ type: 'error', message: errMsg })
+        return
+      }
+
+      if (data.working) {
+        setPiAiTestStatus('ok')
+        onToast({ type: 'success', message: 'pi-ai config is working (ping)' })
+      } else {
+        setPiAiTestStatus('fail')
+        setPiAiTestError(errMsg)
+        onToast({ type: 'error', message: errMsg })
+      }
+    } catch (err) {
+      console.error('pi-ai ping test failed:', err)
+      const msg = err instanceof Error ? err.message : 'pi-ai ping failed'
+      setPiAiTestStatus('fail')
+      setPiAiTestError(msg)
+      onToast({ type: 'error', message: msg })
+    } finally {
+      setPiAiTesting(false)
+    }
+  }
+
+  function applyPiAiPreset(presetId: string) {
+    if (presetId === 'openai-gpt4o-mini') {
+      setPiAiProvider('openai')
+      setPiAiModel('gpt-4o-mini')
+      setPiAiBaseUrl('')
+      setPiAiHeaders('')
+      setPiAiCompat('')
+      return
+    }
+    if (presetId === 'openrouter-gpt4o-mini') {
+      setPiAiProvider('openrouter')
+      setPiAiModel('openai/gpt-4o-mini')
+      setPiAiBaseUrl('')
+      setPiAiHeaders('{"HTTP-Referer":"http://localhost:3000","X-Title":"Siftly"}')
+      setPiAiCompat('')
+      return
+    }
+    if (presetId === 'groq-llama-31-70b') {
+      setPiAiProvider('groq')
+      setPiAiModel('llama-3.1-70b-versatile')
+      setPiAiBaseUrl('')
+      setPiAiHeaders('')
+      setPiAiCompat('')
+      return
+    }
+    if (presetId === 'ollama-local') {
+      setPiAiProvider('openai')
+      setPiAiModel('llama3.1')
+      setPiAiBaseUrl('http://localhost:11434/v1')
+      setPiAiHeaders('')
+      setPiAiCompat('')
+      return
+    }
+  }
 
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
-      .then((d: { provider?: string }) => {
-        setProvider(d.provider === 'openai' ? 'openai' : 'anthropic')
+      .then((d: Record<string, unknown>) => {
+        const p = d.provider === 'openai' ? 'openai' : d.provider === 'pi-ai' ? 'pi-ai' : 'anthropic'
+        setProvider(p)
+        if (typeof d.piAiProvider === 'string') setPiAiProvider(d.piAiProvider)
+        if (typeof d.piAiModel === 'string') setPiAiModel(d.piAiModel)
+        if (typeof d.piAiBaseUrl === 'string' && d.piAiBaseUrl) setPiAiBaseUrl(d.piAiBaseUrl)
+        if (typeof d.piAiHeaders === 'string' && d.piAiHeaders) setPiAiHeaders(d.piAiHeaders)
+        if (typeof d.piAiCompat === 'string' && d.piAiCompat) setPiAiCompat(d.piAiCompat)
       })
       .catch(() => setProvider('anthropic'))
   }, [])
 
-  async function handleProviderChange(newProvider: 'anthropic' | 'openai') {
+  async function handleProviderChange(newProvider: 'anthropic' | 'openai' | 'pi-ai') {
     const prev = provider
     setProvider(newProvider)
     try {
@@ -544,7 +658,7 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
         body: JSON.stringify({ provider: newProvider }),
       })
       if (!res.ok) throw new Error('Failed to save provider')
-      onToast({ type: 'success', message: `Switched to ${newProvider === 'openai' ? 'OpenAI' : 'Anthropic'}` })
+      onToast({ type: 'success', message: `Switched to ${newProvider === 'openai' ? 'OpenAI' : newProvider === 'pi-ai' ? 'pi-ai' : 'Anthropic'}` })
     } catch {
       setProvider(prev) // revert on failure
       onToast({ type: 'error', message: 'Failed to save provider preference' })
@@ -598,7 +712,7 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
             </div>
           </div>
         </>
-      ) : (
+      ) : provider === 'openai' ? (
         <>
           <CodexCliStatusBox />
           <div className="space-y-5">
@@ -619,6 +733,159 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
                 onToast={onToast}
               />
               <p className="text-xs text-zinc-500 mt-1.5">Applies to all AI operations — API key <strong className="text-zinc-400 font-medium">and Codex CLI</strong></p>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="space-y-5">
+            <div>
+              <ApiKeyField
+                label="pi-ai API Key"
+                placeholder="sk-..."
+                fieldKey="piAiApiKey"
+                hint="Used for all AI operations when provider is pi-ai."
+                docHref="https://github.com/badlogic/pi-mono/tree/main/packages/ai"
+                onToast={onToast}
+                testProvider="pi-ai"
+              />
+
+              <div className="mt-4">
+                <p className="text-sm font-medium text-zinc-300 mb-2">Preset</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    value={piAiPreset}
+                    onChange={(e: ChangeEvent<HTMLSelectElement>) => {
+                      const presetId = e.target.value
+                      setPiAiPreset(presetId)
+                      if (presetId) applyPiAiPreset(presetId)
+                    }}
+                    className="w-full appearance-none pl-3 pr-8 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+                  >
+                    <option value="">Custom</option>
+                    <option value="openai-gpt4o-mini">OpenAI — gpt-4o-mini</option>
+                    <option value="openrouter-gpt4o-mini">OpenRouter — openai/gpt-4o-mini</option>
+                    <option value="groq-llama-31-70b">Groq — llama-3.1-70b-versatile</option>
+                    <option value="ollama-local">Ollama (local) — llama3.1 @ http://localhost:11434/v1</option>
+                  </select>
+                  <button
+                    onClick={() => {
+                      if (!piAiPreset) return
+                      applyPiAiPreset(piAiPreset)
+                      onToast({ type: 'success', message: 'Preset applied' })
+                    }}
+                    disabled={!piAiPreset}
+                    className="px-5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-750 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-200 text-sm font-medium transition-colors shrink-0"
+                  >
+                    Apply
+                  </button>
+                </div>
+                <p className="text-xs text-zinc-600 mt-1.5">Presets fill the fields below. You can edit anything after applying.</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+                <div>
+                  <p className="text-sm font-medium text-zinc-300 mb-2">Provider ID</p>
+                  <input
+                    value={piAiProvider}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setPiAiProvider(e.target.value)}
+                    placeholder="openai | anthropic | google | groq | openrouter | ..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 text-sm focus:outline-none focus:border-indigo-500 transition-all duration-200"
+                  />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-zinc-300 mb-2">Model ID</p>
+                  <input
+                    value={piAiModel}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setPiAiModel(e.target.value)}
+                    placeholder="gpt-4o-mini"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 text-sm focus:outline-none focus:border-indigo-500 transition-all duration-200"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <p className="text-sm font-medium text-zinc-300 mb-2">Base URL (optional)</p>
+                <input
+                  value={piAiBaseUrl}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => setPiAiBaseUrl(e.target.value)}
+                  placeholder="http://localhost:11434/v1"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 text-sm focus:outline-none focus:border-indigo-500 transition-all duration-200"
+                />
+                <p className="text-xs text-zinc-600 mt-1.5">Set this for any OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, LiteLLM, etc.).</p>
+              </div>
+
+              <div className="mt-4">
+                <p className="text-sm font-medium text-zinc-300 mb-2">Headers JSON (optional)</p>
+                <textarea
+                  value={piAiHeaders}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setPiAiHeaders(e.target.value)}
+                  placeholder='{"Authorization":"Bearer ..."}'
+                  rows={3}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 text-sm focus:outline-none focus:border-indigo-500 transition-all duration-200 font-mono"
+                />
+              </div>
+
+              <div className="mt-4">
+                <p className="text-sm font-medium text-zinc-300 mb-2">Compat JSON (optional)</p>
+                <textarea
+                  value={piAiCompat}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setPiAiCompat(e.target.value)}
+                  placeholder='{"supportsDeveloperRole":false}'
+                  rows={3}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 text-sm focus:outline-none focus:border-indigo-500 transition-all duration-200 font-mono"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPiAiSaved(false)
+                    void fetch('/api/settings', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        piAiProvider,
+                        piAiModel,
+                        piAiBaseUrl,
+                        piAiHeaders,
+                        piAiCompat,
+                      }),
+                    }).then((r) => {
+                      if (!r.ok) throw new Error('Failed')
+                      setPiAiSaved(true)
+                      setTimeout(() => setPiAiSaved(false), 2000)
+                    }).catch(() => onToast({ type: 'error', message: 'Failed to save pi-ai settings' }))
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors"
+                >
+                  Save pi-ai config
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void testPiAiConfig()}
+                  disabled={piAiTesting}
+                  className="px-5 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-750 disabled:opacity-50 disabled:cursor-not-allowed text-zinc-200 text-sm font-medium transition-colors"
+                >
+                  {piAiTesting ? 'Testing…' : 'Test config (ping)'}
+                </button>
+                {piAiTestStatus === 'ok' && (
+                  <span className="flex items-center gap-1 text-xs text-emerald-400">
+                    <Check size={12} /> Working
+                  </span>
+                )}
+                {piAiTestStatus === 'fail' && (
+                  <span className="flex items-center gap-1 text-xs text-red-400" title={piAiTestError}>
+                    <X size={12} /> Failed
+                  </span>
+                )}
+                {piAiSaved && (
+                  <span className="flex items-center gap-1 text-xs text-emerald-400">
+                    <Check size={12} /> Saved
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </>
@@ -756,7 +1023,7 @@ function DangerZoneSection({ onToast }: { onToast: (t: Toast) => void }) {
 const TECH_STACK = [
   { label: 'Next.js 15', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
   { label: 'Prisma + SQLite', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
-  { label: 'Anthropic / OpenAI', color: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
+  { label: 'Anthropic / OpenAI / pi-ai', color: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
   { label: 'React Flow', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
   { label: 'Tailwind CSS', color: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' },
 ]
@@ -834,9 +1101,13 @@ function XOAuthSection({ onToast }: { onToast: (t: Toast) => void }) {
   const [clientSecret, setClientSecret] = useState('')
   const [savedId, setSavedId] = useState<string | null>(null)
   const [savedSecret, setSavedSecret] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
+  const [callbackUrl, setCallbackUrl] = useState('/api/import/x-oauth/callback')
+
   useEffect(() => {
+    setLoading(true)
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d: Record<string, unknown>) => {
@@ -896,9 +1167,9 @@ function XOAuthSection({ onToast }: { onToast: (t: Toast) => void }) {
     }
   }
 
-  const callbackUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/api/import/x-oauth/callback`
-    : '/api/import/x-oauth/callback'
+  useEffect(() => {
+    setCallbackUrl(`${window.location.origin}/api/import/x-oauth/callback`)
+  }, [])
 
   return (
     <Section

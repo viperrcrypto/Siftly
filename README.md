@@ -120,6 +120,97 @@ New accounts include $5 free credit — enough for thousands of bookmarks at Hai
 
 ---
 
+## pi-ai (Multi-model provider)
+
+Siftly supports a third AI provider option: **`pi-ai`**.
+
+This uses [`@mariozechner/pi-ai`](https://github.com/badlogic/pi-mono/tree/main/packages/ai) to talk to many providers and models, including **OpenAI-compatible endpoints**.
+
+### Configure in the UI (recommended)
+
+1. Go to **Settings → AI Provider**
+2. Select **pi-ai (Multi-model)**
+3. Fill in:
+
+| Field | Meaning |
+|------:|---------|
+| `pi-ai API Key` | The provider API key (if required) |
+| `Provider ID` | Provider identifier supported by pi-ai (e.g. `openai`, `openrouter`, `groq`, `anthropic`, `google`, …) |
+| `Model ID` | Model identifier for that provider |
+| `Base URL` (optional) | For OpenAI-compatible servers (Ollama, vLLM, LM Studio, LiteLLM, custom gateways) |
+| `Headers JSON` (optional) | Extra headers added to requests (JSON object) |
+| `Compat JSON` (optional) | Compatibility tweaks (JSON object) |
+
+Then click **Save pi-ai config** and use the **Test** button to verify connectivity.
+
+### Sample configuration (LM Studio local server on M4 pro 48GB)
+
+- Provider ID: `openai`
+- Model ID: `zai-org/glm-4.6v-flash`
+- Base URL: `http://127.0.0.1:1234/v1`
+
+### Environment variable overrides
+
+You can also override pi-ai settings via env vars (useful for Docker / deployments):
+
+```bash
+PI_AI_API_KEY=...
+PI_AI_BASE_URL=...
+PI_AI_HEADERS='{"Authorization":"Bearer ..."}'
+PI_AI_COMPAT='{}'
+
+# aliases also supported
+PIAI_API_KEY=...
+PIAI_BASE_URL=...
+```
+
+### Example presets
+
+#### OpenAI
+
+- Provider ID: `openai`
+- Model ID: `gpt-4o-mini`
+- Base URL: *(empty)*
+
+#### OpenRouter
+
+- Provider ID: `openrouter`
+- Model ID: `openai/gpt-4o-mini` *(or any OpenRouter model slug)*
+- Base URL: *(empty)*
+- Headers JSON (optional):
+
+```json
+{ "HTTP-Referer": "http://localhost:3000", "X-Title": "Siftly" }
+```
+
+#### Groq
+
+- Provider ID: `groq`
+- Model ID: `llama-3.1-70b-versatile`
+- Base URL: *(empty)*
+
+#### Local OpenAI-compatible (Ollama)
+
+This works with any server exposing an OpenAI-compatible API.
+
+- Provider ID: `openai`
+- Model ID: `llama3.1`
+- Base URL: `http://localhost:11434/v1`
+
+If your endpoint does not require a key, you can leave the API key blank.
+
+### Smoke test
+
+After configuring `pi-ai` in Settings:
+
+1. Click **Test** next to your pi-ai key.
+2. Run the pipeline on a small import to confirm:
+   - Vision analysis
+   - Semantic tags
+   - Categorization
+
+---
+
 ## Importing Your Bookmarks
 
 Siftly has **built-in import tools** — no browser extensions required. Go to the **Import** page and choose either method:

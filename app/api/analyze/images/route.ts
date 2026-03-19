@@ -24,7 +24,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const provider = await getProvider()
-  const keyName = provider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
+  const keyName = provider === 'openai' ? 'openaiApiKey' : provider === 'pi-ai' ? 'piAiApiKey' : 'anthropicApiKey'
   const setting = await prisma.setting.findUnique({ where: { key: keyName } })
   const dbKey = setting?.value?.trim()
 
