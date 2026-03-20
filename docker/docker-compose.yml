@@ -9,6 +9,11 @@ services:
       - "3000:3000"
     env_file:
       - .env
+    environment:
+      # Override DATABASE_URL from .env to point at the persistent volume mount.
+      # Without this, SQLite is written inside the image at /app/prisma/dev.db
+      # and all data is lost whenever the container is rebuilt or replaced.
+      - DATABASE_URL=file:/data/siftly.db
     volumes:
       - siftly_data:/data
     restart: unless-stopped
