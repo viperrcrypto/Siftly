@@ -22,14 +22,22 @@ const ALLOWED_OPENAI_MODELS = [
   'o3',
 ] as const
 
+const ALLOWED_XAI_MODELS = [
+  'grok-4-fast-reasoning',
+  'grok-4.20-0309-reasoning',
+  'grok-code-fast-1',
+] as const
+
 export async function GET(): Promise<NextResponse> {
   try {
-    const [anthropic, anthropicModel, provider, openai, openaiModel, xClientId, xClientSecret] = await Promise.all([
+    const [anthropic, anthropicModel, provider, openai, openaiModel, xai, xaiModel, xClientId, xClientSecret] = await Promise.all([
       prisma.setting.findUnique({ where: { key: 'anthropicApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'anthropicModel' } }),
       prisma.setting.findUnique({ where: { key: 'aiProvider' } }),
       prisma.setting.findUnique({ where: { key: 'openaiApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'openaiModel' } }),
+      prisma.setting.findUnique({ where: { key: 'xaiApiKey' } }),
+      prisma.setting.findUnique({ where: { key: 'xaiModel' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_id' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_secret' } }),
     ])
@@ -42,6 +50,9 @@ export async function GET(): Promise<NextResponse> {
       openaiApiKey: maskKey(openai?.value ?? null),
       hasOpenaiKey: openai !== null,
       openaiModel: openaiModel?.value ?? 'gpt-4.1-mini',
+      xAIApiKey: maskKey(xai?.value ?? null),
+      hasXAIKey: xai !== null,
+      xAIModel: xaiModel?.value ?? 'grok-4-fast-reasoning',
       xOAuthClientId: maskKey(xClientId?.value ?? null),
       xOAuthClientSecret: maskKey(xClientSecret?.value ?? null),
       hasXOAuth: !!xClientId?.value,
@@ -62,6 +73,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     provider?: string
     openaiApiKey?: string
     openaiModel?: string
+    xAIApiKey?: string
+    xAIModel?: string
     xOAuthClientId?: string
     xOAuthClientSecret?: string
   } = {}
@@ -71,11 +84,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { anthropicApiKey, anthropicModel, provider, openaiApiKey, openaiModel } = body
+  const { anthropicApiKey, anthropicModel, provider, openaiApiKey, openaiModel, xAIApiKey, xAIModel } = body
 
   // Save provider if provided
   if (provider !== undefined) {
-    if (provider !== 'anthropic' && provider !== 'openai') {
+    if (provider !== 'anthropic' && provider !== 'openai' && provider !== 'xai') {
       return NextResponse.json({ error: 'Invalid provider' }, { status: 400 })
     }
     await prisma.setting.upsert({
@@ -110,6 +123,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       where: { key: 'openaiModel' },
       update: { value: openaiModel },
       create: { key: 'openaiModel', value: openaiModel },
+    })
+    invalidateSettingsCache()
+    return NextResponse.json({ saved: true })
+  }
+
+  // Save xAI model if provided
+  if (xAIModel !== undefined) {
+    if (!(ALLOWED_XAI_MODELS as readonly string[]).includes(xAIModel)) {
+      return NextResponse.json({ error: 'Invalid xAI model' }, { status: 400 })
+    }
+    await prisma.setting.upsert({
+      where: { key: 'xaiModel' },
+      update: { value: xAIModel },
+      create: { key: 'xaiModel', value: xAIModel },
     })
     invalidateSettingsCache()
     return NextResponse.json({ saved: true })
@@ -161,6 +188,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // Save xAI key if provided
+  if (xAIApiKey !== undefined) {
+    if (typeof xAIApiKey !== 'string' || xAIApiKey.trim() === '') {
+      return NextResponse.json({ error: 'Invalid xAIApiKey value' }, { status: 400 })
+    }
+    const trimmed = xAIApiKey.trim()
+    try {
+      await prisma.setting.upsert({
+        where: { key: 'xaiApiKey' },
+        update: { value: trimmed },
+        create: { key: 'xaiApiKey', value: trimmed },
+      })
+      invalidateSettingsCache()
+      return NextResponse.json({ saved: true })
+    } catch (err) {
+      console.error('Settings POST (xai) error:', err)
+      return NextResponse.json(
+        { error: `Failed to save: ${err instanceof Error ? err.message : String(err)}` },
+        { status: 500 }
+      )
+    }
+  }
+
   // Save X OAuth credentials if provided
   const { xOAuthClientId, xOAuthClientSecret } = body
   const xKeys: { key: string; value: string | undefined }[] = [
@@ -198,7 +248,7 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const allowed = ['anthropicApiKey', 'openaiApiKey', 'x_oauth_client_id', 'x_oauth_client_secret']
+  const allowed = ['anthropicApiKey', 'openaiApiKey', 'xAIApiKey', 'x_oauth_client_id', 'x_oauth_client_secret']
   if (!body.key || !allowed.includes(body.key)) {
     return NextResponse.json({ error: 'Invalid key' }, { status: 400 })
   }

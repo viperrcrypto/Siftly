@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { resolveAnthropicClient, getCliAuthStatus } from '@/lib/claude-cli-auth'
 import { resolveOpenAIClient } from '@/lib/openai-auth'
+import { resolveXAIClient } from '@/lib/xai-auth'
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let body: { provider?: string } = {}
@@ -61,6 +62,35 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
       await client.chat.completions.create({
         model: 'gpt-4.1-mini',
+        max_tokens: 5,
+        messages: [{ role: 'user', content: 'hi' }],
+      })
+      return NextResponse.json({ working: true })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const friendly = msg.includes('401') || msg.includes('invalid_api_key')
+        ? 'Invalid API key'
+        : msg.includes('403')
+        ? 'Key does not have permission'
+        : msg.slice(0, 120)
+      return NextResponse.json({ working: false, error: friendly })
+    }
+  }
+
+  if (provider === 'xai') {
+    const setting = await prisma.setting.findUnique({ where: { key: 'xaiApiKey' } })
+    const dbKey = setting?.value?.trim()
+
+    let client
+    try {
+      client = resolveXAIClient({ dbKey })
+    } catch {
+      return NextResponse.json({ working: false, error: 'No xAI API key found. Add one in Settings.' })
+    }
+
+    try {
+      await client.chat.completions.create({
+        model: 'grok-4-fast-reasoning',
         max_tokens: 5,
         messages: [{ role: 'user', content: 'hi' }],
       })
