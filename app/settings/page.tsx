@@ -36,6 +36,12 @@ const OPENAI_MODELS = [
   { value: 'o3', label: 'o3', description: 'Reasoning' },
 ]
 
+const MINIMAX_MODELS = [
+  { value: 'MiniMax-M2.7', label: 'M2.7', description: '1M Context, Latest' },
+  { value: 'MiniMax-M2.5', label: 'M2.5', description: '204K Context' },
+  { value: 'MiniMax-M2.5-highspeed', label: 'M2.5 Highspeed', description: '204K, Fastest' },
+]
+
 
 interface Toast {
   type: 'success' | 'error'
@@ -106,7 +112,7 @@ function ApiKeyField({
 }: {
   label: string
   placeholder: string
-  fieldKey: 'anthropicApiKey' | 'openaiApiKey'
+  fieldKey: 'anthropicApiKey' | 'openaiApiKey' | 'minimaxApiKey'
   hint: string
   docHref: string
   onToast: (t: Toast) => void
@@ -125,7 +131,7 @@ function ApiKeyField({
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d: Record<string, unknown>) => {
-        const hasKeyField = fieldKey === 'openaiApiKey' ? 'hasOpenaiKey' : 'hasAnthropicKey'
+        const hasKeyField = fieldKey === 'openaiApiKey' ? 'hasOpenaiKey' : fieldKey === 'minimaxApiKey' ? 'hasMinimaxKey' : 'hasAnthropicKey'
         const hasKey = d[hasKeyField]
         const masked = d[fieldKey] as string | null
         if (hasKey && masked) setSavedMasked(masked)
@@ -305,7 +311,7 @@ function ModelSelector({
   onToast,
 }: {
   models: { value: string; label: string; description: string }[]
-  settingKey: 'anthropicModel' | 'openaiModel'
+  settingKey: 'anthropicModel' | 'openaiModel' | 'minimaxModel'
   defaultValue: string
   onToast: (t: Toast) => void
 }) {
@@ -495,7 +501,7 @@ function CodexCliStatusBox() {
   )
 }
 
-function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; onChange: (v: 'anthropic' | 'openai') => void }) {
+function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai' | 'minimax'; onChange: (v: 'anthropic' | 'openai' | 'minimax') => void }) {
   return (
     <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-800 border border-zinc-700 mb-5">
       <button
@@ -506,7 +512,7 @@ function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; on
             : 'text-zinc-400 hover:text-zinc-200'
         }`}
       >
-        Anthropic (Claude)
+        Anthropic
       </button>
       <button
         onClick={() => onChange('openai')}
@@ -516,27 +522,38 @@ function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; on
             : 'text-zinc-400 hover:text-zinc-200'
         }`}
       >
-        OpenAI (GPT)
+        OpenAI
+      </button>
+      <button
+        onClick={() => onChange('minimax')}
+        className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          value === 'minimax'
+            ? 'bg-orange-600 text-white shadow-sm'
+            : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+      >
+        MiniMax
       </button>
     </div>
   )
 }
 
 function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
-  const [provider, setProvider] = useState<'anthropic' | 'openai' | null>(null)
+  const [provider, setProvider] = useState<'anthropic' | 'openai' | 'minimax' | null>(null)
 
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d: { provider?: string }) => {
-        setProvider(d.provider === 'openai' ? 'openai' : 'anthropic')
+        setProvider(d.provider === 'openai' ? 'openai' : d.provider === 'minimax' ? 'minimax' : 'anthropic')
       })
       .catch(() => setProvider('anthropic'))
   }, [])
 
-  async function handleProviderChange(newProvider: 'anthropic' | 'openai') {
+  async function handleProviderChange(newProvider: 'anthropic' | 'openai' | 'minimax') {
     const prev = provider
     setProvider(newProvider)
+    const labels: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', minimax: 'MiniMax' }
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
@@ -544,7 +561,7 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
         body: JSON.stringify({ provider: newProvider }),
       })
       if (!res.ok) throw new Error('Failed to save provider')
-      onToast({ type: 'success', message: `Switched to ${newProvider === 'openai' ? 'OpenAI' : 'Anthropic'}` })
+      onToast({ type: 'success', message: `Switched to ${labels[newProvider]}` })
     } catch {
       setProvider(prev) // revert on failure
       onToast({ type: 'error', message: 'Failed to save provider preference' })
@@ -598,7 +615,7 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
             </div>
           </div>
         </>
-      ) : (
+      ) : provider === 'openai' ? (
         <>
           <CodexCliStatusBox />
           <div className="space-y-5">
@@ -622,6 +639,27 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
             </div>
           </div>
         </>
+      ) : (
+        <div className="space-y-5">
+          <div>
+            <ApiKeyField
+              label="MiniMax"
+              placeholder="eyJ..."
+              fieldKey="minimaxApiKey"
+              hint="Used for AI categorization, search, and image analysis."
+              docHref="https://platform.minimaxi.com/user-center/basic-information/interface-key"
+              onToast={onToast}
+              testProvider="minimax"
+            />
+            <ModelSelector
+              models={MINIMAX_MODELS}
+              settingKey="minimaxModel"
+              defaultValue="MiniMax-M2.7"
+              onToast={onToast}
+            />
+            <p className="text-xs text-zinc-500 mt-1.5">MiniMax M2.7 supports 1M context window — great for large batch categorization</p>
+          </div>
+        </div>
       )}
       <p className="text-xs text-zinc-600 mt-4">Keys are stored in plaintext in your local SQLite database (<code className="font-mono">prisma/dev.db</code>). Do not expose the database file.</p>
     </Section>
@@ -756,7 +794,7 @@ function DangerZoneSection({ onToast }: { onToast: (t: Toast) => void }) {
 const TECH_STACK = [
   { label: 'Next.js 15', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
   { label: 'Prisma + SQLite', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
-  { label: 'Anthropic / OpenAI', color: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
+  { label: 'Anthropic / OpenAI / MiniMax', color: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
   { label: 'React Flow', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
   { label: 'Tailwind CSS', color: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' },
 ]
