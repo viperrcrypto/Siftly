@@ -22,14 +22,22 @@ const ALLOWED_OPENAI_MODELS = [
   'o3',
 ] as const
 
+const ALLOWED_MINIMAX_MODELS = [
+  'MiniMax-M2.7',
+  'MiniMax-M2.5',
+  'MiniMax-M2.5-highspeed',
+] as const
+
 export async function GET(): Promise<NextResponse> {
   try {
-    const [anthropic, anthropicModel, provider, openai, openaiModel, xClientId, xClientSecret] = await Promise.all([
+    const [anthropic, anthropicModel, provider, openai, openaiModel, minimax, minimaxModel, xClientId, xClientSecret] = await Promise.all([
       prisma.setting.findUnique({ where: { key: 'anthropicApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'anthropicModel' } }),
       prisma.setting.findUnique({ where: { key: 'aiProvider' } }),
       prisma.setting.findUnique({ where: { key: 'openaiApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'openaiModel' } }),
+      prisma.setting.findUnique({ where: { key: 'minimaxApiKey' } }),
+      prisma.setting.findUnique({ where: { key: 'minimaxModel' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_id' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_secret' } }),
     ])
@@ -42,6 +50,9 @@ export async function GET(): Promise<NextResponse> {
       openaiApiKey: maskKey(openai?.value ?? null),
       hasOpenaiKey: openai !== null,
       openaiModel: openaiModel?.value ?? 'gpt-4.1-mini',
+      minimaxApiKey: maskKey(minimax?.value ?? null),
+      hasMinimaxKey: minimax !== null,
+      minimaxModel: minimaxModel?.value ?? 'MiniMax-M2.7',
       xOAuthClientId: maskKey(xClientId?.value ?? null),
       xOAuthClientSecret: maskKey(xClientSecret?.value ?? null),
       hasXOAuth: !!xClientId?.value,
@@ -62,6 +73,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     provider?: string
     openaiApiKey?: string
     openaiModel?: string
+    minimaxApiKey?: string
+    minimaxModel?: string
     xOAuthClientId?: string
     xOAuthClientSecret?: string
   } = {}
@@ -71,11 +84,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { anthropicApiKey, anthropicModel, provider, openaiApiKey, openaiModel } = body
+  const { anthropicApiKey, anthropicModel, provider, openaiApiKey, openaiModel, minimaxApiKey, minimaxModel } = body
 
   // Save provider if provided
   if (provider !== undefined) {
-    if (provider !== 'anthropic' && provider !== 'openai') {
+    if (provider !== 'anthropic' && provider !== 'openai' && provider !== 'minimax') {
       return NextResponse.json({ error: 'Invalid provider' }, { status: 400 })
     }
     await prisma.setting.upsert({
@@ -110,6 +123,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       where: { key: 'openaiModel' },
       update: { value: openaiModel },
       create: { key: 'openaiModel', value: openaiModel },
+    })
+    invalidateSettingsCache()
+    return NextResponse.json({ saved: true })
+  }
+
+  // Save MiniMax model if provided
+  if (minimaxModel !== undefined) {
+    if (!(ALLOWED_MINIMAX_MODELS as readonly string[]).includes(minimaxModel)) {
+      return NextResponse.json({ error: 'Invalid MiniMax model' }, { status: 400 })
+    }
+    await prisma.setting.upsert({
+      where: { key: 'minimaxModel' },
+      update: { value: minimaxModel },
+      create: { key: 'minimaxModel', value: minimaxModel },
     })
     invalidateSettingsCache()
     return NextResponse.json({ saved: true })
@@ -161,6 +188,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // Save MiniMax key if provided
+  if (minimaxApiKey !== undefined) {
+    if (typeof minimaxApiKey !== 'string' || minimaxApiKey.trim() === '') {
+      return NextResponse.json({ error: 'Invalid minimaxApiKey value' }, { status: 400 })
+    }
+    const trimmed = minimaxApiKey.trim()
+    try {
+      await prisma.setting.upsert({
+        where: { key: 'minimaxApiKey' },
+        update: { value: trimmed },
+        create: { key: 'minimaxApiKey', value: trimmed },
+      })
+      invalidateSettingsCache()
+      return NextResponse.json({ saved: true })
+    } catch (err) {
+      console.error('Settings POST (minimax) error:', err)
+      return NextResponse.json(
+        { error: `Failed to save: ${err instanceof Error ? err.message : String(err)}` },
+        { status: 500 }
+      )
+    }
+  }
+
   // Save X OAuth credentials if provided
   const { xOAuthClientId, xOAuthClientSecret } = body
   const xKeys: { key: string; value: string | undefined }[] = [
@@ -198,7 +248,7 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const allowed = ['anthropicApiKey', 'openaiApiKey', 'x_oauth_client_id', 'x_oauth_client_secret']
+  const allowed = ['anthropicApiKey', 'openaiApiKey', 'minimaxApiKey', 'x_oauth_client_id', 'x_oauth_client_secret']
   if (!body.key || !allowed.includes(body.key)) {
     return NextResponse.json({ error: 'Invalid key' }, { status: 400 })
   }

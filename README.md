@@ -240,7 +240,9 @@ All settings are manageable in the **Settings** page at `/settings` or via envir
 | Anthropic API Key | `ANTHROPIC_API_KEY` | Optional if Claude CLI is signed in — otherwise required for AI features |
 | API Base URL | `ANTHROPIC_BASE_URL` | Custom endpoint for proxies or local Anthropic-compatible models |
 | AI Model | Settings page only | Haiku 4.5 (default, fastest/cheapest), Sonnet 4.6, Opus 4.6 |
-| OpenAI Key | Settings page only | Alternative provider if no Anthropic key is set |
+| OpenAI Key | `OPENAI_API_KEY` | Alternative provider — GPT-4.1 Mini/Nano/Full, o4-mini, o3 |
+| MiniMax Key | `MINIMAX_API_KEY` | Alternative provider — M2.7 (1M context), M2.5, M2.5-highspeed |
+| MiniMax Base URL | `MINIMAX_BASE_URL` | Custom MiniMax API endpoint (default: `https://api.minimax.io/v1`) |
 | Database | `DATABASE_URL` | SQLite file path (default: `file:./prisma/dev.db`) |
 
 ### Custom API Endpoint
@@ -354,6 +356,7 @@ For Prisma command and workflow details, see:
 | [SQLite](https://sqlite.org) | — | Local database — zero setup, includes FTS5 |
 | [Tailwind CSS](https://tailwindcss.com) | v4 | Styling |
 | [Anthropic SDK](https://docs.anthropic.com) | — | Vision, semantic tagging, categorization, search |
+| [MiniMax](https://platform.minimaxi.com) | — | Alternative AI provider (M2.7 1M context, M2.5) |
 | [@xyflow/react](https://xyflow.com) | 12 | Interactive mindmap graph |
 | [Framer Motion](https://www.framer.com/motion/) | 12 | Animations |
 | [Radix UI](https://www.radix-ui.com) | — | Accessible UI primitives |
