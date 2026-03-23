@@ -4,11 +4,14 @@ import prisma from '@/lib/db'
 let _cachedModel: string | null = null
 let _modelCacheExpiry = 0
 
-let _cachedProvider: 'anthropic' | 'openai' | null = null
+let _cachedProvider: 'anthropic' | 'openai' | 'xai' | null = null
 let _providerCacheExpiry = 0
 
 let _cachedOpenAIModel: string | null = null
 let _openAIModelCacheExpiry = 0
+
+let _cachedXAIModel: string | null = null
+let _xaiModelCacheExpiry = 0
 
 const CACHE_TTL = 5 * 60 * 1000
 
@@ -26,10 +29,10 @@ export async function getAnthropicModel(): Promise<string> {
 /**
  * Get the active AI provider (cached for 5 minutes).
  */
-export async function getProvider(): Promise<'anthropic' | 'openai'> {
+export async function getProvider(): Promise<'anthropic' | 'openai' | 'xai'> {
   if (_cachedProvider && Date.now() < _providerCacheExpiry) return _cachedProvider
   const setting = await prisma.setting.findUnique({ where: { key: 'aiProvider' } })
-  _cachedProvider = setting?.value === 'openai' ? 'openai' : 'anthropic'
+  _cachedProvider = setting?.value === 'openai' ? 'openai' : setting?.value === 'xai' ? 'xai' : 'anthropic'
   _providerCacheExpiry = Date.now() + CACHE_TTL
   return _cachedProvider
 }
@@ -46,11 +49,24 @@ export async function getOpenAIModel(): Promise<string> {
 }
 
 /**
+ * Get the configured xAI model from settings (cached for 5 minutes).
+ */
+export async function getXAIModel(): Promise<string> {
+  if (_cachedXAIModel && Date.now() < _xaiModelCacheExpiry) return _cachedXAIModel
+  const setting = await prisma.setting.findUnique({ where: { key: 'xaiModel' } })
+  _cachedXAIModel = setting?.value ?? 'grok-4-fast-reasoning'
+  _xaiModelCacheExpiry = Date.now() + CACHE_TTL
+  return _cachedXAIModel
+}
+
+/**
  * Get the model for the currently active provider.
  */
 export async function getActiveModel(): Promise<string> {
   const provider = await getProvider()
-  return provider === 'openai' ? getOpenAIModel() : getAnthropicModel()
+  if (provider === 'openai') return getOpenAIModel()
+  if (provider === 'xai') return getXAIModel()
+  return getAnthropicModel()
 }
 
 /**
@@ -63,4 +79,6 @@ export function invalidateSettingsCache(): void {
   _providerCacheExpiry = 0
   _cachedOpenAIModel = null
   _openAIModelCacheExpiry = 0
+  _cachedXAIModel = null
+  _xaiModelCacheExpiry = 0
 }

@@ -2,11 +2,11 @@ import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import { resolveAnthropicClient } from './claude-cli-auth'
 import { resolveOpenAIClient } from './openai-auth'
+import { resolveXAIClient } from './xai-auth'
 import { getProvider } from './settings'
 
 export interface AIContentBlock {
   type: 'text' | 'image'
-  text?: string
   source?: { type: 'base64'; media_type: string; data: string }
 }
 
@@ -20,7 +20,7 @@ export interface AIResponse {
 }
 
 export interface AIClient {
-  provider: 'anthropic' | 'openai'
+  provider: 'anthropic' | 'openai' | 'xai'
   createMessage(params: {
     model: string
     max_tokens: number
@@ -99,6 +99,40 @@ export class OpenAIAIClient implements AIClient {
   }
 }
 
+// Wrap xAI SDK (assuming xAI API is OpenAI-compatible; adjust if not)
+export class XAIAIClient implements AIClient {
+  provider = 'xai' as const
+  constructor(private sdk: OpenAI) {} // Reuse OpenAI SDK if xAI is compatible
+
+  async createMessage(params: { model: string; max_tokens: number; messages: AIMessage[] }): Promise<AIResponse> {
+    const messages: OpenAI.ChatCompletionMessageParam[] = params.messages.map((m): OpenAI.ChatCompletionMessageParam => {
+      if (typeof m.content === 'string') {
+        if (m.role === 'assistant') return { role: 'assistant' as const, content: m.content }
+        return { role: 'user' as const, content: m.content }
+      }
+      const parts: OpenAI.ChatCompletionContentPart[] = m.content.map(b => {
+        if (b.type === 'image' && b.source) {
+          return {
+            type: 'image_url' as const,
+            image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` },
+          }
+        }
+        return { type: 'text' as const, text: b.text ?? '' }
+      })
+      if (m.role === 'assistant') return { role: 'assistant' as const, content: parts.map(p => p.type === 'text' ? p : p).filter((p): p is OpenAI.ChatCompletionContentPartText => p.type === 'text') }
+      return { role: 'user' as const, content: parts }
+    })
+
+    const completion = await this.sdk.chat.completions.create({
+      model: params.model,
+      max_tokens: params.max_tokens,
+      messages,
+    })
+
+    return { text: completion.choices[0]?.message?.content ?? '' }
+  }
+}
+
 export async function resolveAIClient(options: {
   overrideKey?: string
   dbKey?: string
@@ -108,6 +142,11 @@ export async function resolveAIClient(options: {
   if (provider === 'openai') {
     const client = resolveOpenAIClient(options)
     return new OpenAIAIClient(client)
+  }
+
+  if (provider === 'xai') {
+    const client = resolveXAIClient(options)
+    return new XAIAIClient(client)
   }
 
   const client = resolveAnthropicClient(options)
