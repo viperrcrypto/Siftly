@@ -36,6 +36,12 @@ const OPENAI_MODELS = [
   { value: 'o3', label: 'o3', description: 'Reasoning' },
 ]
 
+const xAI_MODELS = [
+  { value: 'grok-4-fast-reasoning', label: 'grok-4-fast-reasoning', description: 'Fast & Cheap' },
+  { value: 'grok-4.20-0309-reasoning', label: 'grok-4.20-0309-reasoning', description: 'Smart & Balanced' },
+  { value: 'grok-code-fast-1', label: 'grok-code-fast-1', description: 'Most Capable' },
+]
+
 
 interface Toast {
   type: 'success' | 'error'
@@ -106,7 +112,7 @@ function ApiKeyField({
 }: {
   label: string
   placeholder: string
-  fieldKey: 'anthropicApiKey' | 'openaiApiKey'
+  fieldKey: 'anthropicApiKey' | 'openaiApiKey' | 'xAIApiKey'
   hint: string
   docHref: string
   onToast: (t: Toast) => void
@@ -305,7 +311,7 @@ function ModelSelector({
   onToast,
 }: {
   models: { value: string; label: string; description: string }[]
-  settingKey: 'anthropicModel' | 'openaiModel'
+  settingKey: 'anthropicModel' | 'openaiModel' | 'xAIModel'
   defaultValue: string
   onToast: (t: Toast) => void
 }) {
@@ -495,7 +501,7 @@ function CodexCliStatusBox() {
   )
 }
 
-function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; onChange: (v: 'anthropic' | 'openai') => void }) {
+function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai' | 'xAI'; onChange: (v: 'anthropic' | 'openai' |'xAI') => void }) {
   return (
     <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-800 border border-zinc-700 mb-5">
       <button
@@ -517,6 +523,16 @@ function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; on
         }`}
       >
         OpenAI (GPT)
+      </button>
+      <button
+        onClick={() => onChange('xAI')}
+        className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          value === 'xAI'
+            ? 'bg-emerald-600 text-white shadow-sm'
+            : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+      >
+        xAI (Grok)
       </button>
     </div>
   )
