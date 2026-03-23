@@ -131,7 +131,7 @@ function ApiKeyField({
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d: Record<string, unknown>) => {
-        const hasKeyField = fieldKey === 'openaiApiKey' ? 'hasOpenaiKey' : 'hasAnthropicKey'
+        const hasKeyField = fieldKey === 'openaiApiKey' ? 'hasOpenaiKey' : fieldKey === 'xAIApiKey' ? 'hasXAIKey' : 'hasAnthropicKey'
         const hasKey = d[hasKeyField]
         const masked = d[fieldKey] as string | null
         if (hasKey && masked) setSavedMasked(masked)
@@ -501,7 +501,7 @@ function CodexCliStatusBox() {
   )
 }
 
-function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai' | 'xAI'; onChange: (v: 'anthropic' | 'openai' |'xAI') => void }) {
+function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai' | 'xAI'; onChange: (v: 'anthropic' | 'openai' | 'xAI') => void }) {
   return (
     <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-800 border border-zinc-700 mb-5">
       <button
@@ -539,28 +539,28 @@ function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai' | '
 }
 
 function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
-  const [provider, setProvider] = useState<'anthropic' | 'openai' | null>(null)
+  const [provider, setProvider] = useState<'anthropic' | 'openai' | 'xAI' | null>(null)
 
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d: { provider?: string }) => {
-        setProvider(d.provider === 'openai' ? 'openai' : 'anthropic')
+        setProvider(d.provider === 'openai' ? 'openai' : d.provider === 'xai' ? 'xAI' : 'anthropic')
       })
       .catch(() => setProvider('anthropic'))
   }, [])
 
-  async function handleProviderChange(newProvider: 'anthropic' | 'openai') {
+  async function handleProviderChange(newProvider: 'anthropic' | 'openai' | 'xAI') {
     const prev = provider
     setProvider(newProvider)
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: newProvider }),
+        body: JSON.stringify({ provider: newProvider === 'xAI' ? 'xai' : newProvider }),
       })
       if (!res.ok) throw new Error('Failed to save provider')
-      onToast({ type: 'success', message: `Switched to ${newProvider === 'openai' ? 'OpenAI' : 'Anthropic'}` })
+      onToast({ type: 'success', message: `Switched to ${newProvider === 'openai' ? 'OpenAI' : newProvider === 'xAI' ? 'xAI' : 'Anthropic'}` })
     } catch {
       setProvider(prev) // revert on failure
       onToast({ type: 'error', message: 'Failed to save provider preference' })
@@ -614,7 +614,7 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
             </div>
           </div>
         </>
-      ) : (
+      ) : provider === 'openai' ? (
         <>
           <CodexCliStatusBox />
           <div className="space-y-5">
@@ -635,6 +635,29 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
                 onToast={onToast}
               />
               <p className="text-xs text-zinc-500 mt-1.5">Applies to all AI operations — API key <strong className="text-zinc-400 font-medium">and Codex CLI</strong></p>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="space-y-5">
+            <div>
+              <ApiKeyField
+                label="xAI"
+                placeholder="xai-..."
+                fieldKey="xAIApiKey"
+                hint="Used for AI categorization, search, and image analysis."
+                docHref="https://console.x.ai"
+                onToast={onToast}
+                testProvider="xai"
+              />
+              <ModelSelector
+                models={xAI_MODELS}
+                settingKey="xAIModel"
+                defaultValue="grok-4-fast-reasoning"
+                onToast={onToast}
+              />
+              <p className="text-xs text-zinc-500 mt-1.5">Applies to all AI operations — API key only</p>
             </div>
           </div>
         </>
