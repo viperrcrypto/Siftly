@@ -83,7 +83,7 @@ export async function GET(): Promise<NextResponse> {
 
 export async function DELETE(): Promise<NextResponse> {
   const state = getState()
-  if (state.status !== 'running') {
+  if (state.status !== 'running' || state.status !== 'stopping') {
     return NextResponse.json({ error: 'No pipeline running' }, { status: 409 })
   }
   globalState.categorizationAbort = true
@@ -242,6 +242,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                   await writeCategoryResults(results)
                   counts.categorized += ids.length
                   setState({ stageCounts: { ...counts } })
+                  console.log(`[categorize] Processed batch of ${ids.length} bookmarks, total categorized: ${counts.categorized}`)
                 } catch (catErr) {
                   console.error('[parallel] categorize batch error:', catErr)
                 }

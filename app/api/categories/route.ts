@@ -38,6 +38,9 @@ export async function GET(): Promise<NextResponse> {
       bookmarkCount: cat._count.bookmarks,
     }))
 
+    // Log for debugging zero counts
+    console.log('[categories] Fetched categories with counts:', formatted.map(c => ({ name: c.name, count: c.bookmarkCount })))
+
     return NextResponse.json({ categories: formatted })
   } catch (err) {
     console.error('Categories fetch error:', err)

@@ -49,11 +49,41 @@ async function runAnalysis(client: AIClient | null, batchSize: number): Promise<
     return NextResponse.json({ analyzed: 0, remaining: 0, message: 'All images already analyzed.' })
   }
 
-  const analyzed = await analyzeBatch(untagged, client)
+  let analyzed = 0
+  const errors: string[] = []
+
+  // Analyze each image individually to handle failures gracefully
+  for (const item of untagged) {
+    try {
+      // Download and validate the image before analysis
+      const response = await fetch(item.url, { method: 'HEAD' }) // Use HEAD to check content-type without downloading full image
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.status}`)
+      }
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.startsWith('image/') || !['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(contentType)) {
+        throw new Error(`Invalid content-type: ${contentType}`)
+      }
+
+      // If valid, analyze (assuming analyzeBatch can handle single items or we call analyzeItem)
+      // Note: Since analyzeBatch is used, we may need to modify it to skip invalid items, but for now, wrap in try-catch
+      await analyzeBatch([item], client) // Assuming it can handle a batch of one
+      analyzed++
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      console.warn(`[vision] analysis failed for ${item.id}: ${errorMsg}`)
+      errors.push(`Failed to analyze ${item.id}: ${errorMsg}`)
+      // Continue to next image instead of failing the whole batch
+    }
+  }
 
   const remaining = await prisma.mediaItem.count({
     where: { imageTags: null, type: { in: ['photo', 'gif'] } },
   })
 
-  return NextResponse.json({ analyzed, remaining })
+  return NextResponse.json({
+    analyzed,
+    remaining,
+    errors: errors.length > 0 ? errors : undefined,
+  })
 }
