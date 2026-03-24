@@ -122,8 +122,15 @@ async function analyzeImageWithRetry(
         {
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'base64', media_type: img.mediaType, data: img.data } },
             { type: 'text', text: ANALYSIS_PROMPT },
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: img.mediaType,
+                data: img.data,
+              },
+            },
           ],
         },
       ],
@@ -327,7 +334,9 @@ export interface BookmarkForEnrichment {
     urls?: string[]
     mentions?: string[]
     tools?: string[]
-    tweetType?: string
+    tweetType: 'thread' | 'reply' | 'quote' | 'original'
+    hasMedia: boolean
+    mediaTypes: string[]
   }
 }
 

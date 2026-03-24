@@ -5,10 +5,7 @@ import { resolveOpenAIClient } from './openai-auth'
 import { resolveXAIClient } from './xai-auth'
 import { getProvider } from './settings'
 
-export interface AIContentBlock {
-  type: 'text' | 'image'
-  source?: { type: 'base64'; media_type: string; data: string }
-}
+export type AIContentBlock = { type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
 
 export interface AIMessage {
   role: 'user' | 'assistant'
@@ -49,7 +46,7 @@ export class AnthropicAIClient implements AIClient {
             },
           }
         }
-        return { type: 'text' as const, text: b.text ?? '' }
+        return { type: 'text' as const, text: b.text }
       })
       return { role: m.role as 'user' | 'assistant', content: blocks }
     })
@@ -83,7 +80,7 @@ export class OpenAIAIClient implements AIClient {
             image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` },
           }
         }
-        return { type: 'text' as const, text: b.text ?? '' }
+        return { type: 'text' as const, text: b.text }
       })
       if (m.role === 'assistant') return { role: 'assistant' as const, content: parts.map(p => p.type === 'text' ? p : p).filter((p): p is OpenAI.ChatCompletionContentPartText => p.type === 'text') }
       return { role: 'user' as const, content: parts }
@@ -117,7 +114,7 @@ export class XAIAIClient implements AIClient {
             image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` },
           }
         }
-        return { type: 'text' as const, text: b.text ?? '' }
+        return { type: 'text' as const, text: b.text }
       })
       if (m.role === 'assistant') return { role: 'assistant' as const, content: parts.map(p => p.type === 'text' ? p : p).filter((p): p is OpenAI.ChatCompletionContentPartText => p.type === 'text') }
       return { role: 'user' as const, content: parts }

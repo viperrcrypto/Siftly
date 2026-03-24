@@ -83,7 +83,7 @@ export async function GET(): Promise<NextResponse> {
 
 export async function DELETE(): Promise<NextResponse> {
   const state = getState()
-  if (state.status !== 'running' || state.status !== 'stopping') {
+  if (state.status !== 'running' && state.status !== 'stopping') {
     return NextResponse.json({ error: 'No pipeline running' }, { status: 409 })
   }
   globalState.categorizationAbort = true
