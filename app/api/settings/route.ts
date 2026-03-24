@@ -42,9 +42,9 @@ export async function GET(): Promise<NextResponse> {
       openaiApiKey: maskKey(openai?.value ?? null),
       hasOpenaiKey: openai !== null,
       openaiModel: openaiModel?.value ?? 'gpt-4.1-mini',
-      xOAuthClientId: maskKey(xClientId?.value ?? null),
-      xOAuthClientSecret: maskKey(xClientSecret?.value ?? null),
-      hasXOAuth: !!xClientId?.value,
+      xOAuthClientId: maskKey(xClientId?.value ?? process.env.X_OAUTH_CLIENT_ID ?? null),
+      xOAuthClientSecret: maskKey(xClientSecret?.value ?? process.env.X_OAUTH_CLIENT_SECRET ?? null),
+      hasXOAuth: !!(xClientId?.value || process.env.X_OAUTH_CLIENT_ID),
     })
   } catch (err) {
     console.error('Settings GET error:', err)
