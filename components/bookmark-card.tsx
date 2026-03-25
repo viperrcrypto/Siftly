@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useRef, useEffect, useState } from 'react'
-import { ExternalLink, Download, Play, Pencil, X, Check, ImageOff, Bookmark, Globe } from 'lucide-react'
+import { ExternalLink, Download, FileText, Play, Pencil, X, Check, ImageOff, Bookmark, Globe } from 'lucide-react'
 import type { BookmarkWithMedia, Category } from '@/lib/types'
 
 // ── URL helpers ────────────────────────────────────────────────────────────────
@@ -625,6 +625,60 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
     document.body.removeChild(a)
   }
 
+  function handleDownloadMarkdown() {
+    const lines: string[] = []
+
+    // Header
+    if (isKnownAuthor) {
+      lines.push(`# Tweet by @${bookmark.authorHandle}`)
+      lines.push('')
+      lines.push(`**Author:** ${bookmark.authorName} (@${bookmark.authorHandle})`)
+    } else {
+      lines.push(`# Bookmarked Tweet`)
+    }
+    if (dateStr) lines.push(`**Date:** ${dateStr}`)
+    lines.push(`**URL:** ${tweetUrl}`)
+    if (categories.length > 0) {
+      lines.push(`**Categories:** ${categories.map((c) => c.name).join(', ')}`)
+    }
+    lines.push('')
+    lines.push('---')
+    lines.push('')
+
+    // Full stored text — keep URLs so truncated threads show the continuation link
+    if (bookmark.text) lines.push(bookmark.text)
+
+    // If text ends with a t.co link the tweet may be part of a longer thread
+    if (TCO_REGEX.test(bookmark.text)) {
+      lines.push('')
+      lines.push(`> *This tweet may be part of a longer thread. [Read on X ↗](${tweetUrl})*`)
+    }
+
+    // Media
+    if (bookmark.mediaItems.length > 0) {
+      lines.push('')
+      lines.push('---')
+      lines.push('')
+      for (const m of bookmark.mediaItems) {
+        if (m.type === 'photo') {
+          lines.push(`![Image](${m.url})`)
+        } else {
+          lines.push(`[${m.type === 'video' ? 'Video' : 'GIF'} — view on X](${tweetUrl})`)
+        }
+      }
+    }
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `tweet-${bookmark.tweetId}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   // Only show download if media is a photo or a real video (not a thumbnail JPEG stored as video)
   const isDownloadable = firstMedia !== null &&
     (firstMedia.type === 'photo' || isVideoUrl(firstMedia.url))
@@ -662,6 +716,13 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
 
           {/* Actions — visible on hover */}
           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5">
+            <button
+              onClick={handleDownloadMarkdown}
+              className="p-1.5 rounded-lg text-zinc-600 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              title="Download as Markdown"
+            >
+              <FileText size={13} />
+            </button>
             {isDownloadable && (
               <button
                 onClick={handleDownload}
