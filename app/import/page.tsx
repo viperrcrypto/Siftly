@@ -780,6 +780,7 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
         </p>
         <p>Connect your X account using the official OAuth 2.0 flow. This is the X-approved method — no cookies or session tokens needed.</p>
         <p className="text-zinc-600 mt-1">Requires X OAuth Client ID in Settings. Scopes: bookmark.read, tweet.read, users.read</p>
+        <p className="text-amber-400/80 mt-2 font-medium">Note: The X API requires a paid Basic tier ($200/mo) or higher for bookmark.read scope access. The free tier does not support fetching bookmarks.</p>
       </div>
 
       {/* Not configured */}
@@ -1289,7 +1290,7 @@ function UncategorizedBanner({ onCategorize, onReprocess }: { onCategorize: () =
 
 export default function ImportPage() {
   const [step, setStep] = useState<Step>(1)
-  const [importSource, setImportSource] = useState<'bookmark' | 'like'>('bookmark')
+  const importSource = 'bookmark' as const
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [importing, setImporting] = useState(false)
   const [importError, setImportError] = useState('')
@@ -1356,35 +1357,9 @@ export default function ImportPage() {
   return (
     <div className="p-8 max-w-2xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-zinc-100">Import {importSource === 'like' ? 'Likes' : 'Bookmarks'}</h1>
-        <p className="text-zinc-400 mt-1">Export your X/Twitter {importSource === 'like' ? 'likes' : 'bookmarks'} as JSON, then upload below.</p>
+        <h1 className="text-2xl font-bold text-zinc-100">Import Bookmarks</h1>
+        <p className="text-zinc-400 mt-1">Export your X/Twitter bookmarks as JSON, then upload below.</p>
       </div>
-
-      {/* Source selector */}
-      {step === 1 && (
-        <div className="flex gap-2 mb-6">
-          <button
-            onClick={() => setImportSource('bookmark')}
-            className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all border ${
-              importSource === 'bookmark'
-                ? 'bg-indigo-600 border-indigo-500 text-white'
-                : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
-            }`}
-          >
-            Bookmarks
-          </button>
-          <button
-            onClick={() => setImportSource('like')}
-            className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all border ${
-              importSource === 'like'
-                ? 'bg-pink-600 border-pink-500 text-white'
-                : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'
-            }`}
-          >
-            Likes
-          </button>
-        </div>
-      )}
 
       {step === 1 && <UncategorizedBanner onCategorize={() => setStep(3)} onReprocess={() => { setForceReprocess(true); setStep(3) }} />}
 

@@ -289,6 +289,20 @@ function isVideoUrl(url: string): boolean {
   return url.includes('video.twimg.com') || url.includes('.mp4')
 }
 
+/** Derive a thumbnail URL from a Twitter video URL */
+function deriveVideoThumb(url: string): string | null {
+  // amplify_video/{id}/vid/... → pbs.twimg.com/amplify_video_thumb/{id}/img/default.jpg
+  const amplify = url.match(/video\.twimg\.com\/amplify_video\/(\d+)/)
+  if (amplify) return `https://pbs.twimg.com/amplify_video_thumb/${amplify[1]}/img/default.jpg`
+  // ext_tw_video/{id}/pu/vid/... → pbs.twimg.com/ext_tw_video_thumb/{id}/pu/img/default.jpg
+  const ext = url.match(/video\.twimg\.com\/ext_tw_video\/(\d+)/)
+  if (ext) return `https://pbs.twimg.com/ext_tw_video_thumb/${ext[1]}/pu/img/default.jpg`
+  // tweet_video/{id}.mp4 → pbs.twimg.com/tweet_video_thumb/{id}.jpg
+  const tweet = url.match(/video\.twimg\.com\/tweet_video\/([^.]+)\.mp4/)
+  if (tweet) return `https://pbs.twimg.com/tweet_video_thumb/${tweet[1]}.jpg`
+  return null
+}
+
 interface TopMediaSlotProps {
   item: BookmarkWithMedia['mediaItems'][number]
   tweetUrl: string
@@ -367,7 +381,7 @@ function TopMediaSlot({ item, tweetUrl }: TopMediaSlotProps) {
   // Guard: thumbnailUrl that is itself a video URL is not usable as an <img>
   const rawThumb = item.thumbnailUrl ?? null
   const thumb = rawThumb && !isVideoUrl(rawThumb) ? rawThumb
-    : (!isVideoUrl(item.url) ? item.url : null)
+    : (!isVideoUrl(item.url) ? item.url : deriveVideoThumb(item.url))
 
   return (
     <a href={tweetUrl} target="_blank" rel="noopener noreferrer" className="relative block" onClick={(e) => e.stopPropagation()}>
@@ -506,7 +520,7 @@ function CategoryEditor({ bookmarkId, currentCategoryIds, onSave, onClose }: Cat
   return (
     <div
       ref={editorRef}
-      className="absolute left-0 right-0 top-full mt-2 z-50 bg-zinc-900 border border-zinc-700 rounded-xl p-3 shadow-2xl shadow-black/50"
+      className="absolute left-0 right-0 bottom-full mb-2 z-50 bg-zinc-900 border border-zinc-700 rounded-xl p-3 shadow-2xl shadow-black/50"
       onClick={(e) => e.stopPropagation()}
     >
       <p className="text-xs font-semibold text-zinc-500 mb-2 uppercase tracking-wide">Edit categories</p>

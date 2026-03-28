@@ -15,9 +15,6 @@ import {
   ChevronRight,
   Command,
   Bookmark,
-  Copy,
-  Check,
-  Coffee,
 } from 'lucide-react'
 
 interface NavItem {
@@ -35,55 +32,35 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
-const DONATION_ADDRESS = '0xcF10B967a9e422753812004Cd59990f62E360760'
 const BUILDER_X = 'https://x.com/viperr'
 
-function SupportFooter() {
-  const [copied, setCopied] = useState(false)
-
-  function copyAddress() {
-    void navigator.clipboard.writeText(DONATION_ADDRESS).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }
-
+function SponsorFooter() {
   return (
-    <div className="mx-3 mt-auto mb-3 pt-3 border-t border-zinc-800/50">
+    <div className="mx-3 mt-auto mb-3 pt-3 border-t border-zinc-800/50 space-y-2">
       {/* Builder credit */}
       <a
         href={BUILDER_X}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all group mb-1"
+        className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
       >
-        <span className="text-[13px]">𝕏</span>
+        <span className="text-[13px]">&#x1D54F;</span>
         <span className="text-[11px] font-medium">Built by @viperr</span>
       </a>
 
-      {/* Donate card */}
-      <div className="rounded-xl bg-zinc-800/40 border border-zinc-700/30 p-3">
-        <div className="flex items-center gap-1.5 mb-2">
-          <Coffee size={12} className="text-amber-400 shrink-0" />
-          <span className="text-[11px] font-semibold text-zinc-300">Support Siftly</span>
+      {/* Sponsor spot */}
+      <a
+        href={BUILDER_X}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl bg-zinc-800/40 border border-zinc-700/30 hover:border-zinc-600/50 hover:bg-zinc-800/60 transition-all group"
+      >
+        <div className="w-7 h-7 rounded-full bg-zinc-700/50 border border-zinc-600/30 shrink-0" />
+        <div className="flex flex-col min-w-0">
+          <span className="text-[11px] font-medium text-zinc-400 group-hover:text-zinc-300 transition-colors leading-tight">Support Siftly by sponsoring your logo here</span>
+          <span className="text-[10px] text-zinc-600 leading-tight mt-1">DM @viperr on X</span>
         </div>
-        <p className="text-[10px] text-zinc-600 mb-2 leading-relaxed">
-          If Siftly saves you time, consider leaving a tip ☕
-        </p>
-        <button
-          onClick={copyAddress}
-          title="Copy ETH address"
-          className="w-full flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-lg bg-zinc-900/80 border border-zinc-700/40 hover:border-amber-500/40 hover:bg-zinc-900 transition-all group"
-        >
-          <span className="text-[9.5px] font-mono text-zinc-500 group-hover:text-zinc-300 transition-colors truncate">
-            {DONATION_ADDRESS.slice(0, 10)}…{DONATION_ADDRESS.slice(-6)}
-          </span>
-          {copied
-            ? <Check size={11} className="text-emerald-400 shrink-0" />
-            : <Copy size={11} className="text-zinc-600 group-hover:text-amber-400 shrink-0 transition-colors" />
-          }
-        </button>
-      </div>
+      </a>
     </div>
   )
 }
@@ -119,7 +96,7 @@ export default function Nav() {
   const pathname = usePathname()
   const [categories, setCategories] = useState<CategoryItem[]>([])
   const [totalBookmarks, setTotalBookmarks] = useState<number | null>(null)
-  const [showAllCats, setShowAllCats] = useState(false)
+  const [showAllCats, setShowAllCats] = useState(true)
   const [collectionsOpen, setCollectionsOpen] = useState(() => {
     if (typeof window === 'undefined') return true
     return localStorage.getItem('nav-collections-open') !== 'false'
@@ -276,7 +253,7 @@ export default function Nav() {
 
           {collectionsOpen && (
             <>
-              <div className="flex flex-col gap-px overflow-y-auto flex-1 min-h-0 max-h-64">
+              <div className="flex flex-col gap-px overflow-y-auto flex-1 min-h-0">
                 {visibleCats.map((cat) => {
                   const catActive = pathname === `/categories/${cat.slug}`
                   return (
@@ -320,7 +297,7 @@ export default function Nav() {
         </div>
       )}
 
-      <SupportFooter />
+      <SponsorFooter />
     </aside>
   )
 }
