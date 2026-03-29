@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useRef, useEffect, useState } from 'react'
-import { ExternalLink, Download, Play, Pencil, X, Check, ImageOff, Bookmark, Globe } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ExternalLink, Download, Play, Pencil, X, Check, ImageOff, Bookmark, Globe, Trash2 } from 'lucide-react'
 import type { BookmarkWithMedia, Category } from '@/lib/types'
 
 // ── URL helpers ────────────────────────────────────────────────────────────────
@@ -579,12 +580,16 @@ function CategoryEditor({ bookmarkId, currentCategoryIds, onSave, onClose }: Cat
 
 interface BookmarkCardProps {
   bookmark: BookmarkWithMedia
+  onDelete?: (bookmarkId: string) => void
 }
 
-export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
+export default function BookmarkCard({ bookmark, onDelete }: BookmarkCardProps) {
+  const router = useRouter()
   const [categories, setCategories] = useState(bookmark.categories)
   const [expanded, setExpanded] = useState(false)
   const [editingCategories, setEditingCategories] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleted, setDeleted] = useState(false)
 
   const tweetUrl = (bookmark.authorHandle && bookmark.authorHandle !== 'unknown')
     ? `https://twitter.com/${bookmark.authorHandle}/status/${bookmark.tweetId}`
@@ -605,6 +610,10 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
   const displayText = expanded || !isLong ? cleanText : cleanText.slice(0, TEXT_LIMIT)
 
   const currentCategoryIds = new Set(categories.map((c) => c.id))
+
+  if (deleted) {
+    return null
+  }
 
   function handleRemoveCategory(categoryId: string) {
     const newIds = categories.filter((c) => c.id !== categoryId).map((c) => c.id)
@@ -642,6 +651,33 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
   // Only show download if media is a photo or a real video (not a thumbnail JPEG stored as video)
   const isDownloadable = firstMedia !== null &&
     (firstMedia.type === 'photo' || isVideoUrl(firstMedia.url))
+
+  async function handleDelete() {
+    if (deleting) return
+
+    const confirmed = window.confirm('Delete this bookmark from Siftly?')
+    if (!confirmed) return
+
+    setDeleting(true)
+
+    try {
+      const res = await fetch(`/api/bookmarks/${bookmark.id}`, {
+        method: 'DELETE',
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`)
+      }
+
+      setDeleted(true)
+      onDelete?.(bookmark.id)
+      router.refresh()
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Failed to delete bookmark')
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="group relative bg-zinc-900 border border-zinc-800 rounded-2xl hover:border-zinc-700 hover:shadow-xl hover:shadow-black/30 transition-all duration-200 flex flex-col flex-1">
@@ -685,6 +721,14 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
                 <Download size={13} />
               </button>
             )}
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="p-1.5 rounded-lg text-zinc-600 hover:text-red-300 hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title="Delete bookmark"
+            >
+              <Trash2 size={13} />
+            </button>
             <a
               href={tweetUrl}
               target="_blank"

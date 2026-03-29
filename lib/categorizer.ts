@@ -300,7 +300,7 @@ export async function writeCategoryResults(results: CategorizationResult[]): Pro
   const [categories, bookmarks] = await Promise.all([
     prisma.category.findMany({ select: { id: true, slug: true } }),
     prisma.bookmark.findMany({
-      where: { tweetId: { in: tweetIds } },
+      where: { tweetId: { in: tweetIds }, deletedAt: null },
       select: { id: true, tweetId: true },
     }),
   ])
@@ -420,9 +420,9 @@ export async function categorizeAll(
   if (bookmarkIds.length > 0) {
     total = bookmarkIds.length
   } else if (force) {
-    total = await prisma.bookmark.count()
+    total = await prisma.bookmark.count({ where: { deletedAt: null } })
   } else {
-    total = await prisma.bookmark.count({ where: { enrichedAt: null } })
+    total = await prisma.bookmark.count({ where: { deletedAt: null, enrichedAt: null } })
   }
 
   let done = 0
@@ -433,7 +433,7 @@ export async function categorizeAll(
       if (shouldAbort?.()) break
       const batchIds = bookmarkIds.slice(i, i + BATCH_SIZE)
       const rows = await prisma.bookmark.findMany({
-        where: { id: { in: batchIds } },
+        where: { id: { in: batchIds }, deletedAt: null },
         select: BOOKMARK_SELECT,
       })
       const batch = rows.map(mapBookmarkForCategorization)
@@ -449,7 +449,7 @@ export async function categorizeAll(
   } else {
     // Cursor-based pagination — never loads all bookmarks into memory
     let cursor: string | undefined
-    const where = force ? {} : { enrichedAt: null }
+    const where = force ? { deletedAt: null } : { deletedAt: null, enrichedAt: null }
 
     while (true) {
       if (shouldAbort?.()) break

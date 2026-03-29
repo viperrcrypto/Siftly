@@ -7,8 +7,8 @@ import { getProvider } from '@/lib/settings'
 // GET: returns progress stats
 export async function GET(): Promise<NextResponse> {
   const [total, tagged] = await Promise.all([
-    prisma.mediaItem.count({ where: { type: { in: ['photo', 'gif'] } } }),
-    prisma.mediaItem.count({ where: { type: { in: ['photo', 'gif'] }, imageTags: { not: null } } }),
+    prisma.mediaItem.count({ where: { type: { in: ['photo', 'gif'] }, bookmark: { deletedAt: null } } }),
+    prisma.mediaItem.count({ where: { type: { in: ['photo', 'gif'] }, imageTags: { not: null }, bookmark: { deletedAt: null } } }),
   ])
   return NextResponse.json({ total, tagged, remaining: total - tagged })
 }
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
 async function runAnalysis(client: AIClient | null, batchSize: number): Promise<NextResponse> {
   const untagged = await prisma.mediaItem.findMany({
-    where: { imageTags: null, type: { in: ['photo', 'gif'] } },
+    where: { imageTags: null, type: { in: ['photo', 'gif'] }, bookmark: { deletedAt: null } },
     take: batchSize,
     select: { id: true, url: true, thumbnailUrl: true, type: true },
   })
@@ -52,7 +52,7 @@ async function runAnalysis(client: AIClient | null, batchSize: number): Promise<
   const analyzed = await analyzeBatch(untagged, client)
 
   const remaining = await prisma.mediaItem.count({
-    where: { imageTags: null, type: { in: ['photo', 'gif'] } },
+    where: { imageTags: null, type: { in: ['photo', 'gif'] }, bookmark: { deletedAt: null } },
   })
 
   return NextResponse.json({ analyzed, remaining })

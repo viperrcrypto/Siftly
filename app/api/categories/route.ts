@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { seedDefaultCategories } from '@/lib/categorizer'
+import { getActiveBookmarkCountMap } from '@/lib/category-counts'
 
 function generateSlug(name: string): string {
   return name
@@ -18,14 +19,12 @@ export async function GET(): Promise<NextResponse> {
     const count = await prisma.category.count()
     if (count === 0) await seedDefaultCategories()
 
-    const categories = await prisma.category.findMany({
-      orderBy: { name: 'asc' },
-      include: {
-        _count: {
-          select: { bookmarks: true },
-        },
-      },
-    })
+    const [categories, countMap] = await Promise.all([
+      prisma.category.findMany({
+        orderBy: { name: 'asc' },
+      }),
+      getActiveBookmarkCountMap(),
+    ])
 
     const formatted = categories.map((cat) => ({
       id: cat.id,
@@ -35,7 +34,7 @@ export async function GET(): Promise<NextResponse> {
       description: cat.description,
       isAiGenerated: cat.isAiGenerated,
       createdAt: cat.createdAt.toISOString(),
-      bookmarkCount: cat._count.bookmarks,
+      bookmarkCount: countMap.get(cat.id) ?? 0,
     }))
 
     return NextResponse.json({ categories: formatted })

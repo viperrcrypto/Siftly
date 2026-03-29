@@ -35,6 +35,7 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
     const [bookmarks, total] = await Promise.all([
       prisma.bookmark.findMany({
         where: {
+          deletedAt: null,
           categories: {
             some: { category: { slug } },
           },
@@ -60,6 +61,7 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
       }),
       prisma.bookmark.count({
         where: {
+          deletedAt: null,
           categories: {
             some: { category: { slug } },
           },

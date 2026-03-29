@@ -44,7 +44,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const skip = (page - 1) * limit
   const orderDir = sortParam === 'oldest' ? 'asc' : 'desc'
 
-  const where: Record<string, unknown> = {}
+  const where: Record<string, unknown> = { deletedAt: null }
 
   if (source === 'bookmark' || source === 'like') {
     where.source = source

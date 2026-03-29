@@ -263,7 +263,7 @@ export async function backfillEntities(
   while (true) {
     if (shouldAbort?.()) break
     const bookmarks = await prisma.bookmark.findMany({
-      where: { entities: null },
+      where: { deletedAt: null, entities: null },
       take: CHUNK,
       select: { id: true, rawJson: true },
     })

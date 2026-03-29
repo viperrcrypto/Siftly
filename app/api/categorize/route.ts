@@ -126,9 +126,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (bookmarkIds.length > 0) {
       total = bookmarkIds.length
     } else if (force) {
-      total = await prisma.bookmark.count()
+      total = await prisma.bookmark.count({ where: { deletedAt: null } })
     } else {
-      total = await prisma.bookmark.count({ where: { enrichedAt: null } })
+      total = await prisma.bookmark.count({ where: { deletedAt: null, enrichedAt: null } })
     }
   } catch {
     total = 0
@@ -161,43 +161,53 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         console.warn('No SDK client available — will rely on CLI path')
       }
 
-        await seedDefaultCategories()
+      await seedDefaultCategories()
 
-        if (force) {
-          await prisma.mediaItem.updateMany({ where: { imageTags: '{}' }, data: { imageTags: null } })
-          await prisma.bookmark.updateMany({ where: { semanticTags: '[]' }, data: { semanticTags: null } })
-        }
+      if (force) {
+        await prisma.mediaItem.updateMany({
+          where: { imageTags: '{}', bookmark: { deletedAt: null } },
+          data: { imageTags: null },
+        })
+        await prisma.bookmark.updateMany({
+          where: { deletedAt: null, semanticTags: '[]' },
+          data: { semanticTags: null },
+        })
+      }
 
-        // Stage 1: Entity extraction (free, fast — no API calls)
-        if (!shouldAbort()) {
-          setState({ stage: 'entities' })
-          counts.entitiesExtracted = await backfillEntities((n) => {
-            counts.entitiesExtracted = n
-            setState({ stageCounts: { ...counts } })
-          }, shouldAbort).catch((err) => {
-            console.error('Entity extraction error:', err)
-            return counts.entitiesExtracted
-          })
+      // Stage 1: Entity extraction (free, fast — no API calls)
+      if (!shouldAbort()) {
+        setState({ stage: 'entities' })
+        counts.entitiesExtracted = await backfillEntities((n) => {
+          counts.entitiesExtracted = n
           setState({ stageCounts: { ...counts } })
-        }
+        }, shouldAbort).catch((err) => {
+          console.error('Entity extraction error:', err)
+          return counts.entitiesExtracted
+        })
+        setState({ stageCounts: { ...counts } })
+      }
 
-        // Stage 2: Parallel pipeline — vision + enrichment + categorize per bookmark
-        if (!shouldAbort()) {
-          // Fetch all bookmark IDs to process
-          let bookmarkIdsToProcess: string[]
-          if (bookmarkIds.length > 0) {
-            bookmarkIdsToProcess = bookmarkIds
-          } else if (force) {
-            const all = await prisma.bookmark.findMany({ select: { id: true }, orderBy: { id: 'asc' } })
-            bookmarkIdsToProcess = all.map((b) => b.id)
-          } else {
-            const unprocessed = await prisma.bookmark.findMany({
-              where: { enrichedAt: null },
-              select: { id: true },
-              orderBy: { id: 'asc' },
-            })
-            bookmarkIdsToProcess = unprocessed.map((b) => b.id)
-          }
+      // Stage 2: Parallel pipeline — vision + enrichment + categorize per bookmark
+      if (!shouldAbort()) {
+        // Fetch all bookmark IDs to process
+        let bookmarkIdsToProcess: string[]
+        if (bookmarkIds.length > 0) {
+          bookmarkIdsToProcess = bookmarkIds
+        } else if (force) {
+          const all = await prisma.bookmark.findMany({
+            where: { deletedAt: null },
+            select: { id: true },
+            orderBy: { id: 'asc' },
+          })
+          bookmarkIdsToProcess = all.map((b) => b.id)
+        } else {
+          const unprocessed = await prisma.bookmark.findMany({
+            where: { deletedAt: null, enrichedAt: null },
+            select: { id: true },
+            orderBy: { id: 'asc' },
+          })
+          bookmarkIdsToProcess = unprocessed.map((b) => b.id)
+        }
 
           const runTotal = bookmarkIdsToProcess.length
           setState({ stage: 'parallel', done: 0, total: runTotal, stageCounts: { ...counts } })
@@ -233,14 +243,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 const ids = catPending.splice(0, CAT_BATCH_SIZE)
                 if (ids.length === 0) break
                 const rows = await prisma.bookmark.findMany({
-                  where: { id: { in: ids } },
+                  where: { id: { in: ids }, deletedAt: null },
                   select: BOOKMARK_SELECT,
                 })
                 const batch = rows.map(mapBookmarkForCategorization)
                 try {
                   const results = await categorizeBatch(batch, client, categoryDescriptions, allSlugs)
                   await writeCategoryResults(results)
-                  counts.categorized += ids.length
+                  counts.categorized += rows.length
                   setState({ stageCounts: { ...counts } })
                 } catch (catErr) {
                   console.error('[parallel] categorize batch error:', catErr)
@@ -256,8 +266,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           async function processBookmark(bookmarkId: string): Promise<void> {
             if (shouldAbort()) return
 
-            const bm = await prisma.bookmark.findUnique({
-              where: { id: bookmarkId },
+            const bm = await prisma.bookmark.findFirst({
+              where: { id: bookmarkId, deletedAt: null },
               select: {
                 id: true,
                 text: true,
@@ -296,7 +306,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               const imageTags = anyVisionRan
                 ? (
                     await prisma.mediaItem.findMany({
-                      where: { bookmarkId: bm.id, type: { in: ['photo', 'gif', 'video'] } },
+                      where: { bookmarkId: bm.id, type: { in: ['photo', 'gif', 'video'] }, bookmark: { deletedAt: null } },
                       select: { imageTags: true },
                     })
                   )

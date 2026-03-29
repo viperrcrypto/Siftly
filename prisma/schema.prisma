@@ -15,6 +15,7 @@ model Bookmark {
   authorName    String
   tweetCreatedAt DateTime?
   importedAt    DateTime  @default(now())
+  deletedAt     DateTime?
   rawJson       String    // full JSON stored as string
   semanticTags    String?   // JSON array of AI-generated searchable tags
   entities        String?   // JSON: {hashtags[], urls[], mentions[], tools[], tweetType}
@@ -26,6 +27,7 @@ model Bookmark {
 
   @@index([authorHandle])
   @@index([tweetCreatedAt])
+  @@index([deletedAt])
   @@index([enrichedAt])
   @@index([source])
 }

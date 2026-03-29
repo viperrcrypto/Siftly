@@ -211,6 +211,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const categoryFilter = category
     ? { categories: { some: { category: { slug: category } } } }
     : {}
+  const activeFilter = { deletedAt: null }
 
   // ── Step 1: Smart candidate selection ─────────────────────────────────────
   const keywords = extractKeywords(query)
@@ -244,6 +245,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     keywords.length > 0
       ? prisma.bookmark.findMany({
           where: {
+            ...activeFilter,
             ...categoryFilter,
             ...(useFts
               ? { id: { in: ftsIds } }
@@ -254,11 +256,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           take: MAX_CANDIDATES,
           select: selectShape,
         })
-      : prisma.bookmark.findMany({ where: { id: 'never' }, select: selectShape }),
+      : prisma.bookmark.findMany({ where: { ...activeFilter, id: 'never' }, select: selectShape }),
 
     intentSlugs.length > 0
       ? prisma.bookmark.findMany({
           where: {
+            ...activeFilter,
             ...categoryFilter,
             categories: { some: { category: { slug: { in: intentSlugs } } } },
           },
@@ -266,7 +269,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           take: 80,
           select: selectShape,
         })
-      : prisma.bookmark.findMany({ where: { id: 'never' }, select: selectShape }),
+      : prisma.bookmark.findMany({ where: { ...activeFilter, id: 'never' }, select: selectShape }),
   ])
 
   // Merge: keyword hits first (more specific), then intent hits, dedup by id
@@ -280,7 +283,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let bookmarks = merged
   if (bookmarks.length < 20) {
     const fallback = await prisma.bookmark.findMany({
-      where: categoryFilter,
+      where: { ...activeFilter, ...categoryFilter },
       orderBy: [{ enrichedAt: 'desc' }, { tweetCreatedAt: 'desc' }],
       take: MAX_CANDIDATES,
       select: selectShape,

@@ -87,6 +87,17 @@ export default function CategoryPage() {
     fetchData(page)
   }, [fetchData, page])
 
+  function handleDeleteBookmark(bookmarkId: string) {
+    setData((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        bookmarks: prev.bookmarks.filter((bookmark) => bookmark.id !== bookmarkId),
+        total: Math.max(prev.total - 1, 0),
+      }
+    })
+  }
+
   function handleExport() {
     window.location.href = `/api/export?type=zip&category=${slug}`
   }
@@ -160,7 +171,7 @@ export default function CategoryPage() {
       {!loading && bookmarks.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {bookmarks.map((bookmark) => (
-            <BookmarkCard key={bookmark.id} bookmark={bookmark} />
+            <BookmarkCard key={bookmark.id} bookmark={bookmark} onDelete={handleDeleteBookmark} />
           ))}
         </div>
       )}

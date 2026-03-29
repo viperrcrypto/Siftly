@@ -250,6 +250,11 @@ function BookmarksPageInner() {
     setFilters(DEFAULT_FILTERS)
   }
 
+  function handleDeleteBookmark(bookmarkId: string) {
+    setBookmarks((prev) => prev.filter((bookmark) => bookmark.id !== bookmarkId))
+    setTotal((prev) => Math.max(prev - 1, 0))
+  }
+
   const mediaOptions = [
     { label: 'Photos', value: 'photo' },
     { label: 'Videos', value: 'video' },
@@ -442,7 +447,7 @@ function BookmarksPageInner() {
           <div className="masonry-grid">
             {bookmarks.map((bookmark) => (
               <div key={bookmark.id} className="masonry-item">
-                <BookmarkCard bookmark={bookmark} />
+                <BookmarkCard bookmark={bookmark} onDelete={handleDeleteBookmark} />
               </div>
             ))}
           </div>
@@ -452,7 +457,7 @@ function BookmarksPageInner() {
         {!loading && bookmarks.length > 0 && viewMode === 'list' && (
           <div className="flex flex-col gap-3 max-w-3xl mx-auto">
             {bookmarks.map((bookmark) => (
-              <BookmarkCard key={bookmark.id} bookmark={bookmark} />
+              <BookmarkCard key={bookmark.id} bookmark={bookmark} onDelete={handleDeleteBookmark} />
             ))}
           </div>
         )}

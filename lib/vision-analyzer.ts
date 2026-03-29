@@ -261,7 +261,7 @@ export async function analyzeBatch(
 
 export async function analyzeUntaggedImages(client: AIClient, limit = 10): Promise<number> {
   const untagged = await prisma.mediaItem.findMany({
-    where: { imageTags: null, type: { in: ['photo', 'gif', 'video'] } },
+    where: { imageTags: null, type: { in: ['photo', 'gif', 'video'] }, bookmark: { deletedAt: null } },
     take: limit,
     select: { id: true, url: true, thumbnailUrl: true, type: true },
   })
@@ -291,6 +291,7 @@ export async function analyzeAllUntagged(
         type: { in: ['photo', 'gif', 'video'] },
         // Only fetch items that have never been attempted (null) — '{}' sentinel means already tried
         imageTags: null,
+        bookmark: { deletedAt: null },
         ...(cursor ? { id: { gt: cursor } } : {}),
       },
       orderBy: { id: 'asc' },
@@ -466,6 +467,7 @@ export async function enrichAllBookmarks(
 
     const rows = await prisma.bookmark.findMany({
       where: {
+        deletedAt: null,
         semanticTags: null,
         ...(cursor ? { id: { gt: cursor } } : {}),
       },

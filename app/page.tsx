@@ -4,9 +4,11 @@ import Link from 'next/link'
 import { BookmarkIcon, Tag, Image, Layers, Upload, Sparkles, Search, ArrowRight, TrendingUp, Bookmark } from 'lucide-react'
 import prisma from '@/lib/db'
 import BookmarkCard from '@/components/bookmark-card'
+import { getActiveBookmarkCountMap } from '@/lib/category-counts'
 import type { BookmarkWithMedia } from '@/lib/types'
 
 const RECENT_QUERY = {
+  where: { deletedAt: null },
   take: 6,
   orderBy: [{ tweetCreatedAt: 'desc' as const }, { importedAt: 'desc' as const }],
   include: {
@@ -19,29 +21,24 @@ const RECENT_QUERY = {
   },
 }
 
-const TOP_CATS_QUERY = {
-  include: { _count: { select: { bookmarks: true } } },
-  orderBy: { bookmarks: { _count: 'desc' as const } },
-  take: 10,
-} as const
-
 async function queryDashboard() {
   return Promise.all([
-    prisma.bookmark.count(),
+    prisma.bookmark.count({ where: { deletedAt: null } }),
     prisma.category.count(),
-    prisma.mediaItem.count(),
-    prisma.bookmark.count({ where: { categories: { none: {} } } }),
+    prisma.mediaItem.count({ where: { bookmark: { deletedAt: null } } }),
+    prisma.bookmark.count({ where: { deletedAt: null, categories: { none: {} } } }),
     prisma.bookmark.findMany(RECENT_QUERY),
-    prisma.category.findMany(TOP_CATS_QUERY),
-    prisma.bookmark.count({ where: { source: 'bookmark' } }),
-    prisma.bookmark.count({ where: { source: 'like' } }),
+    prisma.category.findMany({ orderBy: { name: 'asc' } }),
+    getActiveBookmarkCountMap(),
+    prisma.bookmark.count({ where: { deletedAt: null, source: 'bookmark' } }),
+    prisma.bookmark.count({ where: { deletedAt: null, source: 'like' } }),
   ])
 }
 
 type QueryResult = Awaited<ReturnType<typeof queryDashboard>>
 
 function buildDashboardData(result: QueryResult) {
-  const [totalBookmarks, totalCategories, totalMedia, uncategorizedCount, recentRaw, catsRaw, bookmarkSourceCount, likeSourceCount] = result
+  const [totalBookmarks, totalCategories, totalMedia, uncategorizedCount, recentRaw, catsRaw, countMap, bookmarkSourceCount, likeSourceCount] = result
 
   const recentBookmarks: BookmarkWithMedia[] = recentRaw.map((b) => ({
     id: b.id,
@@ -69,12 +66,16 @@ function buildDashboardData(result: QueryResult) {
     totalMedia,
     uncategorizedCount,
     recentBookmarks,
-    topCategories: catsRaw.map((c) => ({
-      name: c.name,
-      slug: c.slug,
-      color: c.color,
-      count: c._count.bookmarks,
-    })),
+    topCategories: catsRaw
+      .map((c) => ({
+        name: c.name,
+        slug: c.slug,
+        color: c.color,
+        count: countMap.get(c.id) ?? 0,
+      }))
+      .filter((c) => c.count > 0)
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+      .slice(0, 10),
   }
 }
 

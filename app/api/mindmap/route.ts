@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { getActiveBookmarkCountMap } from '@/lib/category-counts'
 
 interface MindMapNode {
   id: string
@@ -56,14 +57,10 @@ function tweetPosition(
 }
 
 async function getBaseGraph(): Promise<MindMapResponse> {
-  const [totalBookmarks, categories] = await Promise.all([
-    prisma.bookmark.count(),
-    prisma.category.findMany({
-      include: {
-        _count: { select: { bookmarks: true } },
-      },
-      orderBy: { bookmarks: { _count: 'desc' } },
-    }),
+  const [totalBookmarks, categories, countMap] = await Promise.all([
+    prisma.bookmark.count({ where: { deletedAt: null } }),
+    prisma.category.findMany({ orderBy: { name: 'asc' } }),
+    getActiveBookmarkCountMap(),
   ])
 
   const rootNode: MindMapNode = {
@@ -73,21 +70,29 @@ async function getBaseGraph(): Promise<MindMapResponse> {
     position: ROOT_POSITION,
   }
 
-  const radius = categoryRadius(categories.length)
-  const categoryNodes: MindMapNode[] = categories.map((cat, index) => ({
+  const visibleCategories = categories
+    .map((cat) => ({
+      ...cat,
+      bookmarkCount: countMap.get(cat.id) ?? 0,
+    }))
+    .filter((cat) => cat.bookmarkCount > 0)
+    .sort((a, b) => b.bookmarkCount - a.bookmarkCount || a.name.localeCompare(b.name))
+
+  const radius = categoryRadius(visibleCategories.length)
+  const categoryNodes: MindMapNode[] = visibleCategories.map((cat, index) => ({
     id: `cat-${cat.slug}`,
     type: 'category',
     data: {
       name: cat.name,
       slug: cat.slug,
       color: cat.color,
-      count: cat._count.bookmarks,
+      count: cat.bookmarkCount,
       description: cat.description,
     },
-    position: categoryPosition(index, categories.length, radius),
+    position: categoryPosition(index, visibleCategories.length, radius),
   }))
 
-  const categoryEdges: MindMapEdge[] = categories.map((cat) => ({
+  const categoryEdges: MindMapEdge[] = visibleCategories.map((cat) => ({
     id: `edge-root-cat-${cat.slug}`,
     source: 'root',
     target: `cat-${cat.slug}`,
@@ -104,9 +109,6 @@ async function getBaseGraph(): Promise<MindMapResponse> {
 async function getCategoryTweetNodes(categorySlug: string): Promise<MindMapResponse> {
   const category = await prisma.category.findUnique({
     where: { slug: categorySlug },
-    include: {
-      _count: { select: { bookmarks: true } },
-    },
   })
 
   if (!category) {
@@ -114,7 +116,10 @@ async function getCategoryTweetNodes(categorySlug: string): Promise<MindMapRespo
   }
 
   const bookmarkCategories = await prisma.bookmarkCategory.findMany({
-    where: { category: { slug: categorySlug } },
+    where: {
+      category: { slug: categorySlug },
+      bookmark: { deletedAt: null },
+    },
     select: {
       confidence: true,
       bookmark: {

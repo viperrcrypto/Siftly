@@ -32,7 +32,10 @@ interface CategoryJoin {
 
 async function fetchBookmarksFull(where?: object): Promise<BookmarkRow[]> {
   return prisma.bookmark.findMany({
-    where,
+    where: {
+      deletedAt: null,
+      ...(where ?? {}),
+    },
     include: {
       mediaItems: true,
       categories: {

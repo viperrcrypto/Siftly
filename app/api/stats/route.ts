@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { getActiveBookmarkCountMap } from '@/lib/category-counts'
 
 export async function GET(): Promise<NextResponse> {
   try {
@@ -12,14 +13,16 @@ export async function GET(): Promise<NextResponse> {
       uncategorizedCount,
       recentBookmarks,
       topCategoriesRaw,
+      countMap,
     ] = await Promise.all([
-      prisma.bookmark.count(),
-      prisma.bookmark.count({ where: { source: 'bookmark' } }),
-      prisma.bookmark.count({ where: { source: 'like' } }),
+      prisma.bookmark.count({ where: { deletedAt: null } }),
+      prisma.bookmark.count({ where: { deletedAt: null, source: 'bookmark' } }),
+      prisma.bookmark.count({ where: { deletedAt: null, source: 'like' } }),
       prisma.category.count(),
-      prisma.mediaItem.count(),
-      prisma.bookmark.count({ where: { enrichedAt: null } }),
+      prisma.mediaItem.count({ where: { bookmark: { deletedAt: null } } }),
+      prisma.bookmark.count({ where: { deletedAt: null, enrichedAt: null } }),
       prisma.bookmark.findMany({
+        where: { deletedAt: null },
         take: 5,
         orderBy: { importedAt: 'desc' },
         include: {
@@ -35,15 +38,8 @@ export async function GET(): Promise<NextResponse> {
           },
         },
       }),
-      prisma.category.findMany({
-        include: {
-          _count: { select: { bookmarks: true } },
-        },
-        orderBy: {
-          bookmarks: { _count: 'desc' },
-        },
-        take: 5,
-      }),
+      prisma.category.findMany({ orderBy: { name: 'asc' } }),
+      getActiveBookmarkCountMap(),
     ])
 
     const formattedRecent = recentBookmarks.map((b) => ({
@@ -64,12 +60,16 @@ export async function GET(): Promise<NextResponse> {
       })),
     }))
 
-    const topCategories = topCategoriesRaw.map((cat) => ({
-      name: cat.name,
-      slug: cat.slug,
-      color: cat.color,
-      count: cat._count.bookmarks,
-    }))
+    const topCategories = topCategoriesRaw
+      .map((cat) => ({
+        name: cat.name,
+        slug: cat.slug,
+        color: cat.color,
+        count: countMap.get(cat.id) ?? 0,
+      }))
+      .filter((cat) => cat.count > 0)
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+      .slice(0, 5)
 
     return NextResponse.json({
       totalBookmarks,

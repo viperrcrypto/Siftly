@@ -122,6 +122,10 @@ export default function AISearchPage() {
     }, 100)
   }
 
+  function handleDeleteBookmark(bookmarkId: string) {
+    setResults((prev) => prev.filter((bookmark) => bookmark.id !== bookmarkId))
+  }
+
   return (
     <div className="p-8 max-w-4xl mx-auto">
       {/* Header */}
@@ -245,7 +249,7 @@ export default function AISearchPage() {
                   </div>
                 )}
                 {/* Cast to BookmarkWithMedia since BookmarkCard does not use the AI-specific fields */}
-                <BookmarkCard bookmark={b as BookmarkWithMedia} />
+                <BookmarkCard bookmark={b as BookmarkWithMedia} onDelete={handleDeleteBookmark} />
               </div>
             ))}
           </div>
