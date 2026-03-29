@@ -107,13 +107,6 @@ async function detectIntentCategories(query: string): Promise<string[]> {
   return Array.from(slugs)
 }
 
-function getNoClientConfiguredMessage(provider: AIProvider, err: Error | null): string {
-  if (isTextOnlyProvider(provider)) {
-    return err?.message ?? 'OpenAI-compatible provider requires a base URL and direct HTTP client configuration.'
-  }
-  return 'No CLI available and no API key configured. Add an API key in Settings or install Codex/Claude CLI.'
-}
-
 /** Build a rich, readable index entry for a bookmark */
 function buildIndexEntry(b: {
   id: string
@@ -382,8 +375,11 @@ Constraints:
 
   if (!cliSucceeded) {
     if (!client) {
+      const errorMessage = isTextOnlyProvider(provider)
+        ? clientResolveError?.message ?? 'OpenAI-compatible provider requires a base URL and direct HTTP client configuration.'
+        : 'No CLI available and no API key configured. Add an API key in Settings or install Codex/Claude CLI.'
       return NextResponse.json(
-        { error: getNoClientConfiguredMessage(provider, clientResolveError) },
+        { error: errorMessage },
         { status: 400 },
       )
     }
