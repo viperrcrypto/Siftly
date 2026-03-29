@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import type { AIProvider } from '@/lib/ai-provider'
 import {
   Eye,
   EyeOff,
@@ -36,6 +37,10 @@ const OPENAI_MODELS = [
   { value: 'o3', label: 'o3', description: 'Reasoning' },
 ]
 
+type ProviderValue = AIProvider
+type ApiKeySettingKey = 'anthropicApiKey' | 'openaiApiKey' | 'openaiCompatApiKey'
+type ModelSettingKey = 'anthropicModel' | 'openaiModel'
+type TextSettingKey = 'openaiCompatBaseUrl' | 'openaiCompatModel'
 
 interface Toast {
   type: 'success' | 'error'
@@ -103,14 +108,16 @@ function ApiKeyField({
   docHref,
   onToast,
   testProvider,
+  allowTestWithoutKey = false,
 }: {
   label: string
   placeholder: string
-  fieldKey: 'anthropicApiKey' | 'openaiApiKey'
+  fieldKey: ApiKeySettingKey
   hint: string
-  docHref: string
+  docHref?: string
   onToast: (t: Toast) => void
-  testProvider?: string
+  testProvider?: ProviderValue
+  allowTestWithoutKey?: boolean
 }) {
   const [key, setKey] = useState('')
   const [showKey, setShowKey] = useState(false)
@@ -125,7 +132,11 @@ function ApiKeyField({
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d: Record<string, unknown>) => {
-        const hasKeyField = fieldKey === 'openaiApiKey' ? 'hasOpenaiKey' : 'hasAnthropicKey'
+        const hasKeyField = fieldKey === 'openaiApiKey'
+          ? 'hasOpenaiKey'
+          : fieldKey === 'openaiCompatApiKey'
+          ? 'hasOpenaiCompatKey'
+          : 'hasAnthropicKey'
         const hasKey = d[hasKeyField]
         const masked = d[fieldKey] as string | null
         if (hasKey && masked) setSavedMasked(masked)
@@ -231,7 +242,7 @@ function ApiKeyField({
               {removing ? 'Removing…' : 'Remove'}
             </button>
           )}
-          {testProvider && savedMasked && testState === 'idle' && (
+          {testProvider && (savedMasked || allowTestWithoutKey) && testState === 'idle' && (
             <button
               onClick={() => void handleTest()}
               className="shrink-0 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
@@ -250,8 +261,12 @@ function ApiKeyField({
             </span>
           )}
           {testState === 'fail' && (
-            <span className="flex items-center gap-1 text-xs text-red-400 shrink-0" title={testError}>
-              <X size={11} /> {testError.slice(0, 30) || 'Failed'}
+            <span
+              className="flex items-center gap-1 text-xs text-red-400 min-w-0 max-w-56"
+              title={testError}
+            >
+              <X size={11} className="shrink-0" />
+              <span className="truncate">{testError || 'Failed'}</span>
             </span>
           )}
         </div>
@@ -285,14 +300,16 @@ function ApiKeyField({
       </div>
       <div className="flex items-center justify-between">
         <p className="text-xs text-zinc-600">{hint}</p>
-        <a
-          href={docHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-400 transition-colors"
-        >
-          Get key <ExternalLink size={11} />
-        </a>
+        {docHref ? (
+          <a
+            href={docHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-400 transition-colors"
+          >
+            Get key <ExternalLink size={11} />
+          </a>
+        ) : null}
       </div>
     </div>
   )
@@ -305,7 +322,7 @@ function ModelSelector({
   onToast,
 }: {
   models: { value: string; label: string; description: string }[]
-  settingKey: 'anthropicModel' | 'openaiModel'
+  settingKey: ModelSettingKey
   defaultValue: string
   onToast: (t: Toast) => void
 }) {
@@ -370,6 +387,96 @@ function ModelSelector({
         </p>
       )}
     </>
+  )
+}
+
+function TextSettingField({
+  label,
+  fieldKey,
+  placeholder,
+  defaultValue = '',
+  hint,
+  onToast,
+}: {
+  label: string
+  fieldKey: TextSettingKey
+  placeholder: string
+  defaultValue?: string
+  hint: string
+  onToast: (t: Toast) => void
+}) {
+  const [value, setValue] = useState(defaultValue)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((d: Record<string, unknown>) => {
+        const savedValue = d[fieldKey]
+        if (typeof savedValue === 'string' && savedValue) {
+          setValue(savedValue)
+        }
+      })
+      .catch(() => {})
+  }, [fieldKey])
+
+  async function handleSave() {
+    if (!value.trim()) {
+      onToast({ type: 'error', message: `${label} is required` })
+      return
+    }
+
+    setSaving(true)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [fieldKey]: value.trim() }),
+      })
+      if (!res.ok) {
+        const data = await res.json() as { error?: string }
+        throw new Error(data.error ?? 'Failed to save')
+      }
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+      onToast({ type: 'success', message: `${label} saved` })
+    } catch (err) {
+      onToast({ type: 'error', message: err instanceof Error ? err.message : `Failed to save ${label}` })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-zinc-300">{label}</p>
+        {saved ? (
+          <span className="flex items-center gap-1 text-xs text-emerald-400 shrink-0">
+            <Check size={12} /> Saved
+          </span>
+        ) : null}
+      </div>
+      <div className="flex gap-2.5">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && void handleSave()}
+          placeholder={placeholder}
+          className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all duration-200 font-mono"
+        />
+        <button
+          onClick={() => void handleSave()}
+          disabled={saving}
+          className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors shrink-0"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+      <p className="text-xs text-zinc-600">{hint}</p>
+    </div>
   )
 }
 
@@ -495,9 +602,9 @@ function CodexCliStatusBox() {
   )
 }
 
-function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; onChange: (v: 'anthropic' | 'openai') => void }) {
+function ProviderToggle({ value, onChange }: { value: ProviderValue; onChange: (v: ProviderValue) => void }) {
   return (
-    <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-800 border border-zinc-700 mb-5">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 p-1 rounded-xl bg-zinc-800 border border-zinc-700 mb-5">
       <button
         onClick={() => onChange('anthropic')}
         className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -518,23 +625,37 @@ function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; on
       >
         OpenAI (GPT)
       </button>
+      <button
+        onClick={() => onChange('openai-compatible')}
+        className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          value === 'openai-compatible'
+            ? 'bg-cyan-600 text-white shadow-sm'
+            : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+      >
+        OpenAI-Compatible
+      </button>
     </div>
   )
 }
 
 function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
-  const [provider, setProvider] = useState<'anthropic' | 'openai' | null>(null)
+  const [provider, setProvider] = useState<ProviderValue | null>(null)
 
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d: { provider?: string }) => {
-        setProvider(d.provider === 'openai' ? 'openai' : 'anthropic')
+        setProvider(
+          d.provider === 'openai' || d.provider === 'openai-compatible'
+            ? d.provider as ProviderValue
+            : 'anthropic',
+        )
       })
       .catch(() => setProvider('anthropic'))
   }, [])
 
-  async function handleProviderChange(newProvider: 'anthropic' | 'openai') {
+  async function handleProviderChange(newProvider: ProviderValue) {
     const prev = provider
     setProvider(newProvider)
     try {
@@ -544,7 +665,12 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
         body: JSON.stringify({ provider: newProvider }),
       })
       if (!res.ok) throw new Error('Failed to save provider')
-      onToast({ type: 'success', message: `Switched to ${newProvider === 'openai' ? 'OpenAI' : 'Anthropic'}` })
+      const label = newProvider === 'openai'
+        ? 'OpenAI'
+        : newProvider === 'openai-compatible'
+        ? 'OpenAI-compatible'
+        : 'Anthropic'
+      onToast({ type: 'success', message: `Switched to ${label}` })
     } catch {
       setProvider(prev) // revert on failure
       onToast({ type: 'error', message: 'Failed to save provider preference' })
@@ -598,7 +724,7 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
             </div>
           </div>
         </>
-      ) : (
+      ) : provider === 'openai' ? (
         <>
           <CodexCliStatusBox />
           <div className="space-y-5">
@@ -622,6 +748,48 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
             </div>
           </div>
         </>
+      ) : (
+        <div className="space-y-5">
+          <div className="flex gap-3 p-3.5 rounded-xl bg-cyan-500/5 border border-cyan-500/20">
+            <Info size={15} className="text-cyan-300 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-cyan-200">Direct HTTP via OpenAI-compatible API</p>
+              <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+                Use any endpoint that supports OpenAI Chat Completions, such as <span className="font-mono text-zinc-300">https://openrouter.ai/api/v1</span> or <span className="font-mono text-zinc-300">http://localhost:1234/v1</span>. This mode is text-only and does not use Codex CLI.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-5">
+            <TextSettingField
+              label="Base URL"
+              fieldKey="openaiCompatBaseUrl"
+              placeholder="https://openrouter.ai/api/v1"
+              hint="Required. Must expose an OpenAI Chat Completions-compatible endpoint."
+              onToast={onToast}
+            />
+            <ApiKeyField
+              label="API Key (optional)"
+              placeholder="sk-or-v1-... or leave empty for local servers"
+              fieldKey="openaiCompatApiKey"
+              hint="Optional for local servers. Required if your endpoint enforces auth."
+              docHref="https://openrouter.ai/keys"
+              onToast={onToast}
+              testProvider="openai-compatible"
+              allowTestWithoutKey
+            />
+            <TextSettingField
+              label="Model"
+              fieldKey="openaiCompatModel"
+              placeholder="openai/gpt-4.1-mini or your-local-model"
+              defaultValue="openai/gpt-4.1-mini"
+              hint="Freeform model name. Examples: openrouter model slugs or your local model id."
+              onToast={onToast}
+            />
+            <p className="text-xs text-amber-500/80">
+              Image analysis is disabled for this provider in v1. Categorization and AI search continue to work with text inputs.
+            </p>
+          </div>
+        </div>
       )}
       <p className="text-xs text-zinc-600 mt-4">Keys are stored in plaintext in your local SQLite database (<code className="font-mono">prisma/dev.db</code>). Do not expose the database file.</p>
     </Section>

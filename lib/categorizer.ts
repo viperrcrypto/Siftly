@@ -4,6 +4,7 @@ import { getCliAvailability, claudePrompt, modelNameToCliAlias } from '@/lib/cla
 import { getCodexCliAvailability, codexPrompt } from '@/lib/codex-cli'
 import { getActiveModel, getProvider } from '@/lib/settings'
 import { AIClient, resolveAIClient } from '@/lib/ai-client'
+import { getApiKeySettingKey, isTextOnlyProvider } from '@/lib/ai-provider'
 
 const BATCH_SIZE = 20
 
@@ -255,7 +256,7 @@ export async function categorizeBatch(
         console.warn('[categorize] Codex CLI failed, falling back to SDK:', result.error)
       }
     }
-  } else {
+  } else if (provider === 'anthropic') {
     if (await getCliAvailability()) {
       const model = await getActiveModel()
       const cliModel = modelNameToCliAlias(model)
@@ -275,6 +276,9 @@ export async function categorizeBatch(
 
   // Fallback to SDK (requires API key)
   if (!client) {
+    if (isTextOnlyProvider(provider)) {
+      throw new Error('OpenAI-compatible provider requires a configured base URL and reachable Chat Completions endpoint.')
+    }
     throw new Error('No CLI available and no API key configured.')
   }
 
@@ -399,7 +403,7 @@ export async function categorizeAll(
 
   // Resolve auth once — avoids re-resolving inside every batch call
   const provider = await getProvider()
-  const keyName = provider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
+  const keyName = getApiKeySettingKey(provider)
   const apiKeySetting = await prisma.setting.findUnique({ where: { key: keyName } })
   let client: AIClient | null = null
   try {

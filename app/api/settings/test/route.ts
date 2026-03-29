@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { resolveAnthropicClient, getCliAuthStatus } from '@/lib/claude-cli-auth'
 import { resolveOpenAIClient } from '@/lib/openai-auth'
+import { resolveOpenAICompatibleClient } from '@/lib/openai-compatible-auth'
+import { AIProvider } from '@/lib/ai-provider'
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  let body: { provider?: string } = {}
+  let body: { provider?: AIProvider } = {}
   try {
     const text = await request.text()
     if (text.trim()) body = JSON.parse(text)
@@ -72,6 +74,49 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : msg.includes('403')
         ? 'Key does not have permission'
         : msg.slice(0, 120)
+      return NextResponse.json({ working: false, error: friendly })
+    }
+  }
+
+  if (provider === 'openai-compatible') {
+    const [keySetting, modelSetting, baseUrlSetting] = await Promise.all([
+      prisma.setting.findUnique({ where: { key: 'openaiCompatApiKey' } }),
+      prisma.setting.findUnique({ where: { key: 'openaiCompatModel' } }),
+      prisma.setting.findUnique({ where: { key: 'openaiCompatBaseUrl' } }),
+    ])
+
+    const dbKey = keySetting?.value?.trim()
+    const dbModel = modelSetting?.value?.trim() || process.env.OPENAI_COMPAT_MODEL?.trim()
+    const dbBaseURL = baseUrlSetting?.value?.trim() || process.env.OPENAI_COMPAT_BASE_URL?.trim()
+
+    if (!dbBaseURL) {
+      return NextResponse.json({ working: false, error: 'Base URL is required.' })
+    }
+    if (!dbModel) {
+      return NextResponse.json({ working: false, error: 'Model is required.' })
+    }
+
+    let client
+    try {
+      client = resolveOpenAICompatibleClient({ dbKey, dbBaseURL })
+    } catch (err) {
+      return NextResponse.json({ working: false, error: err instanceof Error ? err.message : String(err) })
+    }
+
+    try {
+      await client.chat.completions.create({
+        model: dbModel,
+        max_tokens: 5,
+        messages: [{ role: 'user', content: 'hi' }],
+      })
+      return NextResponse.json({ working: true })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const friendly = msg.includes('401') || msg.includes('invalid_api_key')
+        ? 'Endpoint requires an API key'
+        : msg.includes('403')
+        ? 'Key does not have permission'
+        : msg.slice(0, 160)
       return NextResponse.json({ working: false, error: friendly })
     }
   }

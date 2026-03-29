@@ -4,6 +4,7 @@ import { getCliAvailability, claudePrompt, modelNameToCliAlias } from '@/lib/cla
 import { getCodexCliAvailability, codexPrompt } from '@/lib/codex-cli'
 import { getActiveModel, getProvider } from '@/lib/settings'
 import { AIClient } from '@/lib/ai-client'
+import { isTextOnlyProvider } from '@/lib/ai-provider'
 
 export { getActiveModel } from '@/lib/settings'
 
@@ -76,6 +77,7 @@ const CONCURRENCY = 12
  */
 async function analyzeImageViaCli(imageUrl: string): Promise<string> {
   const provider = await getProvider()
+  if (isTextOnlyProvider(provider)) return ''
   // Sanitize URL: strip control characters and newlines to prevent prompt injection
   const safeUrl = imageUrl.replace(/[\r\n\t]/g, '').trim()
   if (!safeUrl.startsWith('http://') && !safeUrl.startsWith('https://')) return ''
@@ -88,7 +90,7 @@ async function analyzeImageViaCli(imageUrl: string): Promise<string> {
     const jsonMatch = result.data.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return ''
     try { JSON.parse(jsonMatch[0]); return jsonMatch[0] } catch { return '' }
-  } else {
+  } else if (provider === 'anthropic') {
     if (!(await getCliAvailability())) return ''
     const model = await getActiveModel()
     const cliModel = modelNameToCliAlias(model)
@@ -98,6 +100,8 @@ async function analyzeImageViaCli(imageUrl: string): Promise<string> {
     if (!jsonMatch) return ''
     try { JSON.parse(jsonMatch[0]); return jsonMatch[0] } catch { return '' }
   }
+
+  return ''
 }
 
 async function analyzeImageWithRetry(
@@ -379,6 +383,9 @@ export async function enrichBatchSemanticTags(
 
   const prompt = buildEnrichmentPrompt(bookmarks)
   const provider = await getProvider()
+  if (isTextOnlyProvider(provider)) {
+    console.warn('[enrich] OpenAI-compatible provider is text-only, skipping CLI vision path')
+  }
 
   // Helper to parse enrichment response
   const parseResponse = (text: string): EnrichmentResult[] => {
@@ -404,7 +411,7 @@ export async function enrichBatchSemanticTags(
         catch { console.warn('[enrich] Codex CLI response parse failed, falling back to SDK') }
       }
     }
-  } else {
+  } else if (provider === 'anthropic') {
     if (await getCliAvailability()) {
       const model = await getActiveModel()
       const cliModel = modelNameToCliAlias(model)

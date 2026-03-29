@@ -6,6 +6,7 @@ import { getActiveModel, getProvider } from '@/lib/settings'
 import { extractKeywords } from '@/lib/search-utils'
 import { getCliAvailability, claudePrompt, modelNameToCliAlias } from '@/lib/claude-cli-auth'
 import { getCodexCliAvailability, codexPrompt } from '@/lib/codex-cli'
+import { AIProvider, getApiKeySettingKey, isTextOnlyProvider } from '@/lib/ai-provider'
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 interface CacheEntry { results: unknown; expiresAt: number }
@@ -24,20 +25,20 @@ function setCache(key: string, results: unknown): void {
 }
 
 // ─── Module-level caches (avoid DB roundtrips on every search) ────────────────
-let _apiKey: string | null = null
-let _apiKeyExpiry = 0
+let _apiKeyCache: { provider: AIProvider; value: string; expiresAt: number } | null = null
 let _categoriesCache: { slug: string; name: string; description: string | null }[] | null = null
 let _categoriesCacheExpiry = 0
 
 async function getDbApiKey(): Promise<string> {
-  if (_apiKey !== null && Date.now() < _apiKeyExpiry) return _apiKey
   const provider = await getProvider()
-  const keyName = provider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
+  if (_apiKeyCache && _apiKeyCache.provider === provider && Date.now() < _apiKeyCache.expiresAt) {
+    return _apiKeyCache.value
+  }
+  const keyName = getApiKeySettingKey(provider)
   const setting = await prisma.setting.findUnique({ where: { key: keyName } })
   const fromDb = setting?.value?.trim() ?? ''
-  _apiKey = fromDb
-  _apiKeyExpiry = Date.now() + 60_000
-  return _apiKey
+  _apiKeyCache = { provider, value: fromDb, expiresAt: Date.now() + 60_000 }
+  return fromDb
 }
 async function getAllCategories() {
   if (_categoriesCache && Date.now() < _categoriesCacheExpiry) return _categoriesCache
@@ -104,6 +105,13 @@ async function detectIntentCategories(query: string): Promise<string[]> {
   }
 
   return Array.from(slugs)
+}
+
+function getNoClientConfiguredMessage(provider: AIProvider, err: Error | null): string {
+  if (isTextOnlyProvider(provider)) {
+    return err?.message ?? 'OpenAI-compatible provider requires a base URL and direct HTTP client configuration.'
+  }
+  return 'No CLI available and no API key configured. Add an API key in Settings or install Codex/Claude CLI.'
 }
 
 /** Build a rich, readable index entry for a bookmark */
@@ -200,10 +208,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (cached) return NextResponse.json(cached)
 
   let client: AIClient | null = null
+  let clientResolveError: Error | null = null
   try {
     client = await resolveAIClient({ dbKey: apiKey })
-  } catch {
-    // SDK not available — will try CLI path
+  } catch (err) {
+    clientResolveError = err instanceof Error ? err : new Error(String(err))
   }
   const model = await getActiveModel()
   const provider = await getProvider()
@@ -373,7 +382,10 @@ Constraints:
 
   if (!cliSucceeded) {
     if (!client) {
-      return NextResponse.json({ error: 'No CLI available and no API key configured. Add an API key in Settings or install Codex/Claude CLI.' }, { status: 400 })
+      return NextResponse.json(
+        { error: getNoClientConfiguredMessage(provider, clientResolveError) },
+        { status: 400 },
+      )
     }
     try {
       const response = await client.createMessage({

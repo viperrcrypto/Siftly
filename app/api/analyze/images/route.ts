@@ -3,6 +3,7 @@ import prisma from '@/lib/db'
 import { analyzeBatch } from '@/lib/vision-analyzer'
 import { AIClient, resolveAIClient } from '@/lib/ai-client'
 import { getProvider } from '@/lib/settings'
+import { getApiKeySettingKey, isTextOnlyProvider } from '@/lib/ai-provider'
 
 // GET: returns progress stats
 export async function GET(): Promise<NextResponse> {
@@ -24,7 +25,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const provider = await getProvider()
-  const keyName = provider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
+  if (isTextOnlyProvider(provider)) {
+    return NextResponse.json(
+      { error: 'The OpenAI-compatible provider is text-only. Image analysis is not available.' },
+      { status: 400 },
+    )
+  }
+
+  const keyName = getApiKeySettingKey(provider)
   const setting = await prisma.setting.findUnique({ where: { key: keyName } })
   const dbKey = setting?.value?.trim()
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { invalidateSettingsCache } from '@/lib/settings'
+import { AIProvider } from '@/lib/ai-provider'
 
 function maskKey(raw: string | null): string | null {
   if (!raw) return null
@@ -24,24 +25,31 @@ const ALLOWED_OPENAI_MODELS = [
 
 export async function GET(): Promise<NextResponse> {
   try {
-    const [anthropic, anthropicModel, provider, openai, openaiModel, xClientId, xClientSecret] = await Promise.all([
+    const [anthropic, anthropicModel, provider, openai, openaiModel, openaiCompat, openaiCompatModel, openaiCompatBaseUrl, xClientId, xClientSecret] = await Promise.all([
       prisma.setting.findUnique({ where: { key: 'anthropicApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'anthropicModel' } }),
       prisma.setting.findUnique({ where: { key: 'aiProvider' } }),
       prisma.setting.findUnique({ where: { key: 'openaiApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'openaiModel' } }),
+      prisma.setting.findUnique({ where: { key: 'openaiCompatApiKey' } }),
+      prisma.setting.findUnique({ where: { key: 'openaiCompatModel' } }),
+      prisma.setting.findUnique({ where: { key: 'openaiCompatBaseUrl' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_id' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_secret' } }),
     ])
 
     return NextResponse.json({
-      provider: provider?.value ?? 'anthropic',
+      provider: provider?.value === 'openai' || provider?.value === 'openai-compatible' ? provider.value : 'anthropic',
       anthropicApiKey: maskKey(anthropic?.value ?? null),
       hasAnthropicKey: anthropic !== null,
       anthropicModel: anthropicModel?.value ?? 'claude-haiku-4-5-20251001',
       openaiApiKey: maskKey(openai?.value ?? null),
       hasOpenaiKey: openai !== null,
       openaiModel: openaiModel?.value ?? 'gpt-4.1-mini',
+      openaiCompatApiKey: maskKey(openaiCompat?.value ?? null),
+      hasOpenaiCompatKey: openaiCompat !== null,
+      openaiCompatModel: openaiCompatModel?.value ?? process.env.OPENAI_COMPAT_MODEL?.trim() ?? 'openai/gpt-4.1-mini',
+      openaiCompatBaseUrl: openaiCompatBaseUrl?.value ?? process.env.OPENAI_COMPAT_BASE_URL?.trim() ?? '',
       xOAuthClientId: maskKey(xClientId?.value ?? null),
       xOAuthClientSecret: maskKey(xClientSecret?.value ?? null),
       hasXOAuth: !!xClientId?.value,
@@ -59,9 +67,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let body: {
     anthropicApiKey?: string
     anthropicModel?: string
-    provider?: string
+    provider?: AIProvider
     openaiApiKey?: string
     openaiModel?: string
+    openaiCompatApiKey?: string
+    openaiCompatModel?: string
+    openaiCompatBaseUrl?: string
     xOAuthClientId?: string
     xOAuthClientSecret?: string
   } = {}
@@ -71,123 +82,114 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { anthropicApiKey, anthropicModel, provider, openaiApiKey, openaiModel } = body
+  const {
+    anthropicApiKey,
+    anthropicModel,
+    provider,
+    openaiApiKey,
+    openaiModel,
+    openaiCompatApiKey,
+    openaiCompatModel,
+    openaiCompatBaseUrl,
+    xOAuthClientId,
+    xOAuthClientSecret,
+  } = body
 
-  // Save provider if provided
+  const entriesToSave: Array<{ key: string; value: string }> = []
+
   if (provider !== undefined) {
-    if (provider !== 'anthropic' && provider !== 'openai') {
+    if (provider !== 'anthropic' && provider !== 'openai' && provider !== 'openai-compatible') {
       return NextResponse.json({ error: 'Invalid provider' }, { status: 400 })
     }
-    await prisma.setting.upsert({
-      where: { key: 'aiProvider' },
-      update: { value: provider },
-      create: { key: 'aiProvider', value: provider },
-    })
-    invalidateSettingsCache()
-    return NextResponse.json({ saved: true })
+    entriesToSave.push({ key: 'aiProvider', value: provider })
   }
 
-  // Save Anthropic model if provided
   if (anthropicModel !== undefined) {
     if (!(ALLOWED_ANTHROPIC_MODELS as readonly string[]).includes(anthropicModel)) {
       return NextResponse.json({ error: 'Invalid Anthropic model' }, { status: 400 })
     }
-    await prisma.setting.upsert({
-      where: { key: 'anthropicModel' },
-      update: { value: anthropicModel },
-      create: { key: 'anthropicModel', value: anthropicModel },
-    })
-    invalidateSettingsCache()
-    return NextResponse.json({ saved: true })
+    entriesToSave.push({ key: 'anthropicModel', value: anthropicModel })
   }
 
-  // Save OpenAI model if provided
   if (openaiModel !== undefined) {
     if (!(ALLOWED_OPENAI_MODELS as readonly string[]).includes(openaiModel)) {
       return NextResponse.json({ error: 'Invalid OpenAI model' }, { status: 400 })
     }
-    await prisma.setting.upsert({
-      where: { key: 'openaiModel' },
-      update: { value: openaiModel },
-      create: { key: 'openaiModel', value: openaiModel },
-    })
-    invalidateSettingsCache()
-    return NextResponse.json({ saved: true })
+    entriesToSave.push({ key: 'openaiModel', value: openaiModel })
   }
 
-  // Save Anthropic key if provided
+  if (openaiCompatModel !== undefined) {
+    if (typeof openaiCompatModel !== 'string' || openaiCompatModel.trim() === '') {
+      return NextResponse.json({ error: 'Invalid openaiCompatModel value' }, { status: 400 })
+    }
+    entriesToSave.push({ key: 'openaiCompatModel', value: openaiCompatModel.trim() })
+  }
+
+  if (openaiCompatBaseUrl !== undefined) {
+    if (typeof openaiCompatBaseUrl !== 'string' || openaiCompatBaseUrl.trim() === '') {
+      return NextResponse.json({ error: 'Invalid openaiCompatBaseUrl value' }, { status: 400 })
+    }
+    entriesToSave.push({ key: 'openaiCompatBaseUrl', value: openaiCompatBaseUrl.trim() })
+  }
+
   if (anthropicApiKey !== undefined) {
     if (typeof anthropicApiKey !== 'string' || anthropicApiKey.trim() === '') {
       return NextResponse.json({ error: 'Invalid anthropicApiKey value' }, { status: 400 })
     }
-    const trimmed = anthropicApiKey.trim()
-    try {
-      await prisma.setting.upsert({
-        where: { key: 'anthropicApiKey' },
-        update: { value: trimmed },
-        create: { key: 'anthropicApiKey', value: trimmed },
-      })
-      invalidateSettingsCache()
-      return NextResponse.json({ saved: true })
-    } catch (err) {
-      console.error('Settings POST (anthropic) error:', err)
-      return NextResponse.json(
-        { error: `Failed to save: ${err instanceof Error ? err.message : String(err)}` },
-        { status: 500 }
-      )
-    }
+    entriesToSave.push({ key: 'anthropicApiKey', value: anthropicApiKey.trim() })
   }
 
-  // Save OpenAI key if provided
   if (openaiApiKey !== undefined) {
     if (typeof openaiApiKey !== 'string' || openaiApiKey.trim() === '') {
       return NextResponse.json({ error: 'Invalid openaiApiKey value' }, { status: 400 })
     }
-    const trimmed = openaiApiKey.trim()
-    try {
-      await prisma.setting.upsert({
-        where: { key: 'openaiApiKey' },
-        update: { value: trimmed },
-        create: { key: 'openaiApiKey', value: trimmed },
-      })
-      invalidateSettingsCache()
-      return NextResponse.json({ saved: true })
-    } catch (err) {
-      console.error('Settings POST (openai) error:', err)
-      return NextResponse.json(
-        { error: `Failed to save: ${err instanceof Error ? err.message : String(err)}` },
-        { status: 500 }
-      )
-    }
+    entriesToSave.push({ key: 'openaiApiKey', value: openaiApiKey.trim() })
   }
 
-  // Save X OAuth credentials if provided
-  const { xOAuthClientId, xOAuthClientSecret } = body
-  const xKeys: { key: string; value: string | undefined }[] = [
-    { key: 'x_oauth_client_id', value: xOAuthClientId },
-    { key: 'x_oauth_client_secret', value: xOAuthClientSecret },
-  ]
-  const xToSave = xKeys.filter((k) => k.value !== undefined && k.value.trim() !== '')
-  if (xToSave.length > 0) {
-    try {
-      for (const { key, value } of xToSave) {
-        await prisma.setting.upsert({
+  if (openaiCompatApiKey !== undefined) {
+    if (typeof openaiCompatApiKey !== 'string' || openaiCompatApiKey.trim() === '') {
+      return NextResponse.json({ error: 'Invalid openaiCompatApiKey value' }, { status: 400 })
+    }
+    entriesToSave.push({ key: 'openaiCompatApiKey', value: openaiCompatApiKey.trim() })
+  }
+
+  if (xOAuthClientId !== undefined) {
+    if (typeof xOAuthClientId !== 'string' || xOAuthClientId.trim() === '') {
+      return NextResponse.json({ error: 'Invalid xOAuthClientId value' }, { status: 400 })
+    }
+    entriesToSave.push({ key: 'x_oauth_client_id', value: xOAuthClientId.trim() })
+  }
+
+  if (xOAuthClientSecret !== undefined) {
+    if (typeof xOAuthClientSecret !== 'string' || xOAuthClientSecret.trim() === '') {
+      return NextResponse.json({ error: 'Invalid xOAuthClientSecret value' }, { status: 400 })
+    }
+    entriesToSave.push({ key: 'x_oauth_client_secret', value: xOAuthClientSecret.trim() })
+  }
+
+  if (entriesToSave.length === 0) {
+    return NextResponse.json({ error: 'No setting provided' }, { status: 400 })
+  }
+
+  try {
+    await prisma.$transaction(
+      entriesToSave.map(({ key, value }) =>
+        prisma.setting.upsert({
           where: { key },
-          update: { value: value!.trim() },
-          create: { key, value: value!.trim() },
-        })
-      }
-      return NextResponse.json({ saved: true })
-    } catch (err) {
-      console.error('Settings POST (X OAuth) error:', err)
-      return NextResponse.json(
-        { error: `Failed to save: ${err instanceof Error ? err.message : String(err)}` },
-        { status: 500 },
-      )
-    }
+          update: { value },
+          create: { key, value },
+        }),
+      ),
+    )
+    invalidateSettingsCache()
+    return NextResponse.json({ saved: true })
+  } catch (err) {
+    console.error('Settings POST error:', err)
+    return NextResponse.json(
+      { error: `Failed to save: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 500 },
+    )
   }
-
-  return NextResponse.json({ error: 'No setting provided' }, { status: 400 })
 }
 
 export async function DELETE(request: NextRequest): Promise<NextResponse> {
@@ -198,7 +200,7 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const allowed = ['anthropicApiKey', 'openaiApiKey', 'x_oauth_client_id', 'x_oauth_client_secret']
+  const allowed = ['anthropicApiKey', 'openaiApiKey', 'openaiCompatApiKey', 'x_oauth_client_id', 'x_oauth_client_secret']
   if (!body.key || !allowed.includes(body.key)) {
     return NextResponse.json({ error: 'Invalid key' }, { status: 400 })
   }

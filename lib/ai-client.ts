@@ -2,7 +2,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import { resolveAnthropicClient } from './claude-cli-auth'
 import { resolveOpenAIClient } from './openai-auth'
-import { getProvider } from './settings'
+import { resolveOpenAICompatibleClient } from './openai-compatible-auth'
+import { AIProvider, isTextOnlyProvider } from './ai-provider'
+import { getOpenAICompatBaseUrl, getProvider } from './settings'
 
 export interface AIContentBlock {
   type: 'text' | 'image'
@@ -20,7 +22,7 @@ export interface AIResponse {
 }
 
 export interface AIClient {
-  provider: 'anthropic' | 'openai'
+  provider: AIProvider
   createMessage(params: {
     model: string
     max_tokens: number
@@ -67,10 +69,21 @@ export class AnthropicAIClient implements AIClient {
 
 // Wrap OpenAI SDK
 export class OpenAIAIClient implements AIClient {
-  provider = 'openai' as const
-  constructor(private sdk: OpenAI) {}
+  constructor(
+    private sdk: OpenAI,
+    public provider: Extract<AIProvider, 'openai' | 'openai-compatible'> = 'openai',
+  ) {}
 
   async createMessage(params: { model: string; max_tokens: number; messages: AIMessage[] }): Promise<AIResponse> {
+    if (isTextOnlyProvider(this.provider)) {
+      const hasImageInput = params.messages.some((message) =>
+        Array.isArray(message.content) && message.content.some((block) => block.type === 'image'),
+      )
+      if (hasImageInput) {
+        throw new Error('The OpenAI-compatible provider is text-only and does not support image analysis.')
+      }
+    }
+
     const messages: OpenAI.ChatCompletionMessageParam[] = params.messages.map((m): OpenAI.ChatCompletionMessageParam => {
       if (typeof m.content === 'string') {
         if (m.role === 'assistant') return { role: 'assistant' as const, content: m.content }
@@ -105,9 +118,19 @@ export async function resolveAIClient(options: {
 } = {}): Promise<AIClient> {
   const provider = await getProvider()
 
+  if (provider === 'openai-compatible') {
+    const baseURL = await getOpenAICompatBaseUrl()
+    const client = resolveOpenAICompatibleClient({
+      overrideKey: options.overrideKey,
+      dbKey: options.dbKey,
+      dbBaseURL: baseURL,
+    })
+    return new OpenAIAIClient(client, 'openai-compatible')
+  }
+
   if (provider === 'openai') {
     const client = resolveOpenAIClient(options)
-    return new OpenAIAIClient(client)
+    return new OpenAIAIClient(client, 'openai')
   }
 
   const client = resolveAnthropicClient(options)
