@@ -12,6 +12,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test tests/*.test.ts",
     "siftly": "tsx cli/siftly.ts"
   },
   "dependencies": {

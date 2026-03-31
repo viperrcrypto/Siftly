@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Download, ArrowLeft } from 'lucide-react'
 import BookmarkCard from '@/components/bookmark-card'
+import { getPageAfterDeletion } from '@/lib/pagination'
 import type { BookmarkWithMedia, Category } from '@/lib/types'
 
 const PAGE_SIZE = 24
@@ -88,14 +89,22 @@ export default function CategoryPage() {
   }, [fetchData, page])
 
   function handleDeleteBookmark(bookmarkId: string) {
-    setData((prev) => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        bookmarks: prev.bookmarks.filter((bookmark) => bookmark.id !== bookmarkId),
-        total: Math.max(prev.total - 1, 0),
-      }
+    if (!data) return
+
+    const nextPage = getPageAfterDeletion(page, data.total, PAGE_SIZE)
+
+    setData({
+      ...data,
+      bookmarks: data.bookmarks.filter((bookmark) => bookmark.id !== bookmarkId),
+      total: Math.max(data.total - 1, 0),
     })
+
+    if (nextPage !== page) {
+      setPage(nextPage)
+      return
+    }
+
+    void fetchData(nextPage)
   }
 
   function handleExport() {

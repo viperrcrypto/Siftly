@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import * as Select from '@radix-ui/react-select'
 import BookmarkCard from '@/components/bookmark-card'
+import { getPageAfterDeletion } from '@/lib/pagination'
 import type { BookmarkWithMedia, BookmarksResponse } from '@/lib/types'
 
 const PAGE_SIZE = 24
@@ -251,8 +252,17 @@ function BookmarksPageInner() {
   }
 
   function handleDeleteBookmark(bookmarkId: string) {
+    const nextPage = getPageAfterDeletion(filters.page, total, PAGE_SIZE)
+
     setBookmarks((prev) => prev.filter((bookmark) => bookmark.id !== bookmarkId))
     setTotal((prev) => Math.max(prev - 1, 0))
+
+    if (nextPage !== filters.page) {
+      setFilters((prev) => ({ ...prev, page: nextPage }))
+      return
+    }
+
+    void fetchBookmarks({ ...filters, page: nextPage })
   }
 
   const mediaOptions = [
