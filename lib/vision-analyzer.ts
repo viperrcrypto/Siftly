@@ -1,7 +1,7 @@
 import prisma from '@/lib/db'
 import { buildImageContext } from '@/lib/image-context'
 import { getCliAvailability, claudePrompt, modelNameToCliAlias } from '@/lib/claude-cli-auth'
-import { getCodexCliAvailability, codexPrompt } from '@/lib/codex-cli'
+import { openaiCliPrompt } from '@/lib/openai-cli'
 import { getActiveModel, getProvider } from '@/lib/settings'
 import { AIClient } from '@/lib/ai-client'
 
@@ -72,7 +72,7 @@ const CONCURRENCY = 12
 
 /**
  * CLI-based vision analysis: passes the image URL in the prompt text.
- * Works with Codex CLI (ChatGPT OAuth) and Claude CLI without needing SDK access.
+ * Works with OpenAI-compatible CLIs and Claude CLI without needing SDK access.
  */
 async function analyzeImageViaCli(imageUrl: string): Promise<string> {
   const provider = await getProvider()
@@ -82,8 +82,8 @@ async function analyzeImageViaCli(imageUrl: string): Promise<string> {
   const urlPrompt = `Look at this image URL and analyze it: ${safeUrl}\n\n${ANALYSIS_PROMPT}`
 
   if (provider === 'openai') {
-    if (!(await getCodexCliAvailability())) return ''
-    const result = await codexPrompt(urlPrompt, { timeoutMs: 60_000 })
+    const model = await getActiveModel()
+    const result = await openaiCliPrompt(urlPrompt, { model, timeoutMs: 60_000 })
     if (!result.success || !result.data) return ''
     const jsonMatch = result.data.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return ''
@@ -397,12 +397,11 @@ export async function enrichBatchSemanticTags(
 
   // Prefer CLI over SDK
   if (provider === 'openai') {
-    if (await getCodexCliAvailability()) {
-      const result = await codexPrompt(prompt, { timeoutMs: 90_000 })
-      if (result.success && result.data) {
-        try { return parseResponse(result.data) }
-        catch { console.warn('[enrich] Codex CLI response parse failed, falling back to SDK') }
-      }
+    const model = await getActiveModel()
+    const result = await openaiCliPrompt(prompt, { model, timeoutMs: 90_000 })
+    if (result.success && result.data) {
+      try { return parseResponse(result.data) }
+      catch { console.warn('[enrich] OpenAI CLI response parse failed, falling back to SDK') }
     }
   } else {
     if (await getCliAvailability()) {

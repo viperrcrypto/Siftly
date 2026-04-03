@@ -399,7 +399,7 @@ function BookmarksPageInner() {
                 <>
                   <span className="text-zinc-200 font-semibold">{total.toLocaleString()}</span>
                   {' '}bookmark{total !== 1 ? 's' : ''}
-                  {filters.q && <span className="text-zinc-600"> for "{filters.q}"</span>}
+                  {filters.q && <span className="text-zinc-600"> for &quot;{filters.q}&quot;</span>}
                 </>
               ) : (
                 'No bookmarks found'

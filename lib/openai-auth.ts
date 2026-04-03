@@ -133,5 +133,5 @@ export function resolveOpenAIClient(options: {
 
   if (baseURL) return new OpenAI({ apiKey: 'proxy', baseURL })
 
-  throw new Error('No OpenAI API key found. Add your key in Settings, or set up Codex CLI.')
+  throw new Error('No OpenAI API key found. Add your key in Settings, or sign in with Codex CLI or GitHub Copilot CLI.')
 }

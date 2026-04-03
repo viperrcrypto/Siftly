@@ -157,7 +157,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       try {
         client = await resolveAIClient({ dbKey: dbApiKey })
       } catch {
-        // SDK client not available — CLI path may still work (e.g. ChatGPT OAuth via codex exec)
+        // SDK client not available — CLI path may still work via Codex or Copilot.
         console.warn('No SDK client available — will rely on CLI path')
       }
 

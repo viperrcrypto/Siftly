@@ -14,7 +14,6 @@ import {
   Shield,
   ExternalLink,
   ChevronDown,
-  Zap,
   Copy,
   Coffee,
   Terminal,
@@ -35,6 +34,8 @@ const OPENAI_MODELS = [
   { value: 'o4-mini', label: 'o4-mini', description: 'Reasoning (mini)' },
   { value: 'o3', label: 'o3', description: 'Reasoning' },
 ]
+
+type OpenAICliPreference = 'auto' | 'codex' | 'copilot'
 
 
 interface Toast {
@@ -379,6 +380,17 @@ interface CliStatus {
   expired?: boolean
 }
 
+interface OpenAICliStatus {
+  available: boolean
+  installed?: boolean
+  expired?: boolean
+  planType?: string
+  authMode?: string
+  login?: string
+  host?: string
+  configuredModel?: string
+}
+
 function ClaudeCliStatusBox() {
   const [status, setStatus] = useState<CliStatus | null>(null)
 
@@ -437,59 +449,147 @@ function ClaudeCliStatusBox() {
   )
 }
 
-function CodexCliStatusBox() {
-  const [status, setStatus] = useState<{ available: boolean; expired?: boolean; planType?: string; authMode?: string } | null>(null)
+function OpenAICliStatusRow({
+  name,
+  detail,
+  model,
+  tone,
+}: {
+  name: string
+  detail: string
+  model?: string
+  tone: 'ready' | 'warn' | 'idle'
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-xl border border-zinc-700/80 bg-zinc-900/60 px-3.5 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-zinc-200">{name}</p>
+        <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">{detail}</p>
+        {model && (
+          <p className="text-xs text-zinc-400 mt-2">
+            Current model: <span className="font-mono text-zinc-300">{model}</span>
+          </p>
+        )}
+      </div>
+      <span
+        className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium ${
+          tone === 'ready'
+            ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+            : tone === 'warn'
+            ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+            : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+        }`}
+      >
+        {tone === 'ready' ? 'Ready' : tone === 'warn' ? 'Needs attention' : 'Not ready'}
+      </span>
+    </div>
+  )
+}
+
+function OpenAICliStatusBox() {
+  const [status, setStatus] = useState<{ codex?: OpenAICliStatus; copilot?: OpenAICliStatus } | null>(null)
 
   useEffect(() => {
     fetch('/api/settings/cli-status')
       .then((r) => r.json())
-      .then((d: { codex?: { available: boolean; expired?: boolean; planType?: string; authMode?: string } }) => setStatus(d.codex ?? { available: false }))
-      .catch(() => setStatus({ available: false }))
+      .then((d: { codex?: OpenAICliStatus; copilot?: OpenAICliStatus }) => setStatus({
+        codex: d.codex ?? { available: false },
+        copilot: d.copilot ?? { available: false },
+      }))
+      .catch(() => setStatus({ codex: { available: false }, copilot: { available: false } }))
   }, [])
 
   if (status === null) return null
 
-  if (status.available && !status.expired) {
-    const tier = status.planType
-      ? status.planType.charAt(0).toUpperCase() + status.planType.slice(1)
-      : 'CLI'
-    return (
-      <div className="flex gap-3 p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/20 mb-5">
-        <Check size={15} className="text-emerald-400 shrink-0 mt-0.5" />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-emerald-300">
-            Codex CLI detected — no API key needed
-          </p>
-          <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-            Signed in as <span className="text-zinc-300">{tier}</span> via Codex CLI. Siftly will use your credentials automatically. An API key below will take priority if set.
-          </p>
-        </div>
-      </div>
-    )
-  }
+  const codex = status.codex ?? { available: false }
+  const copilot = status.copilot ?? { available: false }
+  const anyReady = (codex.installed && codex.available && !codex.expired) || (copilot.installed && copilot.available)
+  const anyInstalled = codex.installed || copilot.installed
+  const codexTier = codex.planType
+    ? codex.planType.charAt(0).toUpperCase() + codex.planType.slice(1)
+    : null
+  const codexDetail =
+    !codex.installed
+      ? 'Not installed on this machine.'
+      : codex.available && !codex.expired
+      ? `Signed in${codexTier ? ` with ${codexTier}` : ''}. Uses the OpenAI model selected in Siftly below.`
+      : codex.available && codex.expired
+      ? 'Session expired. Run `codex` in your terminal to refresh it.'
+      : 'Installed, but not signed in yet. Run `codex` to authenticate.'
+  const copilotDetail = !copilot.installed
+    ? 'Not installed on this machine.'
+    : copilot.available
+    ? `Signed in${copilot.login ? ` as ${copilot.login}` : ''}. Uses the model configured in GitHub Copilot CLI itself.`
+    : 'Installed, but not signed in yet. Run `copilot login` or use `/login` in the CLI.'
 
-  if (status.available && status.expired) {
-    return (
-      <div className="flex gap-3 p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/20 mb-5">
-        <AlertCircle size={15} className="text-amber-400 shrink-0 mt-0.5" />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-amber-300">Codex CLI session expired</p>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            Run <span className="font-mono text-zinc-300">codex</span> in your terminal to refresh, then reload this page.
-          </p>
-        </div>
-      </div>
-    )
-  }
+  const wrapperClass = anyReady
+    ? 'bg-emerald-500/5 border-emerald-500/20'
+    : anyInstalled
+    ? 'bg-amber-500/5 border-amber-500/20'
+    : 'bg-zinc-800/60 border-zinc-700'
+  const iconClass = anyReady ? 'text-emerald-400' : anyInstalled ? 'text-amber-400' : 'text-zinc-400'
+  const title = anyReady ? 'OpenAI CLI auth available' : anyInstalled ? 'OpenAI CLI needs attention' : 'No OpenAI CLI detected'
+  const description = anyReady
+    ? 'Choose which terminal auth path Siftly should prefer when OpenAI is selected.'
+    : anyInstalled
+    ? 'At least one OpenAI CLI is installed, but it still needs a valid sign-in session.'
+    : 'Install Codex CLI or GitHub Copilot CLI if you want to use OpenAI without pasting an API key.'
 
   return (
-    <div className="flex gap-3 p-3.5 rounded-xl bg-zinc-800/60 border border-zinc-700 mb-5">
-      <Terminal size={15} className="text-zinc-400 shrink-0 mt-0.5" />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-zinc-200">No Codex CLI detected</p>
-        <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-          Install Codex CLI and sign in to skip the API key entirely, or paste your OpenAI API key below.
-        </p>
+    <div className={`flex gap-3 p-3.5 rounded-xl border mb-5 ${wrapperClass}`}>
+      <Terminal size={15} className={`${iconClass} shrink-0 mt-0.5`} />
+      <div className="min-w-0 flex-1 space-y-3">
+        <div>
+          <p className="text-sm font-medium text-zinc-200">{title}</p>
+          <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">{description}</p>
+        </div>
+        <div className="space-y-2.5">
+          <OpenAICliStatusRow
+            name="Codex CLI"
+            detail={codexDetail}
+            model={codex.configuredModel}
+            tone={codex.installed && codex.available && !codex.expired ? 'ready' : codex.installed ? 'warn' : 'idle'}
+          />
+          <OpenAICliStatusRow
+            name="GitHub Copilot CLI"
+            detail={copilotDetail}
+            model={copilot.configuredModel}
+            tone={copilot.installed && copilot.available ? 'ready' : copilot.installed ? 'warn' : 'idle'}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function OpenAICliPreferenceSelector({
+  value,
+  onChange,
+}: {
+  value: OpenAICliPreference
+  onChange: (value: OpenAICliPreference) => void
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4 mb-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-zinc-200">Preferred OpenAI CLI</p>
+          <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+            Pick which terminal auth path Siftly should try first. If it is unavailable, Siftly falls back to the other OpenAI CLI and then your API key.
+          </p>
+        </div>
+        <div className="relative shrink-0">
+          <select
+            value={value}
+            onChange={(e) => onChange(e.target.value as OpenAICliPreference)}
+            className="appearance-none rounded-lg border border-zinc-700 bg-zinc-800 pl-3 pr-8 py-2 text-sm text-zinc-200 focus:outline-none focus:border-indigo-500 transition-colors"
+          >
+            <option value="auto">Auto (Codex first)</option>
+            <option value="codex">Codex CLI</option>
+            <option value="copilot">GitHub Copilot CLI</option>
+          </select>
+          <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+        </div>
       </div>
     </div>
   )
@@ -524,14 +624,23 @@ function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai'; on
 
 function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
   const [provider, setProvider] = useState<'anthropic' | 'openai' | null>(null)
+  const [openaiCliPreference, setOpenAICliPreference] = useState<OpenAICliPreference>('auto')
 
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
-      .then((d: { provider?: string }) => {
+      .then((d: { provider?: string; openaiCliPreference?: string }) => {
         setProvider(d.provider === 'openai' ? 'openai' : 'anthropic')
+        setOpenAICliPreference(
+          d.openaiCliPreference === 'codex' || d.openaiCliPreference === 'copilot'
+            ? d.openaiCliPreference
+            : 'auto'
+        )
       })
-      .catch(() => setProvider('anthropic'))
+      .catch(() => {
+        setProvider('anthropic')
+        setOpenAICliPreference('auto')
+      })
   }, [])
 
   async function handleProviderChange(newProvider: 'anthropic' | 'openai') {
@@ -548,6 +657,29 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
     } catch {
       setProvider(prev) // revert on failure
       onToast({ type: 'error', message: 'Failed to save provider preference' })
+    }
+  }
+
+  async function handleOpenAICliPreferenceChange(newPreference: OpenAICliPreference) {
+    const prev = openaiCliPreference
+    setOpenAICliPreference(newPreference)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ openaiCliPreference: newPreference }),
+      })
+      if (!res.ok) throw new Error('Failed to save OpenAI CLI preference')
+      onToast({
+        type: 'success',
+        message:
+          newPreference === 'auto'
+            ? 'OpenAI CLI preference set to Auto'
+            : `OpenAI CLI preference set to ${newPreference === 'codex' ? 'Codex' : 'GitHub Copilot'}`,
+      })
+    } catch {
+      setOpenAICliPreference(prev)
+      onToast({ type: 'error', message: 'Failed to save OpenAI CLI preference' })
     }
   }
 
@@ -600,7 +732,11 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
         </>
       ) : (
         <>
-          <CodexCliStatusBox />
+          <OpenAICliStatusBox />
+          <OpenAICliPreferenceSelector
+            value={openaiCliPreference}
+            onChange={(value) => void handleOpenAICliPreferenceChange(value)}
+          />
           <div className="space-y-5">
             <div>
               <ApiKeyField
@@ -618,7 +754,9 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
                 defaultValue="gpt-4.1-mini"
                 onToast={onToast}
               />
-              <p className="text-xs text-zinc-500 mt-1.5">Applies to all AI operations — API key <strong className="text-zinc-400 font-medium">and Codex CLI</strong></p>
+              <p className="text-xs text-zinc-500 mt-1.5">
+                OpenAI model applies to the API key path and <strong className="text-zinc-400 font-medium">Codex CLI</strong>. GitHub Copilot CLI uses the model configured inside Copilot CLI itself.
+              </p>
             </div>
           </div>
         </>
@@ -752,14 +890,6 @@ function DangerZoneSection({ onToast }: { onToast: (t: Toast) => void }) {
     </Section>
   )
 }
-
-const TECH_STACK = [
-  { label: 'Next.js 15', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
-  { label: 'Prisma + SQLite', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
-  { label: 'Anthropic / OpenAI', color: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
-  { label: 'React Flow', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
-  { label: 'Tailwind CSS', color: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' },
-]
 
 const DONATION_ADDRESS = '0xcF10B967a9e422753812004Cd59990f62E360760'
 

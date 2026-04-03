@@ -24,12 +24,13 @@ const ALLOWED_OPENAI_MODELS = [
 
 export async function GET(): Promise<NextResponse> {
   try {
-    const [anthropic, anthropicModel, provider, openai, openaiModel, xClientId, xClientSecret] = await Promise.all([
+    const [anthropic, anthropicModel, provider, openai, openaiModel, openaiCliPreference, xClientId, xClientSecret] = await Promise.all([
       prisma.setting.findUnique({ where: { key: 'anthropicApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'anthropicModel' } }),
       prisma.setting.findUnique({ where: { key: 'aiProvider' } }),
       prisma.setting.findUnique({ where: { key: 'openaiApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'openaiModel' } }),
+      prisma.setting.findUnique({ where: { key: 'openaiCliPreference' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_id' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_secret' } }),
     ])
@@ -42,6 +43,10 @@ export async function GET(): Promise<NextResponse> {
       openaiApiKey: maskKey(openai?.value ?? null),
       hasOpenaiKey: openai !== null,
       openaiModel: openaiModel?.value ?? 'gpt-4.1-mini',
+      openaiCliPreference:
+        openaiCliPreference?.value === 'codex' || openaiCliPreference?.value === 'copilot'
+          ? openaiCliPreference.value
+          : 'auto',
       xOAuthClientId: maskKey(xClientId?.value ?? null),
       xOAuthClientSecret: maskKey(xClientSecret?.value ?? null),
       hasXOAuth: !!xClientId?.value,
@@ -62,6 +67,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     provider?: string
     openaiApiKey?: string
     openaiModel?: string
+    openaiCliPreference?: string
     xOAuthClientId?: string
     xOAuthClientSecret?: string
   } = {}
@@ -71,7 +77,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { anthropicApiKey, anthropicModel, provider, openaiApiKey, openaiModel } = body
+  const { anthropicApiKey, anthropicModel, provider, openaiApiKey, openaiModel, openaiCliPreference } = body
 
   // Save provider if provided
   if (provider !== undefined) {
@@ -110,6 +116,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       where: { key: 'openaiModel' },
       update: { value: openaiModel },
       create: { key: 'openaiModel', value: openaiModel },
+    })
+    invalidateSettingsCache()
+    return NextResponse.json({ saved: true })
+  }
+
+  // Save preferred OpenAI CLI if provided
+  if (openaiCliPreference !== undefined) {
+    if (openaiCliPreference !== 'auto' && openaiCliPreference !== 'codex' && openaiCliPreference !== 'copilot') {
+      return NextResponse.json({ error: 'Invalid OpenAI CLI preference' }, { status: 400 })
+    }
+    await prisma.setting.upsert({
+      where: { key: 'openaiCliPreference' },
+      update: { value: openaiCliPreference },
+      create: { key: 'openaiCliPreference', value: openaiCliPreference },
     })
     invalidateSettingsCache()
     return NextResponse.json({ saved: true })

@@ -5,7 +5,7 @@ import { AIClient, resolveAIClient } from '@/lib/ai-client'
 import { getActiveModel, getProvider } from '@/lib/settings'
 import { extractKeywords } from '@/lib/search-utils'
 import { getCliAvailability, claudePrompt, modelNameToCliAlias } from '@/lib/claude-cli-auth'
-import { getCodexCliAvailability, codexPrompt } from '@/lib/codex-cli'
+import { openaiCliPrompt } from '@/lib/openai-cli'
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 interface CacheEntry { results: unknown; expiresAt: number }
@@ -352,9 +352,9 @@ Constraints:
 
   // Try CLI first (works with ChatGPT OAuth), then fall back to SDK
   let cliSucceeded = false
-  if (provider === 'openai' && await getCodexCliAvailability()) {
+  if (provider === 'openai') {
     try {
-      const result = await codexPrompt(prompt, { timeoutMs: 90_000 })
+      const result = await openaiCliPrompt(prompt, { model, timeoutMs: 90_000 })
       if (result.success && result.data) {
         aiResponse = parseSearchResponse(result.data)
         cliSucceeded = true
@@ -373,7 +373,7 @@ Constraints:
 
   if (!cliSucceeded) {
     if (!client) {
-      return NextResponse.json({ error: 'No CLI available and no API key configured. Add an API key in Settings or install Codex/Claude CLI.' }, { status: 400 })
+      return NextResponse.json({ error: 'No CLI available and no API key configured. Add an API key in Settings or install Codex/GitHub Copilot/Claude CLI.' }, { status: 400 })
     }
     try {
       const response = await client.createMessage({

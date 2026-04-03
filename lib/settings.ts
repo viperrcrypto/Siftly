@@ -10,6 +10,9 @@ let _providerCacheExpiry = 0
 let _cachedOpenAIModel: string | null = null
 let _openAIModelCacheExpiry = 0
 
+let _cachedOpenAICliPreference: 'auto' | 'codex' | 'copilot' | null = null
+let _openAICliPreferenceCacheExpiry = 0
+
 const CACHE_TTL = 5 * 60 * 1000
 
 /**
@@ -46,6 +49,20 @@ export async function getOpenAIModel(): Promise<string> {
 }
 
 /**
+ * Get the preferred OpenAI CLI implementation from settings (cached for 5 minutes).
+ */
+export async function getOpenAICliPreference(): Promise<'auto' | 'codex' | 'copilot'> {
+  if (_cachedOpenAICliPreference && Date.now() < _openAICliPreferenceCacheExpiry) {
+    return _cachedOpenAICliPreference
+  }
+  const setting = await prisma.setting.findUnique({ where: { key: 'openaiCliPreference' } })
+  _cachedOpenAICliPreference =
+    setting?.value === 'codex' || setting?.value === 'copilot' ? setting.value : 'auto'
+  _openAICliPreferenceCacheExpiry = Date.now() + CACHE_TTL
+  return _cachedOpenAICliPreference
+}
+
+/**
  * Get the model for the currently active provider.
  */
 export async function getActiveModel(): Promise<string> {
@@ -63,4 +80,6 @@ export function invalidateSettingsCache(): void {
   _providerCacheExpiry = 0
   _cachedOpenAIModel = null
   _openAIModelCacheExpiry = 0
+  _cachedOpenAICliPreference = null
+  _openAICliPreferenceCacheExpiry = 0
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { resolveAnthropicClient, getCliAuthStatus } from '@/lib/claude-cli-auth'
+import { openaiCliPrompt } from '@/lib/openai-cli'
 import { resolveOpenAIClient } from '@/lib/openai-auth'
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -51,11 +52,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const setting = await prisma.setting.findUnique({ where: { key: 'openaiApiKey' } })
     const dbKey = setting?.value?.trim()
 
+    const cliResult = await openaiCliPrompt('Reply with exactly OK.', { timeoutMs: 30_000 })
+    if (cliResult.success && cliResult.data?.trim()) {
+      return NextResponse.json({ working: true })
+    }
+
     let client
     try {
       client = resolveOpenAIClient({ dbKey })
     } catch {
-      return NextResponse.json({ working: false, error: 'No OpenAI API key found. Add one in Settings or set up Codex CLI.' })
+      return NextResponse.json({
+        working: false,
+        error: cliResult.error ?? 'No OpenAI API key found. Add one in Settings, or sign in with Codex CLI or GitHub Copilot CLI.',
+      })
     }
 
     try {

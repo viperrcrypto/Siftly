@@ -143,8 +143,8 @@ export async function POST(req: NextRequest) {
         data: {
           tweetId: tweet.id,
           text: tweet.text,
-          authorHandle: author?.username ?? null,
-          authorName: author?.name ?? null,
+          authorHandle: author?.username ?? 'unknown',
+          authorName: author?.name ?? 'Unknown',
           tweetCreatedAt: tweet.created_at ? new Date(tweet.created_at) : null,
           rawJson: JSON.stringify(tweet),
           source: 'bookmark',

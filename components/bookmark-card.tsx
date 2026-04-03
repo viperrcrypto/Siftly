@@ -34,14 +34,14 @@ interface LinkPreviewData {
 const previewCache = new Map<string, LinkPreviewData | null>()
 
 function LinkPreview({ url, tweetUrl, tweetId, prominent = false }: { url: string; tweetUrl: string; tweetId?: string; prominent?: boolean }) {
-  const [data, setData] = useState<LinkPreviewData | null | 'loading'>('loading')
+  const cacheKey = tweetId ? `${url}:${tweetId}` : url
+  const [state, setState] = useState<{ key: string; data: LinkPreviewData | null | 'loading' }>(() => ({
+    key: cacheKey,
+    data: previewCache.has(cacheKey) ? (previewCache.get(cacheKey) ?? null) : 'loading',
+  }))
 
   useEffect(() => {
-    const cacheKey = tweetId ? `${url}:${tweetId}` : url
-    if (previewCache.has(cacheKey)) {
-      setData(previewCache.get(cacheKey) ?? null)
-      return
-    }
+    if (previewCache.has(cacheKey)) return
     let cancelled = false
     fetch(`/api/link-preview?url=${encodeURIComponent(url)}${tweetId ? `&tweetId=${tweetId}` : ''}`)
       .then((r) => r.json())
@@ -49,13 +49,23 @@ function LinkPreview({ url, tweetUrl, tweetId, prominent = false }: { url: strin
         if (cancelled) return
         const result = d.error || !d.title ? null : d
         previewCache.set(cacheKey, result)
-        setData(result)
+        setState({ key: cacheKey, data: result })
       })
       .catch(() => {
-        if (!cancelled) { previewCache.set(cacheKey, null); setData(null) }
+        if (!cancelled) {
+          previewCache.set(cacheKey, null)
+          setState({ key: cacheKey, data: null })
+        }
       })
     return () => { cancelled = true }
-  }, [url, tweetId])
+  }, [cacheKey, url, tweetId])
+
+  const data =
+    state.key === cacheKey
+      ? state.data
+      : previewCache.has(cacheKey)
+      ? (previewCache.get(cacheKey) ?? null)
+      : 'loading'
 
   if (data === 'loading') {
     return (
