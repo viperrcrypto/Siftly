@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { invalidateSettingsCache } from '@/lib/settings'
+import { validateVaultPath } from '@/lib/obsidian-exporter'
 
 function maskKey(raw: string | null): string | null {
   if (!raw) return null
@@ -30,7 +31,7 @@ const ALLOWED_MINIMAX_MODELS = [
 
 export async function GET(): Promise<NextResponse> {
   try {
-    const [anthropic, anthropicModel, provider, openai, openaiModel, minimax, minimaxModel, xClientId, xClientSecret] = await Promise.all([
+    const [anthropic, anthropicModel, provider, openai, openaiModel, minimax, minimaxModel, xClientId, xClientSecret, obsidianVault] = await Promise.all([
       prisma.setting.findUnique({ where: { key: 'anthropicApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'anthropicModel' } }),
       prisma.setting.findUnique({ where: { key: 'aiProvider' } }),
@@ -40,6 +41,7 @@ export async function GET(): Promise<NextResponse> {
       prisma.setting.findUnique({ where: { key: 'minimaxModel' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_id' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_secret' } }),
+      prisma.setting.findUnique({ where: { key: 'obsidianVaultPath' } }),
     ])
 
     return NextResponse.json({
@@ -56,6 +58,7 @@ export async function GET(): Promise<NextResponse> {
       xOAuthClientId: maskKey(xClientId?.value ?? null),
       xOAuthClientSecret: maskKey(xClientSecret?.value ?? null),
       hasXOAuth: !!xClientId?.value,
+      obsidianVaultPath: obsidianVault?.value ?? null,
     })
   } catch (err) {
     console.error('Settings GET error:', err)
@@ -77,6 +80,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     minimaxModel?: string
     xOAuthClientId?: string
     xOAuthClientSecret?: string
+    obsidianVaultPath?: string
   } = {}
   try {
     body = await request.json()
@@ -209,6 +213,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 500 }
       )
     }
+  }
+
+  // Save Obsidian vault path if provided
+  if (body.obsidianVaultPath !== undefined) {
+    const trimmed = body.obsidianVaultPath.trim()
+    if (!trimmed) {
+      // Allow clearing the path
+      await prisma.setting.deleteMany({ where: { key: 'obsidianVaultPath' } })
+      return NextResponse.json({ saved: true })
+    }
+    const validation = await validateVaultPath(trimmed)
+    if (!validation.valid) {
+      return NextResponse.json({ error: `Invalid vault path: ${validation.error}` }, { status: 400 })
+    }
+    await prisma.setting.upsert({
+      where: { key: 'obsidianVaultPath' },
+      update: { value: trimmed },
+      create: { key: 'obsidianVaultPath', value: trimmed },
+    })
+    return NextResponse.json({ saved: true })
   }
 
   // Save X OAuth credentials if provided
