@@ -20,6 +20,8 @@ import {
   Terminal,
   Loader2,
   X,
+  BookOpen,
+  FolderOpen,
 } from 'lucide-react'
 
 const ANTHROPIC_MODELS = [
@@ -693,6 +695,151 @@ function ExportButton({
   )
 }
 
+interface ObsidianResult {
+  written: number
+  skipped: number
+  errors: Array<{ tweetId: string; error: string }>
+  indexesWritten: number
+}
+
+function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
+  const [vaultPath, setVaultPath] = useState('')
+  const [savedPath, setSavedPath] = useState<string | null>(null)
+  const [savingPath, setSavingPath] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [result, setResult] = useState<ObsidianResult | null>(null)
+  const [overwrite, setOverwrite] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((d: Record<string, unknown>) => {
+        if (d.obsidianVaultPath) setSavedPath(d.obsidianVaultPath as string)
+      })
+      .catch(() => {})
+  }, [])
+
+  async function handleSavePath() {
+    if (!vaultPath.trim()) {
+      onToast({ type: 'error', message: 'Enter a vault path first' })
+      return
+    }
+    setSavingPath(true)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ obsidianVaultPath: vaultPath.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Failed to save')
+      setSavedPath(vaultPath.trim())
+      onToast({ type: 'success', message: 'Vault path saved' })
+    } catch (err) {
+      onToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save path' })
+    } finally {
+      setSavingPath(false)
+    }
+  }
+
+  async function handleExport() {
+    setExporting(true)
+    setResult(null)
+    try {
+      const res = await fetch('/api/export/obsidian', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overwrite }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Export failed')
+      setResult(data)
+      onToast({ type: 'success', message: `Exported ${data.written} notes to Obsidian` })
+    } catch (err) {
+      onToast({ type: 'error', message: err instanceof Error ? err.message : 'Export failed' })
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <Section
+      icon={BookOpen}
+      title="Obsidian Export"
+      description="Export bookmarks as Markdown notes with YAML frontmatter, wikilinks, and index files."
+    >
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-zinc-400 mb-1.5">Vault path</label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <FolderOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                type="text"
+                value={vaultPath}
+                onChange={(e) => setVaultPath(e.target.value)}
+                placeholder={savedPath ?? '/Users/you/ObsidianVault'}
+                className="w-full pl-9 pr-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-xl text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 font-mono"
+              />
+            </div>
+            <button
+              onClick={handleSavePath}
+              disabled={savingPath || !vaultPath.trim()}
+              className="px-4 py-2.5 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-sm font-medium text-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {savingPath ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+          {savedPath && (
+            <p className="text-xs text-zinc-500 mt-1.5">
+              Current: <code className="font-mono text-zinc-400">{savedPath}</code>
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={overwrite}
+              onChange={(e) => setOverwrite(e.target.checked)}
+              className="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500/50"
+            />
+            Overwrite existing notes
+          </label>
+        </div>
+
+        <button
+          onClick={handleExport}
+          disabled={exporting || !savedPath}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {exporting ? (
+            <>
+              <Loader2 size={14} className="animate-spin" />
+              Exporting...
+            </>
+          ) : (
+            <>
+              <Download size={14} />
+              Export to Obsidian
+            </>
+          )}
+        </button>
+
+        {result && (
+          <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-3 text-sm">
+            <p className="text-green-400">{result.written} notes written</p>
+            {result.skipped > 0 && <p className="text-zinc-400">{result.skipped} skipped (already exist)</p>}
+            {result.indexesWritten > 0 && <p className="text-zinc-400">{result.indexesWritten} index files created</p>}
+            {result.errors.length > 0 && <p className="text-red-400">{result.errors.length} errors</p>}
+          </div>
+        )}
+      </div>
+    </Section>
+  )
+}
+
 function DataSection() {
   return (
     <Section
@@ -1045,6 +1192,7 @@ export default function SettingsPage() {
         <ApiKeySection onToast={showToast} />
         <XOAuthSection onToast={showToast} />
         <DataSection />
+        <ObsidianExportBlock onToast={showToast} />
         <DangerZoneSection onToast={showToast} />
         <AboutSection />
       </div>
