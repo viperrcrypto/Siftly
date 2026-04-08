@@ -113,18 +113,18 @@ const BOOKMARKLET_SCRIPT = `(async function(){
       urls:(leg.entities&&leg.entities.urls||[]).map(function(u){return u.expanded_url;}).filter(Boolean)});
     btn.textContent='Export '+all.length+' '+label+' \u2192';
   }
-  function isTweetObj(o){return o&&typeof o==='object'&&typeof o.rest_id==='string'&&o.rest_id.length>5&&(o.legacy||o.core);}
+  function isTweetObj(o){return o&&typeof o==='object'&&typeof o.rest_id==='string'&&o.rest_id.length>5&&(o.legacy&&o.legacy.full_text!==undefined||o.core);}
   function unwrapTweet(t){
     if(!t)return null;
     if(t.__typename==='TweetWithVisibilityResults'||t.__typename==='TweetWithVisibilityResult')return t.tweet||t;
     return t;
   }
   function deepFindTweets(obj,depth){
-    if(!obj||typeof obj!=='object'||depth>12)return;
+    if(!obj||typeof obj!=='object'||depth>16)return;
     if(Array.isArray(obj)){obj.forEach(function(item){deepFindTweets(item,depth+1);});return;}
-    if(obj.tweet_results&&obj.tweet_results.result){var tw=unwrapTweet(obj.tweet_results.result);if(tw)addTweet(tw);}
-    else if(isTweetObj(obj)){addTweet(unwrapTweet(obj));}
-    for(var k in obj){if(Object.prototype.hasOwnProperty.call(obj,k)&&k!=='quoted_status_result'){deepFindTweets(obj[k],depth+1);}}
+    if(obj.tweet_results&&obj.tweet_results.result){var tw=unwrapTweet(obj.tweet_results.result);if(tw)addTweet(tw);return;}
+    if(isTweetObj(obj)){addTweet(unwrapTweet(obj));return;}
+    for(var k in obj){if(Object.prototype.hasOwnProperty.call(obj,k)&&k!=='quoted_status_result'&&k!=='retweeted_status_result'){deepFindTweets(obj[k],depth+1);}}
   }
   function processData(d){deepFindTweets(d,0);}
   var autoBtn=document.createElement('button');
@@ -198,7 +198,7 @@ const BOOKMARKLET_SCRIPT = `(async function(){
   XMLHttpRequest.prototype.open=function(){xhrUrls.set(this,String(arguments[1]||''));return origOpen.apply(this,arguments);};
   XMLHttpRequest.prototype.send=function(){
     var xhr=this,u=xhrUrls.get(xhr)||'';
-    if(isApiUrl(u)){xhr.addEventListener('load',function(){try{processData(JSON.parse(xhr.responseText));}catch(ex){}});}
+    if(isApiUrl(u)){xhr.addEventListener('load',function(){try{var ct=xhr.getResponseHeader('content-type')||'';if(ct.indexOf('json')>-1)processData(JSON.parse(xhr.responseText));}catch(ex){}});}
     return origSend.apply(this,arguments);
   };
   showToast('\u2705 Active! Scroll your '+label+' \u2014 counter updates above.','#1e1b4b');
@@ -237,18 +237,18 @@ const CONSOLE_SCRIPT = `(async function() {
     });
     btn.textContent = \`Export \${all.length} \${label} →\`;
   }
-  function isTweetObj(o) { return o && typeof o === 'object' && typeof o.rest_id === 'string' && o.rest_id.length > 5 && (o.legacy || o.core); }
+  function isTweetObj(o) { return o && typeof o === 'object' && typeof o.rest_id === 'string' && o.rest_id.length > 5 && (o.legacy?.full_text !== undefined || o.core); }
   function unwrapTweet(t) {
     if (!t) return null;
     if (t.__typename === 'TweetWithVisibilityResults' || t.__typename === 'TweetWithVisibilityResult') return t.tweet ?? t;
     return t;
   }
   function deepFindTweets(obj, depth = 0) {
-    if (!obj || typeof obj !== 'object' || depth > 12) return;
+    if (!obj || typeof obj !== 'object' || depth > 16) return;
     if (Array.isArray(obj)) { obj.forEach(item => deepFindTweets(item, depth + 1)); return; }
-    if (obj.tweet_results?.result) { const tw = unwrapTweet(obj.tweet_results.result); if (tw) addTweet(tw); }
-    else if (isTweetObj(obj)) { addTweet(unwrapTweet(obj)); }
-    for (const k of Object.keys(obj)) { if (k !== 'quoted_status_result') deepFindTweets(obj[k], depth + 1); }
+    if (obj.tweet_results?.result) { const tw = unwrapTweet(obj.tweet_results.result); if (tw) addTweet(tw); return; }
+    if (isTweetObj(obj)) { addTweet(unwrapTweet(obj)); return; }
+    for (const k of Object.keys(obj)) { if (k !== 'quoted_status_result' && k !== 'retweeted_status_result') deepFindTweets(obj[k], depth + 1); }
   }
   function processData(d) { deepFindTweets(d, 0); }
   const btn = document.createElement('button');
@@ -342,7 +342,7 @@ const CONSOLE_SCRIPT = `(async function() {
     const xhr = this, u = xhrUrls.get(xhr) ?? '';
     if (isApiUrl(u)) {
       xhr.addEventListener('load', function() {
-        try { processData(JSON.parse(xhr.responseText)); } catch(e) {}
+        try { const ct = xhr.getResponseHeader('content-type') ?? ''; if (ct.includes('json')) processData(JSON.parse(xhr.responseText)); } catch(e) {}
       });
     }
     return origSend.apply(this, args);
