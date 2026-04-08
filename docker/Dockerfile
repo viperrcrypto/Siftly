@@ -22,10 +22,12 @@ WORKDIR /app
 RUN apk add --no-cache python3 make g++
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Install production deps (includes prisma + better-sqlite3, rebuilt for this image)
+# Install production deps (includes better-sqlite3, rebuilt for this image)
+# prisma and @prisma/client are devDependencies but are required at runtime
+# for the runner stage to generate the Prisma client.
 COPY package*.json ./
 COPY prisma ./prisma
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev && npm install --no-save prisma @prisma/client
 
 # Re-generate Prisma client in runner stage
 RUN node_modules/.bin/prisma generate
