@@ -449,12 +449,12 @@ function ClaudeCliStatusBox() {
 }
 
 function CodexCliStatusBox() {
-  const [status, setStatus] = useState<{ available: boolean; expired?: boolean; planType?: string; authMode?: string } | null>(null)
+  const [status, setStatus] = useState<{ available: boolean; expired?: boolean; planType?: string; authMode?: string; hasCredentials?: boolean } | null>(null)
 
   useEffect(() => {
     fetch('/api/settings/cli-status')
       .then((r) => r.json())
-      .then((d: { codex?: { available: boolean; expired?: boolean; planType?: string; authMode?: string } }) => setStatus(d.codex ?? { available: false }))
+      .then((d: { codex?: { available: boolean; expired?: boolean; planType?: string; authMode?: string; hasCredentials?: boolean } }) => setStatus(d.codex ?? { available: false }))
       .catch(() => setStatus({ available: false }))
   }, [])
 
@@ -464,22 +464,27 @@ function CodexCliStatusBox() {
     const tier = status.planType
       ? status.planType.charAt(0).toUpperCase() + status.planType.slice(1)
       : 'CLI'
+    const isChatGPT = status.authMode === 'chatgpt'
     return (
       <div className="flex gap-3 p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/20 mb-5">
         <Check size={15} className="text-emerald-400 shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-emerald-300">
-            Codex CLI detected — no API key needed
+            Codex CLI detected{isChatGPT ? ' (ChatGPT login)' : ' — no API key needed'}
           </p>
           <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-            Signed in as <span className="text-zinc-300">{tier}</span> via Codex CLI. Siftly will use your credentials automatically. An API key below will take priority if set.
+            {isChatGPT ? (
+              <>Signed in as <span className="text-zinc-300">{tier}</span> via ChatGPT. AI features will use Codex CLI to proxy requests. An API key below will take priority if set.</>
+            ) : (
+              <>Signed in as <span className="text-zinc-300">{tier}</span> via Codex CLI. Siftly will use your credentials automatically. An API key below will take priority if set.</>
+            )}
           </p>
         </div>
       </div>
     )
   }
 
-  if (status.available && status.expired) {
+  if (status.hasCredentials && status.expired) {
     return (
       <div className="flex gap-3 p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/20 mb-5">
         <AlertCircle size={15} className="text-amber-400 shrink-0 mt-0.5" />
@@ -487,6 +492,20 @@ function CodexCliStatusBox() {
           <p className="text-sm font-medium text-amber-300">Codex CLI session expired</p>
           <p className="text-xs text-zinc-500 mt-0.5">
             Run <span className="font-mono text-zinc-300">codex</span> in your terminal to refresh, then reload this page.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (status.hasCredentials && !status.available) {
+    return (
+      <div className="flex gap-3 p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/20 mb-5">
+        <AlertCircle size={15} className="text-amber-400 shrink-0 mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-amber-300">Codex credentials found but CLI not available</p>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Found saved credentials but the <span className="font-mono text-zinc-300">codex</span> binary is not responding. Install or reinstall Codex CLI, or paste your OpenAI API key below.
           </p>
         </div>
       </div>
