@@ -7,6 +7,8 @@ import {
   BookmarkX,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   LayoutGrid,
   List,
   X,
@@ -139,59 +141,59 @@ function Pagination({
   onChange: (p: number) => void
 }) {
   const totalPages = Math.ceil(total / limit)
+  const [jumpValue, setJumpValue] = useState('')
+
   if (totalPages <= 1) return null
 
-  const getPageNumbers = (): (number | 'ellipsis')[] => {
-    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1)
-    const pages: (number | 'ellipsis')[] = [1]
-    if (page > 3) pages.push('ellipsis')
-    const start = Math.max(2, page - 1)
-    const end = Math.min(totalPages - 1, page + 1)
-    for (let i = start; i <= end; i++) pages.push(i)
-    if (page < totalPages - 2) pages.push('ellipsis')
-    pages.push(totalPages)
-    return pages
+  function handleJumpKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== 'Enter') return
+    const num = parseInt(jumpValue, 10)
+    if (!isNaN(num) && num >= 1 && num <= totalPages) {
+      onChange(num)
+    }
+    setJumpValue('')
   }
 
-  return (
-    <div className="flex items-center justify-center gap-1.5 mt-12">
-      <button
-        onClick={() => onChange(page - 1)}
-        disabled={page <= 1}
-        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
-      >
-        <ChevronLeft size={14} />
-        Prev
-      </button>
+  const navBtnClass =
+    'flex items-center justify-center w-9 h-9 rounded-xl text-sm bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-25 disabled:cursor-not-allowed transition-all'
 
-      <div className="flex items-center gap-1">
-        {getPageNumbers().map((p, i) =>
-          p === 'ellipsis' ? (
-            <span key={`ellipsis-${i}`} className="px-2 text-zinc-700 text-sm select-none">&hellip;</span>
-          ) : (
-            <button
-              key={p}
-              onClick={() => onChange(p)}
-              className={`w-9 h-9 rounded-xl text-sm font-medium transition-all ${
-                p === page
-                  ? 'bg-indigo-600 text-white border border-indigo-500/50 shadow-lg shadow-indigo-500/20'
-                  : 'bg-zinc-900 border border-zinc-800 text-zinc-500 hover:text-zinc-100 hover:border-zinc-700 hover:bg-zinc-800'
-              }`}
-            >
-              {p}
-            </button>
-          )
-        )}
+  return (
+    <div className="flex items-center justify-center gap-3 mt-12">
+      {/* Jump to page */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-zinc-500 select-none">Jump to page</span>
+        <input
+          type="number"
+          min={1}
+          max={totalPages}
+          value={jumpValue}
+          onChange={(e) => setJumpValue(e.target.value)}
+          onKeyDown={handleJumpKeyDown}
+          placeholder="—"
+          className="w-14 px-2 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder:text-zinc-700 text-sm text-center focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/20 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        />
       </div>
 
-      <button
-        onClick={() => onChange(page + 1)}
-        disabled={page >= totalPages}
-        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-700 hover:bg-zinc-800 disabled:opacity-25 disabled:cursor-not-allowed transition-all"
-      >
-        Next
-        <ChevronRight size={14} />
-      </button>
+      {/* Page indicator */}
+      <span className="text-sm text-zinc-600 select-none tabular-nums">
+        Page <span className="text-zinc-400">{page}</span> of <span className="text-zinc-400">{totalPages}</span>
+      </span>
+
+      {/* Navigation arrows */}
+      <div className="flex items-center gap-1">
+        <button onClick={() => onChange(1)} disabled={page <= 1} className={navBtnClass} title="First page">
+          <ChevronsLeft size={14} />
+        </button>
+        <button onClick={() => onChange(page - 1)} disabled={page <= 1} className={navBtnClass} title="Previous page">
+          <ChevronLeft size={14} />
+        </button>
+        <button onClick={() => onChange(page + 1)} disabled={page >= totalPages} className={navBtnClass} title="Next page">
+          <ChevronRight size={14} />
+        </button>
+        <button onClick={() => onChange(totalPages)} disabled={page >= totalPages} className={navBtnClass} title="Last page">
+          <ChevronsRight size={14} />
+        </button>
+      </div>
     </div>
   )
 }
