@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Eye,
   EyeOff,
@@ -14,6 +14,8 @@ import {
   Shield,
   ExternalLink,
   ChevronDown,
+  ChevronRight,
+  ChevronUp,
   Zap,
   Copy,
   Coffee,
@@ -21,6 +23,7 @@ import {
   Loader2,
   X,
   BookOpen,
+  Folder,
   FolderOpen,
 } from 'lucide-react'
 
@@ -702,6 +705,83 @@ interface ObsidianResult {
   indexesWritten: number
 }
 
+interface BrowseDir {
+  name: string
+  path: string
+}
+
+function FolderBrowser({ onSelect, onClose }: { onSelect: (path: string) => void; onClose: () => void }) {
+  const [current, setCurrent] = useState('')
+  const [parent, setParent] = useState<string | null>(null)
+  const [dirs, setDirs] = useState<BrowseDir[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const browse = useCallback(async (dirPath?: string) => {
+    setLoading(true)
+    try {
+      const params = dirPath ? `?path=${encodeURIComponent(dirPath)}` : ''
+      const res = await fetch(`/api/settings/browse${params}`)
+      const data = await res.json()
+      if (!res.ok) return
+      setCurrent(data.current)
+      setParent(data.parent)
+      setDirs(data.directories)
+    } catch {}
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { browse() }, [browse])
+
+  return (
+    <div className="border border-zinc-700 rounded-xl bg-zinc-800/50 overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700 bg-zinc-800">
+        <p className="text-xs font-mono text-zinc-400 truncate flex-1 mr-2">{current}</p>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={() => onSelect(current)}
+            className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition-colors"
+          >
+            Select this folder
+          </button>
+          <button onClick={onClose} className="p-1 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700 transition-colors">
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+      <div className="max-h-52 overflow-y-auto">
+        {parent && (
+          <button
+            onClick={() => browse(parent)}
+            className="flex items-center gap-2 w-full px-3 py-2 text-left text-sm text-zinc-400 hover:bg-zinc-700/50 transition-colors border-b border-zinc-800"
+          >
+            <ChevronUp size={14} className="text-zinc-500" />
+            <span>..</span>
+          </button>
+        )}
+        {loading ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 size={16} className="text-zinc-500 animate-spin" />
+          </div>
+        ) : dirs.length === 0 ? (
+          <p className="text-xs text-zinc-600 text-center py-4">No subdirectories</p>
+        ) : (
+          dirs.map((dir) => (
+            <button
+              key={dir.path}
+              onClick={() => browse(dir.path)}
+              className="flex items-center gap-2 w-full px-3 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700/50 transition-colors group"
+            >
+              <Folder size={14} className="text-zinc-500 group-hover:text-indigo-400 transition-colors shrink-0" />
+              <span className="truncate">{dir.name}</span>
+              <ChevronRight size={12} className="text-zinc-600 ml-auto shrink-0" />
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
   const [vaultPath, setVaultPath] = useState('')
   const [savedPath, setSavedPath] = useState<string | null>(null)
@@ -709,6 +789,7 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
   const [exporting, setExporting] = useState(false)
   const [result, setResult] = useState<ObsidianResult | null>(null)
   const [overwrite, setOverwrite] = useState(false)
+  const [browserOpen, setBrowserOpen] = useState(false)
 
   useEffect(() => {
     fetch('/api/settings')
@@ -719,8 +800,9 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
       .catch(() => {})
   }, [])
 
-  async function handleSavePath() {
-    if (!vaultPath.trim()) {
+  async function handleSavePath(pathToSave?: string) {
+    const finalPath = pathToSave ?? vaultPath
+    if (!finalPath.trim()) {
       onToast({ type: 'error', message: 'Enter a vault path first' })
       return
     }
@@ -729,11 +811,12 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ obsidianVaultPath: vaultPath.trim() }),
+        body: JSON.stringify({ obsidianVaultPath: finalPath.trim() }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Failed to save')
-      setSavedPath(vaultPath.trim())
+      setSavedPath(finalPath.trim())
+      setVaultPath(finalPath.trim())
       onToast({ type: 'success', message: 'Vault path saved' })
     } catch (err) {
       onToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save path' })
@@ -762,6 +845,12 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
     }
   }
 
+  function handleBrowseSelect(selectedPath: string) {
+    setVaultPath(selectedPath)
+    setBrowserOpen(false)
+    handleSavePath(selectedPath)
+  }
+
   return (
     <Section
       icon={BookOpen}
@@ -783,7 +872,14 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
               />
             </div>
             <button
-              onClick={handleSavePath}
+              onClick={() => setBrowserOpen(!browserOpen)}
+              title="Browse folders"
+              className="px-3 py-2.5 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-300 transition-colors"
+            >
+              <Folder size={16} />
+            </button>
+            <button
+              onClick={() => handleSavePath()}
               disabled={savingPath || !vaultPath.trim()}
               className="px-4 py-2.5 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-sm font-medium text-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
@@ -796,6 +892,13 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
             </p>
           )}
         </div>
+
+        {browserOpen && (
+          <FolderBrowser
+            onSelect={handleBrowseSelect}
+            onClose={() => setBrowserOpen(false)}
+          />
+        )}
 
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
