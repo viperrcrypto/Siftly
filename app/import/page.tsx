@@ -113,26 +113,20 @@ const BOOKMARKLET_SCRIPT = `(async function(){
       urls:(leg.entities&&leg.entities.urls||[]).map(function(u){return u.expanded_url;}).filter(Boolean)});
     btn.textContent='Export '+all.length+' '+label+' \u2192';
   }
-  function processEntry(e){
-    if(!e)return;
-    var ic=e.content&&(e.content.itemContent||(e.content.item&&e.content.item.itemContent));
-    if(ic&&ic.tweet_results){
-      var t=ic.tweet_results.result;
-      if(t){if(t.__typename==='TweetWithVisibilityResults'||t.__typename==='TweetWithVisibilityResult')t=t.tweet||t;addTweet(t);}
-    }
-    if(e.content&&e.content.items)e.content.items.forEach(function(i){processEntry({content:i.item||i});});
+  function isTweetObj(o){return o&&typeof o==='object'&&typeof o.rest_id==='string'&&o.rest_id.length>5&&(o.legacy||o.core);}
+  function unwrapTweet(t){
+    if(!t)return null;
+    if(t.__typename==='TweetWithVisibilityResults'||t.__typename==='TweetWithVisibilityResult')return t.tweet||t;
+    return t;
   }
-  function findInstructions(obj,depth){
-    if(!obj||typeof obj!=='object'||depth>6)return null;
-    if(Array.isArray(obj))return null;
-    if(Array.isArray(obj.instructions))return obj.instructions;
-    for(var k in obj){if(Object.prototype.hasOwnProperty.call(obj,k)){var r=findInstructions(obj[k],depth+1);if(r)return r;}}
-    return null;
+  function deepFindTweets(obj,depth){
+    if(!obj||typeof obj!=='object'||depth>12)return;
+    if(Array.isArray(obj)){obj.forEach(function(item){deepFindTweets(item,depth+1);});return;}
+    if(obj.tweet_results&&obj.tweet_results.result){var tw=unwrapTweet(obj.tweet_results.result);if(tw)addTweet(tw);}
+    else if(isTweetObj(obj)){addTweet(unwrapTweet(obj));}
+    for(var k in obj){if(Object.prototype.hasOwnProperty.call(obj,k)&&k!=='quoted_status_result'){deepFindTweets(obj[k],depth+1);}}
   }
-  function processData(d){
-    var instr=findInstructions(d,0)||[];
-    instr.forEach(function(i){(i.entries||[]).forEach(processEntry);(i.moduleItems||[]).forEach(processEntry);});
-  }
+  function processData(d){deepFindTweets(d,0);}
   var autoBtn=document.createElement('button');
   function doExport(){
     window.fetch=origFetch;
@@ -190,12 +184,13 @@ const BOOKMARKLET_SCRIPT = `(async function(){
   };
   document.body.appendChild(btn);
   document.body.appendChild(autoBtn);
+  function isApiUrl(u){return u.includes('/graphql/')||u.includes('/i/api/')||u.includes('/2/timeline');}
   var origFetch=window.fetch;
   window.fetch=async function(){
     var r=await origFetch.apply(this,arguments);
     try{
       var u=arguments[0] instanceof Request?arguments[0].url:String(arguments[0]);
-      if(u.includes('/graphql/')){var d=await r.clone().json();processData(d);}
+      if(isApiUrl(u)){var ct=r.headers.get('content-type')||'';if(ct.includes('json')){var d=await r.clone().json();processData(d);}}
     }catch(ex){}
     return r;
   };
@@ -203,7 +198,7 @@ const BOOKMARKLET_SCRIPT = `(async function(){
   XMLHttpRequest.prototype.open=function(){xhrUrls.set(this,String(arguments[1]||''));return origOpen.apply(this,arguments);};
   XMLHttpRequest.prototype.send=function(){
     var xhr=this,u=xhrUrls.get(xhr)||'';
-    if(u.includes('/graphql/')){xhr.addEventListener('load',function(){try{processData(JSON.parse(xhr.responseText));}catch(ex){}});}
+    if(isApiUrl(u)){xhr.addEventListener('load',function(){try{processData(JSON.parse(xhr.responseText));}catch(ex){}});}
     return origSend.apply(this,arguments);
   };
   showToast('\u2705 Active! Scroll your '+label+' \u2014 counter updates above.','#1e1b4b');
@@ -242,32 +237,20 @@ const CONSOLE_SCRIPT = `(async function() {
     });
     btn.textContent = \`Export \${all.length} \${label} →\`;
   }
-  function processEntry(e) {
-    if (!e) return;
-    const ic = e.content?.itemContent ?? e.content?.item?.itemContent;
-    if (ic?.tweet_results) {
-      let t = ic.tweet_results.result;
-      if (t) {
-        if (t.__typename === 'TweetWithVisibilityResults' || t.__typename === 'TweetWithVisibilityResult') t = t.tweet ?? t;
-        addTweet(t);
-      }
-    }
-    if (e.content?.items) e.content.items.forEach(i => processEntry({ content: i.item ?? i }));
+  function isTweetObj(o) { return o && typeof o === 'object' && typeof o.rest_id === 'string' && o.rest_id.length > 5 && (o.legacy || o.core); }
+  function unwrapTweet(t) {
+    if (!t) return null;
+    if (t.__typename === 'TweetWithVisibilityResults' || t.__typename === 'TweetWithVisibilityResult') return t.tweet ?? t;
+    return t;
   }
-  function findInstructions(obj, depth = 0) {
-    if (!obj || typeof obj !== 'object' || depth > 6) return null;
-    if (Array.isArray(obj)) return null;
-    if (Array.isArray(obj.instructions)) return obj.instructions;
-    for (const k of Object.keys(obj)) { const r = findInstructions(obj[k], depth + 1); if (r) return r; }
-    return null;
+  function deepFindTweets(obj, depth = 0) {
+    if (!obj || typeof obj !== 'object' || depth > 12) return;
+    if (Array.isArray(obj)) { obj.forEach(item => deepFindTweets(item, depth + 1)); return; }
+    if (obj.tweet_results?.result) { const tw = unwrapTweet(obj.tweet_results.result); if (tw) addTweet(tw); }
+    else if (isTweetObj(obj)) { addTweet(unwrapTweet(obj)); }
+    for (const k of Object.keys(obj)) { if (k !== 'quoted_status_result') deepFindTweets(obj[k], depth + 1); }
   }
-  function processData(d) {
-    const instr = findInstructions(d) ?? [];
-    instr.forEach(i => {
-      (i.entries ?? []).forEach(processEntry);
-      (i.moduleItems ?? []).forEach(processEntry);
-    });
-  }
+  function processData(d) { deepFindTweets(d, 0); }
   const btn = document.createElement('button');
   btn.textContent = 'Scroll then click to Export →';
   Object.assign(btn.style, {
@@ -338,15 +321,13 @@ const CONSOLE_SCRIPT = `(async function() {
   };
   document.body.appendChild(btn);
   document.body.appendChild(autoBtn);
+  const isApiUrl = (u) => u.includes('/graphql/') || u.includes('/i/api/') || u.includes('/2/timeline');
   const origFetch = window.fetch;
   window.fetch = async function(...args) {
     const r = await origFetch.apply(this, args);
     try {
       const u = args[0] instanceof Request ? args[0].url : String(args[0]);
-      if (u.includes('/graphql/')) {
-        const d = await r.clone().json();
-        processData(d);
-      }
+      if (isApiUrl(u)) { const ct = r.headers.get('content-type') ?? ''; if (ct.includes('json')) { const d = await r.clone().json(); processData(d); } }
     } catch(e) {}
     return r;
   };
@@ -359,7 +340,7 @@ const CONSOLE_SCRIPT = `(async function() {
   };
   XMLHttpRequest.prototype.send = function(...args) {
     const xhr = this, u = xhrUrls.get(xhr) ?? '';
-    if (u.includes('/graphql/')) {
+    if (isApiUrl(u)) {
       xhr.addEventListener('load', function() {
         try { processData(JSON.parse(xhr.responseText)); } catch(e) {}
       });
