@@ -92,6 +92,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Not authenticated with X. Please connect your account first.' }, { status: 401 })
   }
 
+  // Resolve authenticated user ID — X API rejects /users/me/bookmarks, requires the numeric ID.
+  let userId: string
+  {
+    const meRes = await fetch('https://api.x.com/2/users/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!meRes.ok) {
+      const errText = await meRes.text()
+      console.error('X API users/me error:', meRes.status, errText)
+      return NextResponse.json({ error: `X API users/me error: ${meRes.status}` }, { status: 502 })
+    }
+    const meJson = await meRes.json() as { data?: { id: string } }
+    if (!meJson.data?.id) {
+      return NextResponse.json({ error: 'Failed to resolve authenticated user id' }, { status: 502 })
+    }
+    userId = meJson.data.id
+  }
+
   let imported = 0
   let skipped = 0
   let total = 0
@@ -107,7 +125,7 @@ export async function POST(req: NextRequest) {
     })
     if (nextToken) params.set('pagination_token', nextToken)
 
-    const res = await fetch(`https://api.x.com/2/users/me/bookmarks?${params}`, {
+    const res = await fetch(`https://api.x.com/2/users/${userId}/bookmarks?${params}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
 
