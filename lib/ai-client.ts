@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 import { resolveAnthropicClient } from './claude-cli-auth'
 import { resolveOpenAIClient } from './openai-auth'
 import { resolveMiniMaxClient } from './minimax-auth'
+import { resolveOpenAICompatibleClient } from './openai-compatible-auth'
 import { getProvider } from './settings'
 
 export interface AIContentBlock {
@@ -20,8 +21,10 @@ export interface AIResponse {
   text: string
 }
 
+export type AIProviderType = 'anthropic' | 'openai' | 'minimax' | 'openai_compatible'
+
 export interface AIClient {
-  provider: 'anthropic' | 'openai' | 'minimax'
+  provider: AIProviderType
   createMessage(params: {
     model: string
     max_tokens: number
@@ -137,11 +140,53 @@ export class MiniMaxAIClient implements AIClient {
   }
 }
 
+// Wrap any OpenAI-compatible API (Ollama, Together, Groq, vLLM, llama.cpp, LM Studio, etc.)
+export class OpenAICompatibleClient implements AIClient {
+  provider = 'openai_compatible' as const
+  constructor(private sdk: OpenAI) {}
+
+  async createMessage(params: { model: string; max_tokens: number; messages: AIMessage[] }): Promise<AIResponse> {
+    const messages: OpenAI.ChatCompletionMessageParam[] = params.messages.map((m): OpenAI.ChatCompletionMessageParam => {
+      if (typeof m.content === 'string') {
+        if (m.role === 'assistant') return { role: 'assistant' as const, content: m.content }
+        return { role: 'user' as const, content: m.content }
+      }
+      const parts: OpenAI.ChatCompletionContentPart[] = m.content.map(b => {
+        if (b.type === 'image' && b.source) {
+          return {
+            type: 'image_url' as const,
+            image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` },
+          }
+        }
+        return { type: 'text' as const, text: b.text ?? '' }
+      })
+      if (m.role === 'assistant') return { role: 'assistant' as const, content: parts.filter((p): p is OpenAI.ChatCompletionContentPartText => p.type === 'text') }
+      return { role: 'user' as const, content: parts }
+    })
+
+    const completion = await this.sdk.chat.completions.create({
+      model: params.model,
+      max_tokens: params.max_tokens,
+      messages,
+    })
+
+    let text = completion.choices[0]?.message?.content ?? ''
+    // Strip thinking tags that some models may include
+    text = text.replace(/<think>[\s\S]*?<\/think>\s*/g, '')
+    return { text }
+  }
+}
+
 export async function resolveAIClient(options: {
   overrideKey?: string
   dbKey?: string
 } = {}): Promise<AIClient> {
   const provider = await getProvider()
+
+  if (provider === 'openai_compatible') {
+    const client = await resolveOpenAICompatibleClient(options)
+    return new OpenAICompatibleClient(client)
+  }
 
   if (provider === 'minimax') {
     const client = resolveMiniMaxClient(options)

@@ -525,7 +525,7 @@ function CodexCliStatusBox() {
   )
 }
 
-function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai' | 'minimax'; onChange: (v: 'anthropic' | 'openai' | 'minimax') => void }) {
+function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai' | 'minimax' | 'openai_compatible'; onChange: (v: 'anthropic' | 'openai' | 'minimax' | 'openai_compatible') => void }) {
   return (
     <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-800 border border-zinc-700 mb-5">
       <button
@@ -558,26 +558,198 @@ function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai' | '
       >
         MiniMax
       </button>
+      <button
+        onClick={() => onChange('openai_compatible')}
+        className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          value === 'openai_compatible'
+            ? 'bg-purple-600 text-white shadow-sm'
+            : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+      >
+        Custom
+      </button>
+    </div>
+  )
+}
+
+
+function OpenAICompatibleSection({ onToast }: { onToast: (t: Toast) => void }) {
+  const [baseUrl, setBaseUrl] = useState('')
+  const [modelName, setModelName] = useState('')
+  const [savedBaseUrl, setSavedBaseUrl] = useState('')
+  const [savedModel, setSavedModel] = useState('')
+  const [saving, setSaving] = useState<string | null>(null)
+  const [testState, setTestState] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
+  const [testError, setTestError] = useState('')
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((d: { openaiCompatibleBaseUrl?: string; openaiCompatibleModel?: string; openaiCompatibleApiKey?: string }) => {
+        setSavedBaseUrl(d.openaiCompatibleBaseUrl ?? '')
+        setSavedModel(d.openaiCompatibleModel ?? '')
+        setBaseUrl(d.openaiCompatibleBaseUrl ?? '')
+        setModelName(d.openaiCompatibleModel ?? '')
+      })
+      .catch(() => {})
+  }, [])
+
+  async function saveField(key: string, value: string, label: string) {
+    setSaving(key)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: value }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Failed to save')
+      }
+      if (key === 'openaiCompatibleBaseUrl') setSavedBaseUrl(value)
+      if (key === 'openaiCompatibleModel') setSavedModel(value)
+      onToast({ type: 'success', message: `${label} saved` })
+    } catch (e) {
+      onToast({ type: 'error', message: e instanceof Error ? e.message : 'Failed to save' })
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  async function handleTest() {
+    setTestState('testing')
+    try {
+      const res = await fetch('/api/settings/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'openai_compatible' }),
+      })
+      const data = await res.json()
+      if (data.working) {
+        setTestState('ok')
+        onToast({ type: 'success', message: 'Connection working!' })
+      } else {
+        setTestState('fail')
+        setTestError(data.error ?? 'Unknown error')
+        onToast({ type: 'error', message: data.error ?? 'Connection test failed' })
+      }
+    } catch {
+      setTestState('fail')
+      setTestError('Network error')
+      onToast({ type: 'error', message: 'Network error during test' })
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-zinc-800/50 border border-purple-500/20 rounded-xl p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Zap size={14} className="text-purple-400" />
+          <span className="text-sm font-medium text-purple-300">OpenAI-Compatible Endpoint</span>
+        </div>
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          Connect any provider with an OpenAI-compatible API: <strong className="text-zinc-300">Ollama</strong>, <strong className="text-zinc-300">llama.cpp</strong>, <strong className="text-zinc-300">vLLM</strong>, <strong className="text-zinc-300">LM Studio</strong>, <strong className="text-zinc-300">Together AI</strong>, <strong className="text-zinc-300">Groq</strong>, <strong className="text-zinc-300">Deepseek</strong>, <strong className="text-zinc-300">Mistral</strong>, and more.
+        </p>
+      </div>
+
+      {/* Base URL */}
+      <div>
+        <label className="text-sm font-medium text-zinc-300 mb-1.5 block">Endpoint URL <span className="text-red-400">*</span></label>
+        <div className="flex gap-2">
+          <input
+            type="url"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="http://localhost:11434/v1"
+            className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-purple-500/50 transition-colors"
+          />
+          <button
+            onClick={() => void saveField('openaiCompatibleBaseUrl', baseUrl, 'Endpoint URL')}
+            disabled={!baseUrl.trim() || saving === 'openaiCompatibleBaseUrl'}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:hover:bg-purple-600 text-white text-sm rounded-lg font-medium transition-colors"
+          >
+            {saving === 'openaiCompatibleBaseUrl' ? <Loader2 size={14} className="animate-spin" /> : 'Save'}
+          </button>
+        </div>
+        <p className="text-xs text-zinc-500 mt-1.5">
+          Common endpoints: Ollama <code className="text-zinc-400 font-mono">localhost:11434/v1</code> · LM Studio <code className="text-zinc-400 font-mono">localhost:1234/v1</code> · vLLM <code className="text-zinc-400 font-mono">localhost:8000/v1</code>
+        </p>
+      </div>
+
+      {/* Model Name */}
+      <div>
+        <label className="text-sm font-medium text-zinc-300 mb-1.5 block">Model Name <span className="text-red-400">*</span></label>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={modelName}
+            onChange={(e) => setModelName(e.target.value)}
+            placeholder="llama3.2, mistral, deepseek-r1..."
+            className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-purple-500/50 transition-colors"
+          />
+          <button
+            onClick={() => void saveField('openaiCompatibleModel', modelName, 'Model')}
+            disabled={!modelName.trim() || saving === 'openaiCompatibleModel'}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:hover:bg-purple-600 text-white text-sm rounded-lg font-medium transition-colors"
+          >
+            {saving === 'openaiCompatibleModel' ? <Loader2 size={14} className="animate-spin" /> : 'Save'}
+          </button>
+        </div>
+        <p className="text-xs text-zinc-500 mt-1.5">The exact model identifier your endpoint expects (e.g., <code className="text-zinc-400 font-mono">llama3.2</code> for Ollama)</p>
+      </div>
+
+      {/* API Key (optional) */}
+      <ApiKeyField
+        label="API Key (optional)"
+        placeholder="Leave empty for local servers"
+        fieldKey="openaiCompatibleApiKey"
+        hint="Most local servers don't need an API key. Cloud providers (Together, Groq, etc.) do."
+        onToast={onToast}
+      />
+
+      {/* Test Connection */}
+      {savedBaseUrl && savedModel && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => void handleTest()}
+            disabled={testState === 'testing'}
+            className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 hover:border-zinc-600 text-zinc-300 text-sm rounded-lg font-medium transition-all flex items-center gap-2"
+          >
+            {testState === 'testing' ? (
+              <><Loader2 size={14} className="animate-spin" /> Testing...</>
+            ) : testState === 'ok' ? (
+              <><Check size={14} className="text-emerald-400" /> Connected</>
+            ) : testState === 'fail' ? (
+              <><AlertCircle size={14} className="text-red-400" /> Retry Test</>
+            ) : (
+              <><Zap size={14} /> Test Connection</>
+            )}
+          </button>
+          {testState === 'fail' && testError && (
+            <span className="text-xs text-red-400">{testError}</span>
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
 function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
-  const [provider, setProvider] = useState<'anthropic' | 'openai' | 'minimax' | null>(null)
+  const [provider, setProvider] = useState<'anthropic' | 'openai' | 'minimax' | 'openai_compatible' | null>(null)
 
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d: { provider?: string }) => {
-        setProvider(d.provider === 'openai' ? 'openai' : d.provider === 'minimax' ? 'minimax' : 'anthropic')
+        setProvider(d.provider === 'openai' ? 'openai' : d.provider === 'minimax' ? 'minimax' : d.provider === 'openai_compatible' ? 'openai_compatible' : 'anthropic')
       })
       .catch(() => setProvider('anthropic'))
   }, [])
 
-  async function handleProviderChange(newProvider: 'anthropic' | 'openai' | 'minimax') {
+  async function handleProviderChange(newProvider: 'anthropic' | 'openai' | 'minimax' | 'openai_compatible') {
     const prev = provider
     setProvider(newProvider)
-    const labels: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', minimax: 'MiniMax' }
+    const labels: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', minimax: 'MiniMax', openai_compatible: 'Custom (OpenAI-Compatible)' }
     try {
       const res = await fetch('/api/settings', {
         method: 'POST',
@@ -663,7 +835,7 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
             </div>
           </div>
         </>
-      ) : (
+      ) : provider === 'minimax' ? (
         <div className="space-y-5">
           <div>
             <ApiKeyField
@@ -684,6 +856,8 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
             <p className="text-xs text-zinc-500 mt-1.5">MiniMax M2.7 supports 1M context window — great for large batch categorization</p>
           </div>
         </div>
+      ) : (
+        <OpenAICompatibleSection onToast={onToast} />
       )}
       <p className="text-xs text-zinc-600 mt-4">Keys are stored in plaintext in your local SQLite database (<code className="font-mono">prisma/dev.db</code>). Do not expose the database file.</p>
     </Section>
