@@ -558,6 +558,16 @@ function ProviderToggle({ value, onChange }: { value: 'anthropic' | 'openai' | '
       >
         MiniMax
       </button>
+      <button
+        onClick={() => onChange('openai_compatible')}
+        className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+          value === 'openai_compatible'
+            ? 'bg-purple-600 text-white shadow-sm'
+            : 'text-zinc-400 hover:text-zinc-200'
+        }`}
+      >
+        Custom
+      </button>
     </div>
   )
 }

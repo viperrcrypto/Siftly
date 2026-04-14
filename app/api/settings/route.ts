@@ -171,6 +171,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Save OpenAI-compatible model (free-form string, no allowlist)
   if (openaiCompatibleModel !== undefined) {
+    if (typeof openaiCompatibleModel !== 'string') {
+      return NextResponse.json({ error: 'Invalid openaiCompatibleModel value' }, { status: 400 })
+    }
     const trimmed = openaiCompatibleModel.trim()
     if (!trimmed) {
       return NextResponse.json({ error: 'Model name cannot be empty' }, { status: 400 })
@@ -186,6 +189,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Save OpenAI-compatible base URL
   if (openaiCompatibleBaseUrl !== undefined) {
+    if (typeof openaiCompatibleBaseUrl !== 'string') {
+      return NextResponse.json({ error: 'Invalid openaiCompatibleBaseUrl value' }, { status: 400 })
+    }
     const trimmed = openaiCompatibleBaseUrl.trim()
     if (!trimmed) {
       return NextResponse.json({ error: 'Base URL cannot be empty' }, { status: 400 })
@@ -207,6 +213,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Save OpenAI-compatible API key
   if (openaiCompatibleApiKey !== undefined) {
+    if (typeof openaiCompatibleApiKey !== 'string') {
+      return NextResponse.json({ error: 'Invalid openaiCompatibleApiKey value' }, { status: 400 })
+    }
     const trimmed = openaiCompatibleApiKey.trim()
     // Allow empty string to clear key (some local servers don't need one)
     if (trimmed === '') {
