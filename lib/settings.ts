@@ -1,10 +1,12 @@
 import prisma from '@/lib/db'
 
+export type AIProviderType = 'anthropic' | 'openai' | 'minimax' | 'openai_compatible'
+
 // Module-level caches — avoids hundreds of DB roundtrips per pipeline run
 let _cachedModel: string | null = null
 let _modelCacheExpiry = 0
 
-let _cachedProvider: 'anthropic' | 'openai' | 'minimax' | null = null
+let _cachedProvider: AIProviderType | null = null
 let _providerCacheExpiry = 0
 
 let _cachedOpenAIModel: string | null = null
@@ -12,6 +14,9 @@ let _openAIModelCacheExpiry = 0
 
 let _cachedMiniMaxModel: string | null = null
 let _miniMaxModelCacheExpiry = 0
+
+let _cachedOpenAICompatibleModel: string | null = null
+let _openAICompatibleModelCacheExpiry = 0
 
 const CACHE_TTL = 5 * 60 * 1000
 
@@ -29,11 +34,14 @@ export async function getAnthropicModel(): Promise<string> {
 /**
  * Get the active AI provider (cached for 5 minutes).
  */
-export async function getProvider(): Promise<'anthropic' | 'openai' | 'minimax'> {
+export async function getProvider(): Promise<AIProviderType> {
   if (_cachedProvider && Date.now() < _providerCacheExpiry) return _cachedProvider
   const setting = await prisma.setting.findUnique({ where: { key: 'aiProvider' } })
   const val = setting?.value
-  _cachedProvider = val === 'openai' ? 'openai' : val === 'minimax' ? 'minimax' : 'anthropic'
+  if (val === 'openai') _cachedProvider = 'openai'
+  else if (val === 'minimax') _cachedProvider = 'minimax'
+  else if (val === 'openai_compatible') _cachedProvider = 'openai_compatible'
+  else _cachedProvider = 'anthropic'
   _providerCacheExpiry = Date.now() + CACHE_TTL
   return _cachedProvider
 }
@@ -61,10 +69,23 @@ export async function getMiniMaxModel(): Promise<string> {
 }
 
 /**
+ * Get the configured OpenAI-compatible model from settings (cached for 5 minutes).
+ * This is a free-form string since the model depends on the endpoint.
+ */
+export async function getOpenAICompatibleModel(): Promise<string> {
+  if (_cachedOpenAICompatibleModel && Date.now() < _openAICompatibleModelCacheExpiry) return _cachedOpenAICompatibleModel
+  const setting = await prisma.setting.findUnique({ where: { key: 'openaiCompatibleModel' } })
+  _cachedOpenAICompatibleModel = setting?.value ?? ''
+  _openAICompatibleModelCacheExpiry = Date.now() + CACHE_TTL
+  return _cachedOpenAICompatibleModel
+}
+
+/**
  * Get the model for the currently active provider.
  */
 export async function getActiveModel(): Promise<string> {
   const provider = await getProvider()
+  if (provider === 'openai_compatible') return getOpenAICompatibleModel()
   if (provider === 'minimax') return getMiniMaxModel()
   return provider === 'openai' ? getOpenAIModel() : getAnthropicModel()
 }
@@ -81,4 +102,6 @@ export function invalidateSettingsCache(): void {
   _openAIModelCacheExpiry = 0
   _cachedMiniMaxModel = null
   _miniMaxModelCacheExpiry = 0
+  _cachedOpenAICompatibleModel = null
+  _openAICompatibleModelCacheExpiry = 0
 }

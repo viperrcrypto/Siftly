@@ -3,6 +3,7 @@ import prisma from '@/lib/db'
 import { resolveAnthropicClient, getCliAuthStatus } from '@/lib/claude-cli-auth'
 import { resolveOpenAIClient } from '@/lib/openai-auth'
 import { resolveMiniMaxClient } from '@/lib/minimax-auth'
+import { resolveOpenAICompatibleClient } from '@/lib/openai-compatible-auth'
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let body: { provider?: string } = {}
@@ -102,6 +103,46 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : msg.includes('403')
         ? 'Key does not have permission'
         : msg.slice(0, 120)
+      return NextResponse.json({ working: false, error: friendly })
+    }
+  }
+
+  if (provider === 'openai_compatible') {
+    // Get the configured model name
+    const modelSetting = await prisma.setting.findUnique({ where: { key: 'openaiCompatibleModel' } })
+    const modelName = modelSetting?.value?.trim()
+    if (!modelName) {
+      return NextResponse.json({ working: false, error: 'No model name configured. Set a model name in Settings.' })
+    }
+
+    let client
+    try {
+      client = await resolveOpenAICompatibleClient()
+    } catch (e) {
+      return NextResponse.json({ working: false, error: e instanceof Error ? e.message : 'Failed to create client' })
+    }
+
+    try {
+      await client.chat.completions.create({
+        model: modelName,
+        max_tokens: 5,
+        messages: [{ role: 'user', content: 'hi' }],
+      })
+      return NextResponse.json({ working: true })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      let friendly: string
+      if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND')) {
+        friendly = 'Cannot connect to endpoint. Is the server running?'
+      } else if (msg.includes('401') || msg.includes('invalid_api_key')) {
+        friendly = 'Invalid API key'
+      } else if (msg.includes('403')) {
+        friendly = 'Key does not have permission'
+      } else if (msg.includes('404')) {
+        friendly = 'Model not found. Check the model name and endpoint URL.'
+      } else {
+        friendly = msg.slice(0, 150)
+      }
       return NextResponse.json({ working: false, error: friendly })
     }
   }
