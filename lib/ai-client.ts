@@ -90,13 +90,66 @@ export class OpenAIAIClient implements AIClient {
       return { role: 'user' as const, content: parts }
     })
 
+    // Self-hosted models (llama-server, vLLM, ollama, etc.) often emit a
+    // `<think>...</think>` reasoning block before the actual answer. When
+    // the caller's `max_tokens` budget is sized for the answer alone, the
+    // reasoning consumes it all and the model never reaches the answer.
+    // Give those servers headroom by bumping the budget for OpenAI-compat
+    // proxies — controllable via env, or auto-bumped to >= 8192 when an
+    // OPENAI_BASE_URL override is in use.
+    const isProxied = !!process.env.OPENAI_BASE_URL?.trim()
+    const envMin = parseInt(process.env.OPENAI_MIN_MAX_TOKENS ?? '', 10)
+    const minTokens = Number.isFinite(envMin) && envMin > 0
+      ? envMin
+      : isProxied ? 8192 : params.max_tokens
+    const max_tokens = Math.max(params.max_tokens, minTokens)
+
     const completion = await this.sdk.chat.completions.create({
       model: params.model,
-      max_tokens: params.max_tokens,
+      max_tokens,
       messages,
     })
 
-    return { text: completion.choices[0]?.message?.content ?? '' }
+    const msg = completion.choices[0]?.message as
+      | { content?: string | null; reasoning_content?: string | null }
+      | undefined
+    const text = msg?.content ?? ''
+    // llama-server (and other OpenAI-compatible servers fronting reasoning
+    // models) split the response into `content` and `reasoning_content`.
+    // When the model never emits the closing `</think>` token before
+    // `max_tokens` runs out, `content` is empty and the actual answer is in
+    // `reasoning_content`. Salvage it: brace-balance scan for parseable
+    // JSON arrays/objects (longest first) and return that candidate so
+    // callers see the JSON the model produced.
+    if (!text && msg?.reasoning_content) {
+      const r = msg.reasoning_content
+      const candidates: string[] = []
+      const close: Record<string, string> = { '[': ']', '{': '}' }
+      for (const o of ['[', '{']) {
+        for (let i = 0; i < r.length; i++) {
+          if (r[i] !== o) continue
+          let depth = 0
+          for (let j = i; j < r.length; j++) {
+            if (r[j] === o) depth++
+            else if (r[j] === close[o]) depth--
+            if (depth === 0) {
+              candidates.push(r.slice(i, j + 1))
+              break
+            }
+          }
+        }
+      }
+      candidates.sort((a, b) => b.length - a.length)
+      for (const cand of candidates) {
+        try {
+          JSON.parse(cand)
+          return { text: cand }
+        } catch {
+          // try next candidate
+        }
+      }
+    }
+    return { text }
   }
 }
 
