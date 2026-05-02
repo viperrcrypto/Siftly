@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import crypto from 'crypto'
+import { getPublicOrigin } from '@/lib/public-origin'
 
 export async function GET(req: NextRequest) {
   const clientId = await prisma.setting.findUnique({ where: { key: 'x_oauth_client_id' } })
@@ -20,8 +21,10 @@ export async function GET(req: NextRequest) {
   await prisma.setting.upsert({ where: { key: 'x_oauth_code_verifier' }, create: { key: 'x_oauth_code_verifier', value: codeVerifier }, update: { value: codeVerifier } })
   await prisma.setting.upsert({ where: { key: 'x_oauth_state' }, create: { key: 'x_oauth_state', value: state }, update: { value: state } })
 
-  // Store the origin so the callback can use it too
-  const origin = `${req.nextUrl.protocol}//${req.nextUrl.host}`
+  // Store the origin so the callback can use it too. Honor reverse-proxy headers
+  // so the redirect_uri matches what the user sees in the browser (and what's
+  // registered in the X Developer Portal) — not the internal container address.
+  const origin = getPublicOrigin(req)
   await prisma.setting.upsert({ where: { key: 'x_oauth_redirect_origin' }, create: { key: 'x_oauth_redirect_origin', value: origin }, update: { value: origin } })
   const redirectUri = `${origin}/api/import/x-oauth/callback`
 

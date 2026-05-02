@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { getPublicOrigin } from '@/lib/public-origin'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
@@ -7,7 +8,7 @@ export async function GET(req: NextRequest) {
   const state = searchParams.get('state')
   const error = searchParams.get('error')
   const savedOrigin = await prisma.setting.findUnique({ where: { key: 'x_oauth_redirect_origin' } })
-  const baseUrl = savedOrigin?.value ?? `${req.nextUrl.protocol}//${req.nextUrl.host}`
+  const baseUrl = savedOrigin?.value ?? getPublicOrigin(req)
   const importPage = `${baseUrl}/import`
 
   if (error) {
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${importPage}?x_error=missing_config`)
   }
 
-  const redirectUri = `${savedOrigin?.value ?? baseUrl}/api/import/x-oauth/callback`
+  const redirectUri = `${baseUrl}/api/import/x-oauth/callback`
 
   // Exchange code for tokens
   const tokenBody = new URLSearchParams({
