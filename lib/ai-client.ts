@@ -99,18 +99,40 @@ export class OpenAIAIClient implements AIClient {
     const msg = completion.choices[0]?.message as
       | { content?: string | null; reasoning_content?: string | null }
       | undefined
-    let text = msg?.content ?? ''
+    const text = msg?.content ?? ''
     // llama-server (and other OpenAI-compatible servers fronting reasoning
     // models) split the response into `content` and `reasoning_content`.
     // When the model never emits the closing `</think>` token before
     // `max_tokens` runs out, `content` is empty and the actual answer is in
-    // `reasoning_content`. Salvage it: extract the last JSON array/object
-    // found in the reasoning trace, which is what callers expect.
+    // `reasoning_content`. Salvage it: brace-balance scan for parseable
+    // JSON arrays/objects (longest first) and return that candidate so
+    // callers see the JSON the model produced.
     if (!text && msg?.reasoning_content) {
       const r = msg.reasoning_content
-      const matches = r.match(/[[\{][\s\S]*[\]\}]/g)
-      if (matches && matches.length > 0) {
-        text = matches[matches.length - 1]
+      const candidates: string[] = []
+      const close: Record<string, string> = { '[': ']', '{': '}' }
+      for (const o of ['[', '{']) {
+        for (let i = 0; i < r.length; i++) {
+          if (r[i] !== o) continue
+          let depth = 0
+          for (let j = i; j < r.length; j++) {
+            if (r[j] === o) depth++
+            else if (r[j] === close[o]) depth--
+            if (depth === 0) {
+              candidates.push(r.slice(i, j + 1))
+              break
+            }
+          }
+        }
+      }
+      candidates.sort((a, b) => b.length - a.length)
+      for (const cand of candidates) {
+        try {
+          JSON.parse(cand)
+          return { text: cand }
+        } catch {
+          // try next candidate
+        }
       }
     }
     return { text }
