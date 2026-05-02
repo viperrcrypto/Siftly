@@ -90,9 +90,23 @@ export class OpenAIAIClient implements AIClient {
       return { role: 'user' as const, content: parts }
     })
 
+    // Self-hosted models (llama-server, vLLM, ollama, etc.) often emit a
+    // `<think>...</think>` reasoning block before the actual answer. When
+    // the caller's `max_tokens` budget is sized for the answer alone, the
+    // reasoning consumes it all and the model never reaches the answer.
+    // Give those servers headroom by bumping the budget for OpenAI-compat
+    // proxies — controllable via env, or auto-bumped to >= 8192 when an
+    // OPENAI_BASE_URL override is in use.
+    const isProxied = !!process.env.OPENAI_BASE_URL?.trim()
+    const envMin = parseInt(process.env.OPENAI_MIN_MAX_TOKENS ?? '', 10)
+    const minTokens = Number.isFinite(envMin) && envMin > 0
+      ? envMin
+      : isProxied ? 8192 : params.max_tokens
+    const max_tokens = Math.max(params.max_tokens, minTokens)
+
     const completion = await this.sdk.chat.completions.create({
       model: params.model,
-      max_tokens: params.max_tokens,
+      max_tokens,
       messages,
     })
 
