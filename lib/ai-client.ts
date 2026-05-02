@@ -96,7 +96,24 @@ export class OpenAIAIClient implements AIClient {
       messages,
     })
 
-    return { text: completion.choices[0]?.message?.content ?? '' }
+    const msg = completion.choices[0]?.message as
+      | { content?: string | null; reasoning_content?: string | null }
+      | undefined
+    let text = msg?.content ?? ''
+    // llama-server (and other OpenAI-compatible servers fronting reasoning
+    // models) split the response into `content` and `reasoning_content`.
+    // When the model never emits the closing `</think>` token before
+    // `max_tokens` runs out, `content` is empty and the actual answer is in
+    // `reasoning_content`. Salvage it: extract the last JSON array/object
+    // found in the reasoning trace, which is what callers expect.
+    if (!text && msg?.reasoning_content) {
+      const r = msg.reasoning_content
+      const matches = r.match(/[[\{][\s\S]*[\]\}]/g)
+      if (matches && matches.length > 0) {
+        text = matches[matches.length - 1]
+      }
+    }
+    return { text }
   }
 }
 
