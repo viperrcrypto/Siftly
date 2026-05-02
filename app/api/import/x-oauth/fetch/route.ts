@@ -92,6 +92,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Not authenticated with X. Please connect your account first.' }, { status: 401 })
   }
 
+  // X API requires the numeric user id — `/2/users/me/bookmarks` is not a valid
+  // path. The callback persists `x_oauth_user_id` after the OAuth handshake;
+  // look it up via `/2/users/me` as a fallback for legacy sessions.
+  const savedUserId = await prisma.setting.findUnique({ where: { key: 'x_oauth_user_id' } })
+  let userId = savedUserId?.value
+  if (!userId) {
+    const meRes = await fetch('https://api.x.com/2/users/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!meRes.ok) {
+      const err = await meRes.text()
+      console.error('X API users/me error:', meRes.status, err)
+      return NextResponse.json({ error: `X API error fetching user id: ${meRes.status}` }, { status: 502 })
+    }
+    const me = (await meRes.json()) as { data?: { id?: string } }
+    if (!me.data?.id) {
+      return NextResponse.json({ error: 'Could not resolve X user id from token' }, { status: 502 })
+    }
+    userId = me.data.id
+    await prisma.setting.upsert({
+      where: { key: 'x_oauth_user_id' },
+      create: { key: 'x_oauth_user_id', value: userId },
+      update: { value: userId },
+    })
+  }
+
   let imported = 0
   let skipped = 0
   let total = 0
@@ -107,7 +133,7 @@ export async function POST(req: NextRequest) {
     })
     if (nextToken) params.set('pagination_token', nextToken)
 
-    const res = await fetch(`https://api.x.com/2/users/me/bookmarks?${params}`, {
+    const res = await fetch(`https://api.x.com/2/users/${userId}/bookmarks?${params}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
 
