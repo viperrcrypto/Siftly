@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import Link from 'next/link'
-import { Upload, CheckCircle, ChevronRight, Loader2, Copy, Check, ExternalLink, Sparkles, Eye, Tag, Brain, Layers, StopCircle, RefreshCw, Clock, KeyRound, Trash2, AlertCircle, User, LogOut } from 'lucide-react'
+import { Upload, CheckCircle, ChevronRight, Loader2, Copy, Check, ExternalLink, Sparkles, Eye, Tag, Brain, Layers, StopCircle, RefreshCw, Clock, KeyRound, Trash2 } from 'lucide-react'
 import * as Progress from '@radix-ui/react-progress'
 
 type Step = 1 | 2 | 3
@@ -648,214 +648,245 @@ function ConsoleTab({ onFile, importSource }: { onFile: (file: File) => void; im
   )
 }
 
-// ── Live Import Tab (OAuth 2.0 PKCE) ─────────────────────────────────────────
+// ── Live Import Tab (session cookies — auth_token + ct0) ─────────────────────
 
-interface OAuthStatus {
-  configured: boolean
-  connected: boolean
-  tokenExpired?: boolean
-  user?: { id?: string; name?: string; username?: string } | null
-  error?: string
+interface LiveConfig {
+  hasCredentials: boolean
+  syncInterval: string
+  lastSync: string | null
+  schedulerRunning: boolean
+}
+
+const INTERVAL_LABELS: Record<string, string> = {
+  off: 'Off',
+  '1h': 'Every hour',
+  '4h': 'Every 4 hours',
+  '8h': 'Every 8 hours',
+  '24h': 'Every 24 hours',
 }
 
 function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void }) {
-  const [status, setStatus] = useState<OAuthStatus | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [connecting, setConnecting] = useState(false)
+  const [authToken, setAuthToken] = useState('')
+  const [ct0, setCt0] = useState('')
+  const [config, setConfig] = useState<LiveConfig | null>(null)
+  const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
-  const [disconnecting, setDisconnecting] = useState(false)
+  const [interval, setInterval_] = useState('off')
   const [error, setError] = useState('')
 
-  // Check for OAuth callback params in URL
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('x_connected') === 'true') {
-      // Clean URL
-      window.history.replaceState({}, '', window.location.pathname)
-    }
-    if (params.get('x_error')) {
-      setError(`OAuth error: ${params.get('x_error')}`)
-      window.history.replaceState({}, '', window.location.pathname)
-    }
-  }, [])
-
-  // Fetch status on mount
-  useEffect(() => {
-    fetch('/api/import/x-oauth/status')
+    fetch('/api/import/live')
       .then(async (r) => {
-        if (!r.ok) throw new Error('Failed to check status')
-        const data: OAuthStatus = await r.json()
-        setStatus(data)
+        if (!r.ok) {
+          setError('Failed to load sync configuration')
+          return
+        }
+        const data: LiveConfig = await r.json()
+        setConfig(data)
+        setInterval_(data.syncInterval)
       })
-      .catch(() => setError('Could not connect to the server'))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        setError('Could not connect to the server')
+      })
   }, [])
 
-  async function handleConnect() {
-    setError('')
-    setConnecting(true)
-    try {
-      const res = await fetch('/api/import/x-oauth/authorize')
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Failed to start OAuth')
-      window.location.href = data.authUrl
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect')
-      setConnecting(false)
+  async function handleSaveCredentials() {
+    if (!authToken.trim() || !ct0.trim()) {
+      setError('Both auth_token and ct0 are required')
+      return
     }
-  }
-
-  async function handleDisconnect() {
     setError('')
-    setDisconnecting(true)
+    setSaving(true)
     try {
-      const res = await fetch('/api/import/x-oauth/disconnect', { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to disconnect')
-      setStatus({ configured: true, connected: false })
+      const res = await fetch('/api/import/live', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ authToken: authToken.trim(), ct0: ct0.trim() }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Failed to save')
+      }
+      setConfig((c) => c
+        ? { ...c, hasCredentials: true }
+        : { hasCredentials: true, syncInterval: 'off', lastSync: null, schedulerRunning: false },
+      )
+      setAuthToken('')
+      setCt0('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to disconnect')
+      setError(err instanceof Error ? err.message : 'Failed to save')
     } finally {
-      setDisconnecting(false)
+      setSaving(false)
     }
   }
 
-  async function handleFetchBookmarks() {
+  async function handleDeleteCredentials() {
+    try {
+      const res = await fetch('/api/import/live', { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to remove credentials')
+      setConfig((c) => c ? { ...c, hasCredentials: false, lastSync: null, schedulerRunning: false, syncInterval: 'off' } : c)
+      setInterval_('off')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove credentials')
+    }
+  }
+
+  async function handleSync() {
     setError('')
     setSyncing(true)
     try {
-      const res = await fetch('/api/import/x-oauth/fetch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ maxPages: 10 }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Fetch failed')
-      onSynced({
-        imported: data.imported ?? 0,
-        skipped: data.skipped ?? 0,
-        total: data.total ?? 0,
-        parsed: data.total ?? 0,
-      })
+      const res = await fetch('/api/import/live/sync', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'Sync failed')
+      const imported = data.imported ?? 0
+      const skipped = data.skipped ?? 0
+      onSynced({ imported, skipped, total: imported + skipped, parsed: imported + skipped })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Fetch failed')
+      setError(err instanceof Error ? err.message : 'Sync failed')
     } finally {
       setSyncing(false)
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 size={20} className="animate-spin text-zinc-500" />
-      </div>
-    )
+  async function handleIntervalChange(newInterval: string) {
+    const previousInterval = interval
+    setInterval_(newInterval)
+    try {
+      const res = await fetch('/api/import/live', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ syncInterval: newInterval }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Failed to update sync schedule')
+      }
+      setConfig((c) => c ? { ...c, syncInterval: newInterval, schedulerRunning: newInterval !== 'off' } : c)
+    } catch (err) {
+      setInterval_(previousInterval)
+      setError(err instanceof Error ? err.message : 'Failed to update sync schedule')
+    }
   }
 
   return (
     <div className="space-y-6">
-      {/* Info banner */}
-      <div className="text-xs text-zinc-500 space-y-1.5 bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4">
-        <p className="text-zinc-300 font-medium text-sm mb-2 flex items-center gap-2">
-          <ExternalLink size={14} className="text-indigo-400" />
-          X OAuth 2.0 (Recommended)
+      {/* How to get credentials */}
+      <div className="space-y-3">
+        <p className="text-sm text-zinc-300 font-medium flex items-center gap-2">
+          <KeyRound size={14} className="text-indigo-400" />
+          X Session Cookies
         </p>
-        <p>Connect your X account using the official OAuth 2.0 flow. This is the X-approved method — no cookies or session tokens needed.</p>
-        <p className="text-zinc-600 mt-1">Requires X OAuth Client ID in Settings. Scopes: bookmark.read, tweet.read, users.read</p>
-        <p className="text-amber-400/80 mt-2 font-medium">Note: The X API requires a paid Basic tier ($200/mo) or higher for bookmark.read scope access. The free tier does not support fetching bookmarks.</p>
+        <div className="text-xs text-zinc-500 space-y-1.5 pl-5">
+          <p>1. Open <a href="https://x.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">x.com</a> and log in</p>
+          <p>2. Open DevTools (<kbd className="bg-zinc-800 border border-zinc-700 px-1 py-0.5 rounded font-mono">F12</kbd>) &rarr; <strong className="text-zinc-400">Application</strong> tab &rarr; <strong className="text-zinc-400">Cookies</strong></p>
+          <p>3. Copy <code className="bg-zinc-800 px-1 py-0.5 rounded">auth_token</code> and <code className="bg-zinc-800 px-1 py-0.5 rounded">ct0</code></p>
+        </div>
       </div>
 
-      {/* Not configured */}
-      {!status?.configured && (
-        <div className="flex items-center gap-3 p-3.5 rounded-xl bg-amber-500/8 border border-amber-500/20">
-          <AlertCircle size={15} className="text-amber-400 shrink-0" />
-          <div>
-            <p className="text-sm text-amber-300">X OAuth not configured</p>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              Add your X OAuth Client ID (and optionally Client Secret) in{' '}
-              <Link href="/settings" className="text-indigo-400 hover:underline">Settings</Link>
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Configured but not connected */}
-      {status?.configured && !status?.connected && (
-        <button
-          onClick={handleConnect}
-          disabled={connecting}
-          className="w-full py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-medium transition-colors flex items-center justify-center gap-2.5"
-        >
-          {connecting ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              Redirecting to X...
-            </>
-          ) : (
-            <>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-              Connect X Account
-            </>
-          )}
-        </button>
-      )}
-
-      {/* Connected */}
-      {status?.connected && (
-        <>
-          <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
-            <div className="flex items-center gap-2.5">
-              <CheckCircle size={15} className="text-emerald-400 shrink-0" />
-              <div>
-                <span className="text-sm text-emerald-300">Connected to X</span>
-                {status.user?.username && (
-                  <span className="text-xs text-zinc-500 ml-2">
-                    <User size={11} className="inline -mt-0.5 mr-0.5" />
-                    @{status.user.username}
-                  </span>
-                )}
-              </div>
-            </div>
-            <button
-              onClick={handleDisconnect}
-              disabled={disconnecting}
-              className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-              title="Disconnect X account"
-            >
-              {disconnecting ? <Loader2 size={14} className="animate-spin" /> : <LogOut size={14} />}
-            </button>
-          </div>
-
-          {status.tokenExpired && (
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
-              <AlertCircle size={14} className="text-amber-400 shrink-0" />
-              <p className="text-xs text-amber-300">Token expired. Siftly will try to auto-refresh, or you can reconnect.</p>
-            </div>
-          )}
-
-          <button
-            onClick={handleFetchBookmarks}
-            disabled={syncing}
-            className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-medium transition-colors flex items-center justify-center gap-2"
-          >
-            {syncing ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                Fetching bookmarks...
-              </>
-            ) : (
-              <>
-                <RefreshCw size={16} />
-                Fetch Bookmarks from X
-              </>
+      {/* Credential status + input */}
+      {config?.hasCredentials ? (
+        <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle size={15} className="text-emerald-400 shrink-0" />
+            <span className="text-sm text-emerald-300">Credentials saved</span>
+            {config.lastSync && (
+              <span className="text-xs text-zinc-500">
+                &middot; Last sync: {new Date(config.lastSync).toLocaleString()}
+              </span>
             )}
+          </div>
+          <button
+            onClick={handleDeleteCredentials}
+            className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+            title="Remove credentials"
+          >
+            <Trash2 size={14} />
           </button>
-        </>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <input
+              type="password"
+              placeholder="auth_token"
+              value={authToken}
+              onChange={(e) => setAuthToken(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/50 font-mono"
+            />
+            <input
+              type="password"
+              placeholder="ct0"
+              value={ct0}
+              onChange={(e) => setCt0(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/50 font-mono"
+            />
+          </div>
+          <button
+            onClick={handleSaveCredentials}
+            disabled={saving || !authToken.trim() || !ct0.trim()}
+            className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors flex items-center justify-center gap-2"
+          >
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
+            {saving ? 'Saving...' : 'Save Credentials'}
+          </button>
+        </div>
       )}
 
       {error && (
         <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
           {error}
         </p>
+      )}
+
+      {/* Sync button */}
+      {config?.hasCredentials && (
+        <>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-medium transition-colors flex items-center justify-center gap-2"
+          >
+            {syncing ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Syncing bookmarks...
+              </>
+            ) : (
+              <>
+                <RefreshCw size={16} />
+                Sync Now
+              </>
+            )}
+          </button>
+
+          {/* Auto-sync schedule */}
+          <div className="border-t border-zinc-800 pt-5">
+            <p className="text-xs text-zinc-500 mb-3 uppercase tracking-wider font-medium flex items-center gap-1.5">
+              <Clock size={12} />
+              Auto-Sync Schedule
+            </p>
+            <div className="grid grid-cols-5 gap-1.5">
+              {Object.entries(INTERVAL_LABELS).map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => handleIntervalChange(value)}
+                  className={`px-2 py-2 rounded-lg text-xs font-medium transition-all ${
+                    interval === value
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-zinc-800 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {interval !== 'off' && (
+              <p className="text-xs text-zinc-600 mt-2">
+                Siftly will automatically sync new bookmarks from X {INTERVAL_LABELS[interval]?.toLowerCase()}
+              </p>
+            )}
+          </div>
+        </>
       )}
     </div>
   )
