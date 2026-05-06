@@ -202,6 +202,71 @@ function buildAuthorIndex(
   ].join('\n')
 }
 
+/**
+ * Export a specific set of bookmarks (by DB id) to an Obsidian vault,
+ * placing each note inside a subfolder named after its primary category.
+ * If a bookmark has multiple categories, it is placed in the first (highest-
+ * confidence) one and symlinked from the rest.
+ *
+ * Created directories: {vaultPath}/Twitter Bookmarks/{Category Name}/note.md
+ */
+export async function exportBookmarksByCategoryToObsidian(
+  bookmarkIds: string[],
+  vaultPath: string,
+  subfolder = 'Twitter Bookmarks',
+): Promise<{ written: number; errors: number; categories: string[] }> {
+  const validation = await validateVaultPath(vaultPath)
+  if (!validation.valid) throw new Error(`Invalid vault path: ${validation.error}`)
+
+  const safeSubfolder = sanitizeFilename(subfolder)
+  const baseDir = path.join(vaultPath, safeSubfolder)
+  const resolvedBase = path.resolve(baseDir)
+  const resolvedVault = path.resolve(vaultPath)
+  if (!resolvedBase.startsWith(resolvedVault + '/') && resolvedBase !== resolvedVault) {
+    throw new Error('Subfolder path escapes vault directory')
+  }
+
+  const bookmarks = await prisma.bookmark.findMany({
+    where: { id: { in: bookmarkIds } },
+    include: {
+      mediaItems: true,
+      categories: { include: { category: true }, orderBy: { confidence: 'desc' } },
+    },
+    orderBy: { tweetCreatedAt: 'desc' },
+  }) as BookmarkRow[]
+
+  let written = 0
+  let errors = 0
+  const usedCategories = new Set<string>()
+
+  for (const bookmark of bookmarks) {
+    // Determine primary category (highest confidence or fallback)
+    const primaryCategory =
+      bookmark.categories[0]?.category.name ?? 'General'
+    const catDir = path.join(baseDir, sanitizeFilename(primaryCategory))
+    const resolvedCatDir = path.resolve(catDir)
+
+    // Security: ensure category dir stays under baseDir
+    if (!resolvedCatDir.startsWith(resolvedBase + '/') && resolvedCatDir !== resolvedBase) continue
+
+    await fs.mkdir(catDir, { recursive: true })
+    usedCategories.add(primaryCategory)
+
+    const filename = noteFilename(bookmark)
+    const filePath = path.join(catDir, filename)
+
+    try {
+      await fs.writeFile(filePath, buildNoteMarkdown(bookmark), 'utf-8')
+      written++
+    } catch (err) {
+      console.error(`[obsidian] Failed to write ${filename}:`, err)
+      errors++
+    }
+  }
+
+  return { written, errors, categories: Array.from(usedCategories) }
+}
+
 export async function exportToObsidian(options: ObsidianExportOptions): Promise<ObsidianExportResult> {
   const { vaultPath, subfolder = 'Twitter Bookmarks', overwrite = false, categoryFilter } = options
 

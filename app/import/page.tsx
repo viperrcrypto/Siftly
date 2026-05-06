@@ -2,11 +2,11 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import Link from 'next/link'
-import { Upload, CheckCircle, ChevronRight, Loader2, Copy, Check, ExternalLink, Sparkles, Eye, Tag, Brain, Layers, StopCircle, RefreshCw, Clock, KeyRound, Trash2, AlertCircle, User, LogOut } from 'lucide-react'
+import { Upload, CheckCircle, ChevronRight, Loader2, Copy, Check, ExternalLink, Sparkles, Eye, Tag, Brain, Layers, StopCircle, RefreshCw, Clock, KeyRound, Trash2, AlertCircle, User, LogOut, Link2, FolderOutput } from 'lucide-react'
 import * as Progress from '@radix-ui/react-progress'
 
 type Step = 1 | 2 | 3
-type Method = 'bookmarklet' | 'console' | 'live'
+type Method = 'bookmarklet' | 'console' | 'live' | 'urls'
 
 interface ImportResult {
   imported: number
@@ -861,54 +861,227 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
   )
 }
 
+// ── URL Import Tab ───────────────────────────────────────────────────────────
+
+interface UrlImportResult {
+  imported: number
+  skipped: number
+  fetchFailed: number
+  invalidUrls: string[]
+  categorized: number
+  exported: { written: number; errors: number; categories: string[] } | null
+  message?: string
+}
+
+function UrlImportTab() {
+  const [urls, setUrls] = useState('')
+  const [vaultPath, setVaultPath] = useState('')
+  const [exportToObsidian, setExportToObsidian] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<UrlImportResult | null>(null)
+  const [error, setError] = useState('')
+
+  // Pre-fill vault path from settings
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((d: Record<string, unknown>) => {
+        const vp = typeof d.obsidianVaultPath === 'string' ? d.obsidianVaultPath : ''
+        if (vp) setVaultPath(vp)
+      })
+      .catch(() => {})
+  }, [])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setResult(null)
+    setLoading(true)
+
+    const urlList = urls
+      .split(/[\n,]+/)
+      .map((u) => u.trim())
+      .filter(Boolean)
+
+    if (urlList.length === 0) {
+      setError('Paste at least one tweet URL.')
+      setLoading(false)
+      return
+    }
+
+    try {
+      const res = await fetch('/api/import/url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          urls: urlList,
+          exportToObsidian,
+          vaultPath: exportToObsidian ? vaultPath : undefined,
+        }),
+      })
+      const data: UrlImportResult = await res.json()
+      if (!res.ok) throw new Error((data as unknown as { error?: string }).error ?? 'Import failed')
+      setResult(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Import failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <p className="text-xs text-zinc-500">
+        Paste tweet URLs (one per line or comma-separated). Siftly fetches each tweet,
+        imports it, runs AI categorization, and optionally exports it to your Obsidian
+        vault organized by category.
+      </p>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-zinc-400 mb-1.5">Tweet URLs</label>
+          <textarea
+            className="w-full h-36 px-3 py-2 text-xs font-mono bg-zinc-800 border border-zinc-700 rounded-xl text-zinc-200 placeholder-zinc-600 resize-none focus:outline-none focus:border-indigo-500"
+            placeholder="https://x.com/user/status/123...&#10;https://twitter.com/other/status/456..."
+            value={urls}
+            onChange={(e) => setUrls(e.target.value)}
+            disabled={loading}
+          />
+        </div>
+
+        {/* Obsidian export toggle */}
+        <div className="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700/50 space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <div
+              onClick={() => setExportToObsidian((v) => !v)}
+              className={`w-9 h-5 rounded-full relative transition-colors cursor-pointer ${
+                exportToObsidian ? 'bg-indigo-600' : 'bg-zinc-700'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                  exportToObsidian ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-zinc-300 flex items-center gap-1.5">
+                <FolderOutput size={14} className="text-indigo-400" />
+                Export to Obsidian by category
+              </p>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Writes notes into <code className="text-zinc-400">Twitter Bookmarks/Category Name/</code>
+              </p>
+            </div>
+          </label>
+
+          {exportToObsidian && (
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">Vault path</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 text-xs font-mono bg-zinc-900 border border-zinc-700 rounded-lg text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
+                placeholder="/Users/you/Documents/MyVault"
+                value={vaultPath}
+                onChange={(e) => setVaultPath(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+          )}
+        </div>
+
+        {error && (
+          <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+        >
+          {loading ? (
+            <><Loader2 size={15} className="animate-spin" /> Processing…</>
+          ) : (
+            <><Link2 size={15} /> Import from URLs</>
+          )}
+        </button>
+      </form>
+
+      {result && (
+        <div className="rounded-xl border border-zinc-700 bg-zinc-800/40 p-4 space-y-2">
+          <p className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
+            <CheckCircle size={15} className="text-emerald-400" /> Done
+          </p>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <span className="text-zinc-400">Imported</span>
+            <span className="text-emerald-400 font-semibold">{result.imported}</span>
+            <span className="text-zinc-400">Skipped (already in library)</span>
+            <span className="text-zinc-500">{result.skipped}</span>
+            {result.fetchFailed > 0 && (
+              <><span className="text-zinc-400">Failed to fetch</span>
+              <span className="text-amber-400">{result.fetchFailed}</span></>
+            )}
+            <span className="text-zinc-400">Categorized</span>
+            <span className="text-indigo-400">{result.categorized}</span>
+            {result.exported && (
+              <><span className="text-zinc-400">Exported to Obsidian</span>
+              <span className="text-teal-400">{result.exported.written} notes</span></>
+            )}
+          </div>
+          {result.exported?.categories && result.exported.categories.length > 0 && (
+            <p className="text-xs text-zinc-500 pt-1">
+              Categories: {result.exported.categories.join(', ')}
+            </p>
+          )}
+          {result.invalidUrls.length > 0 && (
+            <p className="text-xs text-amber-500/80 pt-1">
+              Skipped invalid URLs: {result.invalidUrls.slice(0, 3).join(', ')}{result.invalidUrls.length > 3 ? ` +${result.invalidUrls.length - 3} more` : ''}
+            </p>
+          )}
+          {result.message && (
+            <p className="text-xs text-zinc-500">{result.message}</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function InstructionsStep({ onFile, importSource, onLiveSynced }: { onFile: (file: File) => void; importSource: 'bookmark' | 'like'; onLiveSynced: (result: ImportResult) => void }) {
-  const [method, setMethod] = useState<Method>('bookmarklet')
+  const [method, setMethod] = useState<Method>('live')
+
+  const TAB_DEFS: { key: Method; label: React.ReactNode }[] = [
+    { key: 'live', label: <><RefreshCw size={12} className="inline -mt-0.5 mr-1" />Live <span className="text-indigo-400 text-[10px] font-normal ml-1">Recommended</span></> },
+    { key: 'urls', label: <><Link2 size={12} className="inline -mt-0.5 mr-1" />From URLs</> },
+    { key: 'bookmarklet', label: 'Bookmarklet' },
+    { key: 'console', label: '</> Console' },
+  ]
 
   return (
     <div>
       {/* Method tabs */}
-      <div className="flex gap-1 mb-6 p-1 bg-zinc-800 rounded-xl">
-        <button
-          onClick={() => setMethod('live')}
-          className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-            method === 'live'
-              ? 'bg-zinc-900 text-zinc-100 shadow-sm'
-              : 'text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          <RefreshCw size={13} className="inline -mt-0.5 mr-1" />
-          Live Import
-          <span className="ml-1.5 text-xs text-indigo-400 font-normal">Recommended</span>
-        </button>
-        <button
-          onClick={() => setMethod('bookmarklet')}
-          className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-            method === 'bookmarklet'
-              ? 'bg-zinc-900 text-zinc-100 shadow-sm'
-              : 'text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          Bookmarklet
-        </button>
-        <button
-          onClick={() => setMethod('console')}
-          className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-            method === 'console'
-              ? 'bg-zinc-900 text-zinc-100 shadow-sm'
-              : 'text-zinc-500 hover:text-zinc-300'
-          }`}
-        >
-          {'</>'} Console
-        </button>
+      <div className="flex gap-1 mb-6 p-1 bg-zinc-800 rounded-xl overflow-x-auto">
+        {TAB_DEFS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setMethod(key)}
+            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+              method === key
+                ? 'bg-zinc-900 text-zinc-100 shadow-sm'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {method === 'live' ? (
-        <LiveImportTab onSynced={onLiveSynced} />
-      ) : method === 'bookmarklet' ? (
-        <BookmarkletTab onFile={onFile} importSource={importSource} />
-      ) : (
-        <ConsoleTab onFile={onFile} importSource={importSource} />
-      )}
+      {method === 'live' && <LiveImportTab onSynced={onLiveSynced} />}
+      {method === 'urls' && <UrlImportTab />}
+      {method === 'bookmarklet' && <BookmarkletTab onFile={onFile} importSource={importSource} />}
+      {method === 'console' && <ConsoleTab onFile={onFile} importSource={importSource} />}
     </div>
   )
 }
