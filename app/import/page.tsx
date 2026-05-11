@@ -255,17 +255,21 @@ function BookmarkletTab({
       num: 2,
       title: (
         <span>
-          Go to{' '}
-          <a
-            href={targetUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-indigo-400 hover:underline inline-flex items-center gap-1"
+          Click this{' '}
+          <button
+            type="button"
+            onClick={() => window.open(targetUrl, 'siftly_x_capture')}
+            className="text-indigo-400 hover:text-indigo-300 hover:underline inline-flex items-center gap-1 align-baseline bg-transparent border-0 p-0 cursor-pointer font-inherit"
           >
             {targetLabel} <ExternalLink size={11} />
-          </a>{' '}
-          while logged in
+          </button>{' '}
+          in a <kbd className="text-xs bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded font-mono">linked-window</kbd> while logged in
         </span>
+      ),
+      content: (
+        <p className="text-xs text-zinc-500 mt-1">
+          Keep this Import tab open to receive captured bookmarks and import them automatically.
+        </p>
       ),
     },
     {
@@ -283,16 +287,17 @@ function BookmarkletTab({
       content: (
         <p className="text-xs text-zinc-500 mt-1">
           A second button appears below the export button. Click it and it will scroll through all your bookmarks automatically — stopping when done. Or scroll manually if you prefer.
+          When scrolling finishes, bookmarks are sent to this tab automatically (no file upload). You can still use Export to download JSON.
         </p>
       ),
     },
     {
       num: 5,
-      title: `Click the purple "Export N ${sourceLabel}" button`,
+      title: `Optional: Click the purple "Export N ${sourceLabel}" button`,
       content: (
         <p className="text-xs text-zinc-500 mt-1">
           A <code className="text-xs bg-zinc-800 px-1 py-0.5 rounded">{sourceLabel}.json</code> file will download automatically.
-          Upload it below.
+          Upload it below. <kbd className="text-xs bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded font-mono">linked-window</kbd> will import automatically and skip this step. 
         </p>
       ),
     },
@@ -343,17 +348,21 @@ function ConsoleTab({
       num: 1,
       title: (
         <span>
-          Go to{' '}
-          <a
-            href={targetUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-indigo-400 hover:underline inline-flex items-center gap-1"
+          Click this{' '}
+          <button
+            type="button"
+            onClick={() => window.open(targetUrl, 'siftly_x_capture')}
+            className="text-indigo-400 hover:text-indigo-300 hover:underline inline-flex items-center gap-1 align-baseline bg-transparent border-0 p-0 cursor-pointer font-inherit"
           >
             {targetLabel} <ExternalLink size={11} />
-          </a>{' '}
-          while logged in
+          </button>{' '}
+          in a <kbd className="text-xs bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded font-mono">linked-window</kbd> while logged in
         </span>
+      ),
+      content: (
+        <p className="text-xs text-zinc-500 mt-1">
+           Keep this Import tab open to receive captured bookmarks and import them automatically.
+        </p>
       ),
     },
     {
@@ -400,6 +409,7 @@ function ConsoleTab({
       content: (
         <p className="text-xs text-zinc-500 mt-1">
           A purple button will appear. Scroll slowly to capture all {sourceLabel}, then click the button to download.
+          <kbd className="text-xs bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded font-mono">linked-window</kbd> will import automatically no need to upload.
         </p>
       ),
     },
@@ -1124,7 +1134,8 @@ export default function ImportPage() {
     setTimeout(() => setStep(3), 1500)
   }
 
-  async function handleFile(file: File) {
+  const handleFile = useCallback(async (file: File, sourceOverride?: 'bookmark' | 'like') => {
+    const source = sourceOverride ?? importSource
     setStep(2)
     setImporting(true)
     setImportError('')
@@ -1132,7 +1143,7 @@ export default function ImportPage() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('source', importSource)
+      formData.append('source', source)
 
       const res = await fetch('/api/import', { method: 'POST', body: formData })
       const data = await res.json()
@@ -1164,7 +1175,24 @@ export default function ImportPage() {
     } finally {
       setImporting(false)
     }
-  }
+  }, [importSource])
+
+  useEffect(() => {
+    const xOrigins = new Set(['https://x.com', 'https://twitter.com'])
+    function onMessage(e: MessageEvent) {
+      if (!xOrigins.has(e.origin)) return
+      if (e.data?.type !== 'SIFTLY_BOOKMARK_CAPTURE' || !Array.isArray(e.data.bookmarks)) return
+      const src = e.data.source === 'like' ? 'like' : 'bookmark'
+      const json = JSON.stringify({ bookmarks: e.data.bookmarks, source: src }, null, 2)
+      const d = new Date()
+      const ts = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`
+      const name = `${src === 'like' ? 'likes' : 'bookmarks'}-${ts}.json`
+      const file = new File([json], name, { type: 'application/json' })
+      void handleFile(file, src)
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [handleFile])
 
   return (
     <div className="p-8 max-w-2xl mx-auto">

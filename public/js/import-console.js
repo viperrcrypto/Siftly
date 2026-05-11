@@ -104,7 +104,17 @@
             autoScrolling = false;
             autoBtn.textContent = `✅ Done — ${all.length} captured`;
             autoBtn.style.cssText += ';background:#14532d;color:#86efac;border:1px solid #166534';
-            console.log(`✅ Auto-scroll complete! ${all.length} ${label} ready. Click Export.`);
+            let sentToOpener = false;
+            try {
+              if (window.opener && !window.opener.closed) {
+                window.opener.postMessage({ type: 'SIFTLY_BOOKMARK_CAPTURE', bookmarks: all, source }, '*');
+                sentToOpener = true;
+                autoBtn.textContent = `✅ Done — ${all.length} captured and importing to Siftly.`;
+              }
+            } catch { /* ignore */ }
+            console.log(sentToOpener
+              ? `✅ Sent ${all.length} ${label} to Siftly.`
+              : `✅ Auto-scroll complete! ${all.length} ${label} ready. Click Export.`);
             return;
           }
           stagnant = 0;

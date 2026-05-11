@@ -115,7 +115,17 @@
             autoScrolling = false;
             autoBtn.textContent = '✅ Done — ' + all.length + ' captured';
             autoBtn.style.background = '#14532d'; autoBtn.style.color = '#86efac'; autoBtn.style.border = '1px solid #166534';
-            showToast('✅ Auto-scroll complete! ' + all.length + ' ' + label + ' ready. Click Export.', '#14532d');
+            var sentToOpener = false;
+            try {
+              if (window.opener && !window.opener.closed) {
+                window.opener.postMessage({ type: 'SIFTLY_BOOKMARK_CAPTURE', bookmarks: all, source: source }, '*');
+                sentToOpener = true;
+                autoBtn.textContent = '✅ Done — ' + all.length + ' captured and importing to Siftly.';
+              }
+            } catch (ex) { }
+            showToast(sentToOpener
+              ? ('✅ Sent ' + all.length + ' ' + label + ' to Siftly.')
+              : ('✅ Auto-scroll complete! ' + all.length + ' ' + label + ' ready. Click Export.'), '#14532d');
             return;
           }
           stagnant = 0;
