@@ -1,4 +1,4 @@
-(async function() {
+(async function () {
   if (!location.hostname.includes('twitter.com') && !location.hostname.includes('x.com')) {
     alert('Run this on x.com/i/bookmarks or x.com/username/likes'); return;
   }
@@ -57,7 +57,7 @@
     window.fetch = origFetch;
     XMLHttpRequest.prototype.open = origOpen;
     XMLHttpRequest.prototype.send = origSend;
-    [btn, autoBtn].forEach(el => { try { document.body.removeChild(el); } catch(e) {} });
+    [btn, autoBtn].forEach(el => { try { document.body.removeChild(el); } catch (e) { } });
     if (!all.length) { alert(`No ${label} captured. Use Auto-scroll or scroll manually first.`); return; }
     const blob = new Blob([JSON.stringify({ bookmarks: all, source }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -104,7 +104,7 @@
     autoBtn.textContent = '▶ Auto-scroll';
     autoBtn.style.background = '#18181b'; autoBtn.style.color = '#a1a1aa'; autoBtn.style.border = '1px solid #3f3f46';
   }
-  autoBtn.onclick = function() {
+  autoBtn.onclick = function () {
     if (autoScrolling) { autoScrolling = false; return; }
     autoScrolling = true;
     autoBtn.textContent = '⏸ Stop';
@@ -115,26 +115,26 @@
   document.body.appendChild(autoBtn);
   const isApiUrl = (u) => u.includes('/graphql/') || u.includes('/i/api/') || u.includes('/2/timeline');
   const origFetch = window.fetch;
-  window.fetch = async function(...args) {
+  window.fetch = async function (...args) {
     const r = await origFetch.apply(this, args);
     try {
       const u = args[0] instanceof Request ? args[0].url : String(args[0]);
       if (isApiUrl(u)) { const ct = r.headers.get('content-type') ?? ''; if (ct.includes('json')) { const d = await r.clone().json(); processData(d); } }
-    } catch(e) {}
+    } catch (e) { }
     return r;
   };
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
   const xhrUrls = new WeakMap();
-  XMLHttpRequest.prototype.open = function(...args) {
+  XMLHttpRequest.prototype.open = function (...args) {
     xhrUrls.set(this, String(args[1] ?? ''));
     return origOpen.apply(this, args);
   };
-  XMLHttpRequest.prototype.send = function(...args) {
+  XMLHttpRequest.prototype.send = function (...args) {
     const xhr = this, u = xhrUrls.get(xhr) ?? '';
     if (isApiUrl(u)) {
-      xhr.addEventListener('load', function() {
-        try { processData(JSON.parse(xhr.responseText)); } catch(e) {}
+      xhr.addEventListener('load', function () {
+        try { processData(JSON.parse(xhr.responseText)); } catch (e) { }
       });
     }
     return origSend.apply(this, args);

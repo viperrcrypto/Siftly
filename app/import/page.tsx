@@ -69,6 +69,20 @@ const IMPORT_CAPTURE_SCRIPTS = {
   console: '/js/import-console.js',
 } as const
 
+function compactBookmarkletScript(script: string) {
+  return script
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false
+      if (line.startsWith('//')) return false
+      if (line.startsWith('/*') && line.endsWith('*/')) return false
+      return true
+    })
+    .join(' ')
+}
+
 // ── Draggable bookmarklet link ────────────────────────────────────────────────
 // React blocks javascript: URLs set via JSX href as a security precaution.
 // We bypass this by setting the href attribute imperatively after mount so the
@@ -665,7 +679,9 @@ function InstructionsStep({ onFile, importSource, onLiveSynced }: { onFile: (fil
     }
   }, [])
 
-  const bookmarkletHref = captureBookmarklet ? `javascript:${encodeURIComponent(captureBookmarklet)}` : ''
+  const bookmarkletHref = captureBookmarklet
+    ? `javascript:${encodeURIComponent(compactBookmarkletScript(captureBookmarklet))}`
+    : ''
 
   return (
     <div>
