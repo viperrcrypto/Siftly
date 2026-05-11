@@ -35,7 +35,11 @@
     });
     btn.textContent = `Export ${all.length} ${label} →`;
   }
-  function isTweetObj(o) { return o && typeof o === 'object' && typeof o.rest_id === 'string' && o.rest_id.length > 5 && (o.legacy || o.core); }
+  function isTweetObj(o) {
+    if (!o || typeof o !== 'object' || typeof o.rest_id !== 'string' || o.rest_id.length <= 5) return false;
+    const leg = o.legacy;
+    return !!(leg && (typeof leg.full_text === 'string' || typeof leg.text === 'string'));
+  }
   function unwrapTweet(t) {
     if (!t) return null;
     if (t.__typename === 'TweetWithVisibilityResults' || t.__typename === 'TweetWithVisibilityResult') return t.tweet ?? t;
