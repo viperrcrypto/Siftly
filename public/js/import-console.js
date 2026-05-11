@@ -9,7 +9,13 @@
   function addTweet(t) {
     if (!t?.rest_id || seen.has(t.rest_id)) return;
     seen.add(t.rest_id);
-    const leg = t.legacy ?? {}, usr = t.core?.user_results?.result?.legacy ?? {};
+    const leg = t.legacy ?? {};
+    const ur = t.core?.user_results?.result ?? {};
+    const uc = ur.core ?? {};
+    const ul = ur.legacy ?? {};
+    const author = uc.name ?? ul.name ?? 'Unknown';
+    const handleSn = uc.screen_name ?? ul.screen_name ?? 'unknown';
+    const avatar = ur.avatar?.image_url ?? ul.profile_image_url_https ?? '';
     const media = (leg.extended_entities?.media ?? leg.entities?.media ?? []).map(m => {
       const thumb = m.media_url_https ?? '';
       if (m.type === 'video' || m.type === 'animated_gif') {
@@ -22,7 +28,7 @@
       return thumb ? { type: 'photo', url: thumb } : null;
     }).filter(Boolean);
     all.push({
-      id: t.rest_id, author: usr.name ?? 'Unknown', handle: '@' + (usr.screen_name ?? 'unknown'),
+      id: t.rest_id, author, handle: '@' + handleSn, avatar,
       timestamp: leg.created_at ?? '', text: leg.full_text ?? leg.text ?? '', media,
       hashtags: (leg.entities?.hashtags ?? []).map(h => h.text),
       urls: (leg.entities?.urls ?? []).map(u => u.expanded_url).filter(Boolean)
