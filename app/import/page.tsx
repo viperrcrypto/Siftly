@@ -1181,6 +1181,27 @@ export default function ImportPage() {
     const xOrigins = new Set(['https://x.com', 'https://twitter.com'])
     function onMessage(e: MessageEvent) {
       if (!xOrigins.has(e.origin)) return
+      if (e.data?.type === 'SIFTLY_LAST_JOB_FIRST_TIMELINE_QUERY') {
+        const win = e.source as Window | null
+        if (!win) return
+        const reply = (payload: {
+          bookmarkTweetId: string | null
+          likeTweetId: string | null
+        }) => {
+          win.postMessage({ type: 'SIFTLY_LAST_JOB_FIRST_TIMELINE_REPLY', ...payload }, e.origin)
+        }
+        void fetch('/api/import/last-job-first-timeline-tweets')
+          .then((r) => r.json())
+          .then((d: { bookmarkTweetId?: unknown; likeTweetId?: unknown }) => {
+            const bm = typeof d.bookmarkTweetId === 'string' && d.bookmarkTweetId ? d.bookmarkTweetId : null
+            const lk = typeof d.likeTweetId === 'string' && d.likeTweetId ? d.likeTweetId : null
+            reply({ bookmarkTweetId: bm, likeTweetId: lk })
+          })
+          .catch(() => {
+            reply({ bookmarkTweetId: null, likeTweetId: null })
+          })
+        return
+      }
       if (e.data?.type !== 'SIFTLY_BOOKMARK_CAPTURE' || !Array.isArray(e.data.bookmarks)) return
       const src = e.data.source === 'like' ? 'like' : 'bookmark'
       const json = JSON.stringify({ bookmarks: e.data.bookmarks, source: src }, null, 2)

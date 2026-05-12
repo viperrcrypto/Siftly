@@ -6,8 +6,20 @@
   const source = isLikes ? 'like' : 'bookmark';
   const label = isLikes ? 'likes' : 'bookmarks';
   const all = [], seen = new Set();
+  let incrementalStopId = null;
+  let incrementalStopHit = false;
+  /** Length of `all` when incremental boundary was hit — trim tail in finishScrollCapture if async adds slip in. */
+  let incrementalStopSnapshotLen = null;
+  let lastImportedTweetIdFromOpener = null;
   function addTweet(t) {
-    if (!t?.rest_id || seen.has(t.rest_id)) return;
+    if (!t?.rest_id) return;
+    if (incrementalStopHit) return;
+    if (incrementalStopId && t.rest_id === incrementalStopId) {
+      incrementalStopSnapshotLen = all.length;
+      incrementalStopHit = true;
+      return;
+    }
+    if (seen.has(t.rest_id)) return;
     seen.add(t.rest_id);
     const leg = t.legacy ?? {};
     const ur = t.core?.user_results?.result ?? {};
@@ -63,11 +75,109 @@
     boxShadow: '0 0 0 2px rgba(99,102,241,.4),0 4px 16px rgba(0,0,0,.4)',
     fontFamily: 'system-ui,sans-serif'
   });
+  const autoBtn = document.createElement('button');
+  autoBtn.textContent = '▶ Auto-scroll';
+  Object.assign(autoBtn.style, {
+    position: 'fixed', top: '58px', right: '12px', zIndex: '2147483647',
+    padding: '8px 14px', background: '#18181b', color: '#a1a1aa',
+    border: '1px solid #3f3f46', borderRadius: '8px', cursor: 'pointer',
+    fontSize: '12px', fontWeight: '600', fontFamily: 'system-ui,sans-serif'
+  });
+  const incBtn = document.createElement('button');
+  incBtn.textContent = '▶ Incremental';
+  Object.assign(incBtn.style, {
+    position: 'fixed', top: '104px', right: '12px', zIndex: '2147483647',
+    padding: '8px 14px', background: '#18181b', color: '#a1a1aa',
+    border: '1px solid #3f3f46', borderRadius: '8px', cursor: 'pointer',
+    fontSize: '12px', fontWeight: '600', fontFamily: 'system-ui,sans-serif'
+  });
+  let autoScrolling = false;
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  function resetScrollButtonsIdle() {
+    autoBtn.textContent = '▶ Auto-scroll';
+    autoBtn.style.background = '#18181b'; autoBtn.style.color = '#a1a1aa'; autoBtn.style.border = '1px solid #3f3f46';
+    incBtn.textContent = '▶ Incremental';
+    incBtn.style.background = '#18181b'; incBtn.style.color = '#a1a1aa'; incBtn.style.border = '1px solid #3f3f46';
+  }
+  function finishScrollCapture() {
+    const snapshotLen = incrementalStopSnapshotLen;
+    autoScrolling = false;
+    if (!all.length) {
+      incrementalStopId = null;
+      incrementalStopHit = false;
+      incrementalStopSnapshotLen = null;
+      resetScrollButtonsIdle();
+      console.warn(`No ${label} captured before stop.`);
+      return;
+    }
+    if (snapshotLen !== null && snapshotLen < all.length) {
+      const tail = all.splice(snapshotLen);
+      tail.forEach((r) => { seen.delete(r.id); });
+      btn.textContent = `Export ${all.length} ${label} →`;
+    }
+    incrementalStopId = null;
+    incrementalStopHit = false;
+    incrementalStopSnapshotLen = null;
+    autoBtn.textContent = `✅ Done — ${all.length} captured`;
+    autoBtn.style.background = '#14532d';
+    autoBtn.style.color = '#86efac';
+    autoBtn.style.border = '1px solid #166534';
+    incBtn.textContent = '▶ Incremental';
+    incBtn.style.background = '#18181b'; incBtn.style.color = '#a1a1aa'; incBtn.style.border = '1px solid #3f3f46';
+    let sentToOpener = false;
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ type: 'SIFTLY_BOOKMARK_CAPTURE', bookmarks: all, source }, '*');
+        sentToOpener = true;
+        autoBtn.textContent = `✅ Done — ${all.length} captured and importing to Siftly.`;
+      }
+    } catch { /* ignore */ }
+    console.log(sentToOpener
+      ? `✅ Sent ${all.length} ${label} to Siftly.`
+      : `✅ Auto-scroll complete! ${all.length} ${label} ready. Click Export.`);
+  }
+  async function runAutoScroll(stopAfterTweetId) {
+    incrementalStopId = stopAfterTweetId ? String(stopAfterTweetId) : null;
+    incrementalStopHit = false;
+    incrementalStopSnapshotLen = null;
+    let stagnant = 0, lastCount = all.length;
+    while (autoScrolling) {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      const col = document.querySelector('[data-testid="primaryColumn"]');
+      col?.scrollTo(0, col.scrollHeight);
+      await sleep(900);
+      if (incrementalStopHit) {
+        finishScrollCapture();
+        return;
+      }
+      if (all.length > lastCount) { stagnant = 0; lastCount = all.length; }
+      else {
+        stagnant++;
+        if (stagnant >= 8) {
+          window.scrollTo(0, document.documentElement.scrollHeight);
+          await sleep(2000);
+          if (incrementalStopHit) {
+            finishScrollCapture();
+            return;
+          }
+          if (all.length === lastCount) {
+            finishScrollCapture();
+            return;
+          }
+          stagnant = 0;
+        }
+      }
+    }
+    incrementalStopId = null;
+    incrementalStopHit = false;
+    incrementalStopSnapshotLen = null;
+    resetScrollButtonsIdle();
+  }
   function doExport() {
     window.fetch = origFetch;
     XMLHttpRequest.prototype.open = origOpen;
     XMLHttpRequest.prototype.send = origSend;
-    [btn, autoBtn].forEach(el => { try { document.body.removeChild(el); } catch (e) { } });
+    [btn, autoBtn, incBtn].forEach(el => { try { document.body.removeChild(el); } catch (e) { } });
     if (!all.length) { alert(`No ${label} captured. Use Auto-scroll or scroll manually first.`); return; }
     const blob = new Blob([JSON.stringify({ bookmarks: all, source }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -77,59 +187,25 @@
     console.log(`✅ Downloaded ${all.length} ${label}!`);
   }
   btn.onclick = doExport;
-  const autoBtn = document.createElement('button');
-  autoBtn.textContent = '▶ Auto-scroll';
-  Object.assign(autoBtn.style, {
-    position: 'fixed', top: '58px', right: '12px', zIndex: '2147483647',
-    padding: '8px 14px', background: '#18181b', color: '#a1a1aa',
-    border: '1px solid #3f3f46', borderRadius: '8px', cursor: 'pointer',
-    fontSize: '12px', fontWeight: '600', fontFamily: 'system-ui,sans-serif'
-  });
-  let autoScrolling = false;
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  async function runAutoScroll() {
-    let stagnant = 0, lastCount = all.length;
-    while (autoScrolling) {
-      window.scrollTo(0, document.documentElement.scrollHeight);
-      const col = document.querySelector('[data-testid="primaryColumn"]');
-      col?.scrollTo(0, col.scrollHeight);
-      await sleep(900);
-      if (all.length > lastCount) { stagnant = 0; lastCount = all.length; }
-      else {
-        stagnant++;
-        if (stagnant >= 8) {
-          window.scrollTo(0, document.documentElement.scrollHeight);
-          await sleep(2000);
-          if (all.length === lastCount) {
-            autoScrolling = false;
-            autoBtn.textContent = `✅ Done — ${all.length} captured`;
-            autoBtn.style.cssText += ';background:#14532d;color:#86efac;border:1px solid #166534';
-            let sentToOpener = false;
-            try {
-              if (window.opener && !window.opener.closed) {
-                window.opener.postMessage({ type: 'SIFTLY_BOOKMARK_CAPTURE', bookmarks: all, source }, '*');
-                sentToOpener = true;
-                autoBtn.textContent = `✅ Done — ${all.length} captured and importing to Siftly.`;
-              }
-            } catch { /* ignore */ }
-            console.log(sentToOpener
-              ? `✅ Sent ${all.length} ${label} to Siftly.`
-              : `✅ Auto-scroll complete! ${all.length} ${label} ready. Click Export.`);
-            return;
-          }
-          stagnant = 0;
-        }
-      }
-    }
-    autoBtn.textContent = '▶ Auto-scroll';
-    autoBtn.style.background = '#18181b'; autoBtn.style.color = '#a1a1aa'; autoBtn.style.border = '1px solid #3f3f46';
-  }
   autoBtn.onclick = function () {
     if (autoScrolling) { autoScrolling = false; return; }
     autoScrolling = true;
     autoBtn.textContent = '⏸ Stop';
     autoBtn.style.background = '#4f46e5'; autoBtn.style.color = '#fff'; autoBtn.style.border = 'none';
-    runAutoScroll();
+    incBtn.style.background = '#4f46e5'; incBtn.style.color = '#fff'; incBtn.style.border = 'none';
+    runAutoScroll(null);
+  };
+  incBtn.onclick = function () {
+    if (autoScrolling) { autoScrolling = false; return; }
+    if (!lastImportedTweetIdFromOpener) {
+      alert('No last import ID — complete an import from Siftly first, or use full Auto-scroll.');
+      return;
+    }
+    autoScrolling = true;
+    autoBtn.textContent = '⏸ Stop';
+    autoBtn.style.background = '#4f46e5'; autoBtn.style.color = '#fff'; autoBtn.style.border = 'none';
+    incBtn.style.background = '#4f46e5'; incBtn.style.color = '#fff'; incBtn.style.border = 'none';
+    runAutoScroll(lastImportedTweetIdFromOpener);
   };
   document.body.appendChild(btn);
   document.body.appendChild(autoBtn);
@@ -159,5 +235,24 @@
     }
     return origSend.apply(this, args);
   };
+  try {
+    if (window.opener && !window.opener.closed) {
+      function onLastIdReply(e) {
+        if (e.data?.type === 'SIFTLY_LAST_JOB_FIRST_TIMELINE_REPLY') {
+          window.removeEventListener('message', onLastIdReply);
+          const tid = isLikes
+            ? (typeof e.data.likeTweetId === 'string' && e.data.likeTweetId ? e.data.likeTweetId : (typeof e.data.tweetId === 'string' ? e.data.tweetId : ''))
+            : (typeof e.data.bookmarkTweetId === 'string' && e.data.bookmarkTweetId ? e.data.bookmarkTweetId : (typeof e.data.tweetId === 'string' ? e.data.tweetId : ''));
+          if (tid) {
+            lastImportedTweetIdFromOpener = tid;
+            document.body.appendChild(incBtn);
+          }
+        }
+      }
+      window.addEventListener('message', onLastIdReply);
+      window.opener.postMessage({ type: 'SIFTLY_LAST_JOB_FIRST_TIMELINE_QUERY' }, '*');
+      setTimeout(() => window.removeEventListener('message', onLastIdReply), 8000);
+    }
+  } catch { /* ignore */ }
   console.log(`✅ Script active. Scroll through your ${label}, then click the purple button.`);
 })();
