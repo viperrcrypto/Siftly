@@ -62,313 +62,48 @@ const STAGE_INFO: Record<NonNullable<Stage>, { label: string; icon: React.ReactN
   },
 }
 
-// ── Bookmarklet script (captures Twitter/X bookmark API responses as you scroll) ──
+// Bookmarklet / console capture scripts live in public/js; InstructionsStep fetches them on mount.
 
-const BOOKMARKLET_SCRIPT = `(async function(){
-  if(!location.hostname.includes('twitter.com')&&!location.hostname.includes('x.com')){
-    showToast('\u274c Please navigate to x.com/i/bookmarks or x.com/username/likes first','#ef4444');return;
-  }
-  var isLikes=location.pathname.includes('/likes');
-  var source=isLikes?'like':'bookmark';
-  var label=isLikes?'likes':'bookmarks';
-  function showToast(msg,bg){
-    var t=document.createElement('div');t.textContent=msg;
-    Object.assign(t.style,{position:'fixed',bottom:'24px',left:'50%',transform:'translateX(-50%)',
-      zIndex:'2147483647',padding:'10px 18px',background:bg||'#1e1b4b',color:'#fff',
-      border:'1px solid rgba(255,255,255,0.15)',borderRadius:'8px',
-      fontSize:'13px',fontWeight:'600',fontFamily:'system-ui,sans-serif',
-      boxShadow:'0 4px 20px rgba(0,0,0,0.6)',whiteSpace:'nowrap',transition:'opacity 0.3s'});
-    document.body.appendChild(t);
-    setTimeout(function(){t.style.opacity='0';setTimeout(function(){t.remove();},300);},4000);
-  }
-  var all=[],seen=new Set();
-  var btn=document.createElement('button');
-  btn.textContent='Scroll, then Export 0 '+label+' \u2192';
-  Object.assign(btn.style,{position:'fixed',top:'12px',right:'12px',zIndex:'2147483647',
-    padding:'10px 18px',background:'#4f46e5',color:'#fff',border:'none',borderRadius:'8px',
-    cursor:'pointer',fontSize:'14px',fontWeight:'700',
-    boxShadow:'0 0 0 2px rgba(99,102,241,.4),0 4px 16px rgba(0,0,0,.4)',
-    fontFamily:'system-ui,sans-serif'});
-  function addTweet(t){
-    if(!t||!t.rest_id||seen.has(t.rest_id))return;
-    seen.add(t.rest_id);
-    var leg=t.legacy||{},usr=(t.core&&t.core.user_results&&t.core.user_results.result&&t.core.user_results.result.legacy)||{};
-    var rawMedia=(leg.extended_entities&&leg.extended_entities.media)||(leg.entities&&leg.entities.media)||[];
-    var media=rawMedia.map(function(m){
-      var thumb=m.media_url_https||'';
-      if(m.type==='video'||m.type==='animated_gif'){
-        var variants=m.video_info&&m.video_info.variants||[];
-        var mp4s=variants.filter(function(v){return v.content_type==='video/mp4'&&v.url;}).sort(function(a,b){return(b.bitrate||0)-(a.bitrate||0);});
-        if(mp4s.length)return{type:m.type==='animated_gif'?'gif':'video',url:mp4s[0].url};
-        // No mp4 — degrade to photo so thumbnail shows correctly (actual video not available)
-        if(thumb)return{type:'photo',url:thumb};
-        return null;
-      }
-      return thumb?{type:'photo',url:thumb}:null;
-    }).filter(Boolean);
-    all.push({id:t.rest_id,author:usr.name||'Unknown',handle:'@'+(usr.screen_name||'unknown'),
-      avatar:usr.profile_image_url_https||'',timestamp:leg.created_at||'',
-      text:leg.full_text||leg.text||'',media:media,
-      hashtags:(leg.entities&&leg.entities.hashtags||[]).map(function(h){return h.text;}),
-      urls:(leg.entities&&leg.entities.urls||[]).map(function(u){return u.expanded_url;}).filter(Boolean)});
-    btn.textContent='Export '+all.length+' '+label+' \u2192';
-  }
-  function isTweetObj(o){return o&&typeof o==='object'&&typeof o.rest_id==='string'&&o.rest_id.length>5&&(o.legacy||o.core);}
-  function unwrapTweet(t){
-    if(!t)return null;
-    if(t.__typename==='TweetWithVisibilityResults'||t.__typename==='TweetWithVisibilityResult')return t.tweet||t;
-    return t;
-  }
-  function deepFindTweets(obj,depth){
-    if(!obj||typeof obj!=='object'||depth>12)return;
-    if(Array.isArray(obj)){obj.forEach(function(item){deepFindTweets(item,depth+1);});return;}
-    if(obj.tweet_results&&obj.tweet_results.result){var tw=unwrapTweet(obj.tweet_results.result);if(tw)addTweet(tw);}
-    else if(isTweetObj(obj)){addTweet(unwrapTweet(obj));}
-    for(var k in obj){if(Object.prototype.hasOwnProperty.call(obj,k)&&k!=='quoted_status_result'){deepFindTweets(obj[k],depth+1);}}
-  }
-  function processData(d){deepFindTweets(d,0);}
-  var autoBtn=document.createElement('button');
-  function doExport(){
-    window.fetch=origFetch;
-    XMLHttpRequest.prototype.open=origOpen;
-    XMLHttpRequest.prototype.send=origSend;
-    if(!all.length){showToast('\u26a0\ufe0f No '+label+' captured \u2014 scroll or use Auto-scroll first!','#92400e');return;}
-    [btn,autoBtn].forEach(function(el){try{document.body.removeChild(el);}catch(e){}});
-    var blob=new Blob([JSON.stringify({bookmarks:all,source:source},null,2)],{type:'application/json'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');a.href=url;a.download=source+'s.json';a.click();
-    setTimeout(function(){URL.revokeObjectURL(url);},1000);
-    showToast('\u2705 Downloaded '+all.length+' '+label+'! Upload to Siftly.','#14532d');
-  }
-  btn.onclick=doExport;
-  autoBtn.textContent='\u25b6 Auto-scroll';
-  Object.assign(autoBtn.style,{position:'fixed',top:'58px',right:'12px',zIndex:'2147483647',
-    padding:'8px 14px',background:'#18181b',color:'#a1a1aa',
-    border:'1px solid #3f3f46',borderRadius:'8px',
-    cursor:'pointer',fontSize:'12px',fontWeight:'600',fontFamily:'system-ui,sans-serif'});
-  var autoScrolling=false;
-  function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
-  async function runAutoScroll(){
-    var stagnant=0,lastCount=all.length;
-    while(autoScrolling){
-      window.scrollTo(0,document.documentElement.scrollHeight);
-      var col=document.querySelector('[data-testid="primaryColumn"]');
-      if(col)col.scrollTo(0,col.scrollHeight);
-      await sleep(900);
-      if(all.length>lastCount){stagnant=0;lastCount=all.length;}
-      else{
-        stagnant++;
-        if(stagnant>=8){
-          window.scrollTo(0,document.documentElement.scrollHeight);
-          await sleep(2000);
-          if(all.length===lastCount){
-            autoScrolling=false;
-            autoBtn.textContent='\u2705 Done \u2014 '+all.length+' captured';
-            autoBtn.style.background='#14532d';autoBtn.style.color='#86efac';autoBtn.style.border='1px solid #166534';
-            showToast('\u2705 Auto-scroll complete! '+all.length+' '+label+' ready. Click Export.','#14532d');
-            return;
-          }
-          stagnant=0;
-        }
-      }
-    }
-    autoBtn.textContent='\u25b6 Auto-scroll';
-    autoBtn.style.background='#18181b';autoBtn.style.color='#a1a1aa';autoBtn.style.border='1px solid #3f3f46';
-  }
-  autoBtn.onclick=function(){
-    if(autoScrolling){autoScrolling=false;return;}
-    autoScrolling=true;
-    autoBtn.textContent='\u23f8 Stop';
-    autoBtn.style.background='#4f46e5';autoBtn.style.color='#fff';autoBtn.style.border='none';
-    runAutoScroll();
-  };
-  document.body.appendChild(btn);
-  document.body.appendChild(autoBtn);
-  function isApiUrl(u){return u.includes('/graphql/')||u.includes('/i/api/')||u.includes('/2/timeline');}
-  var origFetch=window.fetch;
-  window.fetch=async function(){
-    var r=await origFetch.apply(this,arguments);
-    try{
-      var u=arguments[0] instanceof Request?arguments[0].url:String(arguments[0]);
-      if(isApiUrl(u)){var ct=r.headers.get('content-type')||'';if(ct.includes('json')){var d=await r.clone().json();processData(d);}}
-    }catch(ex){}
-    return r;
-  };
-  var origOpen=XMLHttpRequest.prototype.open,origSend=XMLHttpRequest.prototype.send,xhrUrls=new WeakMap();
-  XMLHttpRequest.prototype.open=function(){xhrUrls.set(this,String(arguments[1]||''));return origOpen.apply(this,arguments);};
-  XMLHttpRequest.prototype.send=function(){
-    var xhr=this,u=xhrUrls.get(xhr)||'';
-    if(isApiUrl(u)){xhr.addEventListener('load',function(){try{processData(JSON.parse(xhr.responseText));}catch(ex){}});}
-    return origSend.apply(this,arguments);
-  };
-  showToast('\u2705 Active! Scroll your '+label+' \u2014 counter updates above.','#1e1b4b');
-})();`
+const IMPORT_CAPTURE_SCRIPTS = {
+  bookmarklet: '/js/import-bookmarklet.js',
+  console: '/js/import-console.js',
+} as const
 
-const BOOKMARKLET_HREF = `javascript:${encodeURIComponent(BOOKMARKLET_SCRIPT)}`
-
-const CONSOLE_SCRIPT = `(async function() {
-  if (!location.hostname.includes('twitter.com') && !location.hostname.includes('x.com')) {
-    alert('Run this on x.com/i/bookmarks or x.com/username/likes'); return;
-  }
-  const isLikes = location.pathname.includes('/likes');
-  const source = isLikes ? 'like' : 'bookmark';
-  const label = isLikes ? 'likes' : 'bookmarks';
-  const all = [], seen = new Set();
-  function addTweet(t) {
-    if (!t?.rest_id || seen.has(t.rest_id)) return;
-    seen.add(t.rest_id);
-    const leg = t.legacy ?? {}, usr = t.core?.user_results?.result?.legacy ?? {};
-    const media = (leg.extended_entities?.media ?? leg.entities?.media ?? []).map(m => {
-      const thumb = m.media_url_https ?? '';
-      if (m.type === 'video' || m.type === 'animated_gif') {
-        const mp4s = (m.video_info?.variants ?? []).filter(v => v.content_type === 'video/mp4' && v.url)
-          .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
-        if (mp4s.length) return { type: m.type === 'animated_gif' ? 'gif' : 'video', url: mp4s[0].url };
-        // No mp4 — degrade to photo so thumbnail shows correctly (actual video not available)
-        return thumb ? { type: 'photo', url: thumb } : null;
-      }
-      return thumb ? { type: 'photo', url: thumb } : null;
-    }).filter(Boolean);
-    all.push({
-      id: t.rest_id, author: usr.name ?? 'Unknown', handle: '@' + (usr.screen_name ?? 'unknown'),
-      timestamp: leg.created_at ?? '', text: leg.full_text ?? leg.text ?? '', media,
-      hashtags: (leg.entities?.hashtags ?? []).map(h => h.text),
-      urls: (leg.entities?.urls ?? []).map(u => u.expanded_url).filter(Boolean)
-    });
-    btn.textContent = \`Export \${all.length} \${label} →\`;
-  }
-  function isTweetObj(o) { return o && typeof o === 'object' && typeof o.rest_id === 'string' && o.rest_id.length > 5 && (o.legacy || o.core); }
-  function unwrapTweet(t) {
-    if (!t) return null;
-    if (t.__typename === 'TweetWithVisibilityResults' || t.__typename === 'TweetWithVisibilityResult') return t.tweet ?? t;
-    return t;
-  }
-  function deepFindTweets(obj, depth = 0) {
-    if (!obj || typeof obj !== 'object' || depth > 12) return;
-    if (Array.isArray(obj)) { obj.forEach(item => deepFindTweets(item, depth + 1)); return; }
-    if (obj.tweet_results?.result) { const tw = unwrapTweet(obj.tweet_results.result); if (tw) addTweet(tw); }
-    else if (isTweetObj(obj)) { addTweet(unwrapTweet(obj)); }
-    for (const k of Object.keys(obj)) { if (k !== 'quoted_status_result') deepFindTweets(obj[k], depth + 1); }
-  }
-  function processData(d) { deepFindTweets(d, 0); }
-  const btn = document.createElement('button');
-  btn.textContent = 'Scroll then click to Export →';
-  Object.assign(btn.style, {
-    position: 'fixed', top: '12px', right: '12px', zIndex: '2147483647',
-    padding: '10px 18px', background: '#4f46e5', color: '#fff',
-    border: 'none', borderRadius: '8px', cursor: 'pointer',
-    fontSize: '14px', fontWeight: '700',
-    boxShadow: '0 0 0 2px rgba(99,102,241,.4),0 4px 16px rgba(0,0,0,.4)',
-    fontFamily: 'system-ui,sans-serif'
-  });
-  function doExport() {
-    window.fetch = origFetch;
-    XMLHttpRequest.prototype.open = origOpen;
-    XMLHttpRequest.prototype.send = origSend;
-    [btn, autoBtn].forEach(el => { try { document.body.removeChild(el); } catch(e) {} });
-    if (!all.length) { alert(\`No \${label} captured. Use Auto-scroll or scroll manually first.\`); return; }
-    const blob = new Blob([JSON.stringify({ bookmarks: all, source }, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = \`\${source}s.json\`; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    console.log(\`✅ Downloaded \${all.length} \${label}!\`);
-  }
-  btn.onclick = doExport;
-  const autoBtn = document.createElement('button');
-  autoBtn.textContent = '▶ Auto-scroll';
-  Object.assign(autoBtn.style, {
-    position: 'fixed', top: '58px', right: '12px', zIndex: '2147483647',
-    padding: '8px 14px', background: '#18181b', color: '#a1a1aa',
-    border: '1px solid #3f3f46', borderRadius: '8px', cursor: 'pointer',
-    fontSize: '12px', fontWeight: '600', fontFamily: 'system-ui,sans-serif'
-  });
-  let autoScrolling = false;
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  async function runAutoScroll() {
-    let stagnant = 0, lastCount = all.length;
-    while (autoScrolling) {
-      window.scrollTo(0, document.documentElement.scrollHeight);
-      const col = document.querySelector('[data-testid="primaryColumn"]');
-      col?.scrollTo(0, col.scrollHeight);
-      await sleep(900);
-      if (all.length > lastCount) { stagnant = 0; lastCount = all.length; }
-      else {
-        stagnant++;
-        if (stagnant >= 8) {
-          window.scrollTo(0, document.documentElement.scrollHeight);
-          await sleep(2000);
-          if (all.length === lastCount) {
-            autoScrolling = false;
-            autoBtn.textContent = \`✅ Done — \${all.length} captured\`;
-            autoBtn.style.cssText += ';background:#14532d;color:#86efac;border:1px solid #166534';
-            console.log(\`✅ Auto-scroll complete! \${all.length} \${label} ready. Click Export.\`);
-            return;
-          }
-          stagnant = 0;
-        }
-      }
-    }
-    autoBtn.textContent = '▶ Auto-scroll';
-    autoBtn.style.background = '#18181b'; autoBtn.style.color = '#a1a1aa'; autoBtn.style.border = '1px solid #3f3f46';
-  }
-  autoBtn.onclick = function() {
-    if (autoScrolling) { autoScrolling = false; return; }
-    autoScrolling = true;
-    autoBtn.textContent = '⏸ Stop';
-    autoBtn.style.background = '#4f46e5'; autoBtn.style.color = '#fff'; autoBtn.style.border = 'none';
-    runAutoScroll();
-  };
-  document.body.appendChild(btn);
-  document.body.appendChild(autoBtn);
-  const isApiUrl = (u) => u.includes('/graphql/') || u.includes('/i/api/') || u.includes('/2/timeline');
-  const origFetch = window.fetch;
-  window.fetch = async function(...args) {
-    const r = await origFetch.apply(this, args);
-    try {
-      const u = args[0] instanceof Request ? args[0].url : String(args[0]);
-      if (isApiUrl(u)) { const ct = r.headers.get('content-type') ?? ''; if (ct.includes('json')) { const d = await r.clone().json(); processData(d); } }
-    } catch(e) {}
-    return r;
-  };
-  const origOpen = XMLHttpRequest.prototype.open;
-  const origSend = XMLHttpRequest.prototype.send;
-  const xhrUrls = new WeakMap();
-  XMLHttpRequest.prototype.open = function(...args) {
-    xhrUrls.set(this, String(args[1] ?? ''));
-    return origOpen.apply(this, args);
-  };
-  XMLHttpRequest.prototype.send = function(...args) {
-    const xhr = this, u = xhrUrls.get(xhr) ?? '';
-    if (isApiUrl(u)) {
-      xhr.addEventListener('load', function() {
-        try { processData(JSON.parse(xhr.responseText)); } catch(e) {}
-      });
-    }
-    return origSend.apply(this, args);
-  };
-  console.log(\`✅ Script active. Scroll through your \${label}, then click the purple button.\`);
-})();`
+function compactBookmarkletScript(script: string) {
+  return script
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false
+      if (line.startsWith('//')) return false
+      if (line.startsWith('/*') && line.endsWith('*/')) return false
+      return true
+    })
+    .join(' ')
+}
 
 // ── Draggable bookmarklet link ────────────────────────────────────────────────
 // React blocks javascript: URLs set via JSX href as a security precaution.
 // We bypass this by setting the href attribute imperatively after mount so the
 // drag-to-bookmark-bar flow still works correctly in all browsers.
 
-function DraggableBookmarklet() {
+function DraggableBookmarklet({ bookmarkletHref }: { bookmarkletHref: string }) {
   const linkRef = useRef<HTMLAnchorElement>(null)
 
   useEffect(() => {
     // Set href imperatively — bypasses React's javascript: URL XSS guard
-    linkRef.current?.setAttribute('href', BOOKMARKLET_HREF)
-  }, [])
+    if (bookmarkletHref) linkRef.current?.setAttribute('href', bookmarkletHref)
+  }, [bookmarkletHref])
 
   return (
     <a
       ref={linkRef}
-      draggable
+      draggable={!!bookmarkletHref}
       onClick={(e) => e.preventDefault()}
-      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-grab active:cursor-grabbing select-none transition-colors"
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold select-none transition-colors ${
+        bookmarkletHref ? 'hover:bg-indigo-500 cursor-grab active:cursor-grabbing' : 'opacity-40 cursor-not-allowed pointer-events-none'
+      }`}
       title="Drag this to your bookmarks bar — do not click"
     >
       📥 Export X Bookmarks
@@ -402,9 +137,10 @@ function StepIndicator({ current }: { current: Step }) {
   )
 }
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, disabled }: { text: string; disabled?: boolean }) {
   const [copied, setCopied] = useState(false)
   function handleCopy() {
+    if (!text || disabled) return
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
@@ -412,8 +148,10 @@ function CopyButton({ text }: { text: string }) {
   }
   return (
     <button
+      type="button"
       onClick={handleCopy}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-300 transition-colors"
+      disabled={disabled || !text}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-300 transition-colors disabled:opacity-40 disabled:pointer-events-none"
     >
       {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
       {copied ? 'Copied!' : 'Copy'}
@@ -455,7 +193,19 @@ function UploadZone({ onFile }: { onFile: (file: File) => void }) {
   )
 }
 
-function BookmarkletTab({ onFile, importSource }: { onFile: (file: File) => void; importSource: 'bookmark' | 'like' }) {
+function BookmarkletTab({
+  onFile,
+  importSource,
+  bookmarkletHref,
+  captureScriptsLoading,
+  captureScriptsError,
+}: {
+  onFile: (file: File) => void
+  importSource: 'bookmark' | 'like'
+  bookmarkletHref: string
+  captureScriptsLoading: boolean
+  captureScriptsError: string | null
+}) {
   const targetUrl = importSource === 'like' ? 'https://x.com' : 'https://x.com/i/bookmarks'
   const targetLabel = importSource === 'like' ? 'x.com/YourUsername/likes' : 'x.com/i/bookmarks'
   const sourceLabel = importSource === 'like' ? 'likes' : 'bookmarks'
@@ -465,6 +215,15 @@ function BookmarkletTab({ onFile, importSource }: { onFile: (file: File) => void
       title: 'Add the bookmarklet to your bookmark bar',
       content: (
         <div className="mt-2 space-y-3">
+          {captureScriptsError && (
+            <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{captureScriptsError}</p>
+          )}
+          {captureScriptsLoading && !captureScriptsError && (
+            <p className="text-xs text-zinc-500 flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin shrink-0" />
+              Loading bookmarklet…
+            </p>
+          )}
           <p className="text-xs text-zinc-500">
             Show your bookmark bar first: <strong className="text-zinc-300">View → Show Bookmarks Bar</strong>
           </p>
@@ -473,7 +232,7 @@ function BookmarkletTab({ onFile, importSource }: { onFile: (file: File) => void
             <div className="shrink-0 w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-bold">A</div>
             <div className="min-w-0">
               <p className="text-xs font-medium text-zinc-300 mb-1.5">Drag to bookmark bar</p>
-              <DraggableBookmarklet />
+              <DraggableBookmarklet bookmarkletHref={bookmarkletHref} />
             </div>
           </div>
           {/* Option B: Manual (more reliable in Chrome) */}
@@ -486,7 +245,7 @@ function BookmarkletTab({ onFile, importSource }: { onFile: (file: File) => void
                 <li>2. Right-click bookmark bar → <strong className="text-zinc-400">Add bookmark / New bookmark</strong></li>
                 <li>3. Name it <em className="text-zinc-400">Export X Bookmarks</em> and paste the URL</li>
               </ol>
-              <CopyButton text={BOOKMARKLET_HREF} />
+              <CopyButton text={bookmarkletHref} disabled={captureScriptsLoading || !!captureScriptsError} />
             </div>
           </div>
         </div>
@@ -563,7 +322,19 @@ function BookmarkletTab({ onFile, importSource }: { onFile: (file: File) => void
   )
 }
 
-function ConsoleTab({ onFile, importSource }: { onFile: (file: File) => void; importSource: 'bookmark' | 'like' }) {
+function ConsoleTab({
+  onFile,
+  importSource,
+  consoleScript,
+  captureScriptsLoading,
+  captureScriptsError,
+}: {
+  onFile: (file: File) => void
+  importSource: 'bookmark' | 'like'
+  consoleScript: string
+  captureScriptsLoading: boolean
+  captureScriptsError: string | null
+}) {
   const targetUrl = importSource === 'like' ? 'https://x.com' : 'https://x.com/i/bookmarks'
   const targetLabel = importSource === 'like' ? 'x.com/YourUsername/likes' : 'x.com/i/bookmarks'
   const sourceLabel = importSource === 'like' ? 'likes' : 'bookmarks'
@@ -601,13 +372,23 @@ function ConsoleTab({ onFile, importSource }: { onFile: (file: File) => void; im
       title: 'Paste and run the script below',
       content: (
         <div className="mt-2">
+          {captureScriptsError && (
+            <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mb-2">{captureScriptsError}</p>
+          )}
           <div className="relative rounded-xl overflow-hidden border border-zinc-700 bg-zinc-950">
             <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
               <span className="text-xs text-zinc-600 font-mono">console script</span>
-              <CopyButton text={CONSOLE_SCRIPT} />
+              <CopyButton text={consoleScript} disabled={captureScriptsLoading || !!captureScriptsError} />
             </div>
             <pre className="text-xs text-zinc-400 p-3 overflow-auto max-h-40 font-mono leading-relaxed">
-              {CONSOLE_SCRIPT.slice(0, 300)}...
+              {captureScriptsLoading && !captureScriptsError ? (
+                <span className="text-zinc-500 flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin shrink-0" />
+                  Loading script…
+                </span>
+              ) : (
+                <>{consoleScript.slice(0, 300)}...</>
+              )}
             </pre>
           </div>
         </div>
@@ -863,6 +644,44 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
 
 function InstructionsStep({ onFile, importSource, onLiveSynced }: { onFile: (file: File) => void; importSource: 'bookmark' | 'like'; onLiveSynced: (result: ImportResult) => void }) {
   const [method, setMethod] = useState<Method>('bookmarklet')
+  const [captureBookmarklet, setCaptureBookmarklet] = useState('')
+  const [captureConsole, setCaptureConsole] = useState('')
+  const [captureScriptsLoading, setCaptureScriptsLoading] = useState(true)
+  const [captureScriptsError, setCaptureScriptsError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      fetch(IMPORT_CAPTURE_SCRIPTS.bookmarklet).then((r) => {
+        if (!r.ok) throw new Error(`bookmarklet ${r.status}`)
+        return r.text()
+      }),
+      fetch(IMPORT_CAPTURE_SCRIPTS.console).then((r) => {
+        if (!r.ok) throw new Error(`console ${r.status}`)
+        return r.text()
+      }),
+    ])
+      .then(([bm, cs]) => {
+        if (cancelled) return
+        setCaptureBookmarklet(bm)
+        setCaptureConsole(cs)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCaptureScriptsError('Could not load export scripts. Refresh the page or check that /js/import-*.js are deployed.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCaptureScriptsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const bookmarkletHref = captureBookmarklet
+    ? `javascript:${encodeURIComponent(compactBookmarkletScript(captureBookmarklet))}`
+    : ''
 
   return (
     <div>
@@ -905,9 +724,21 @@ function InstructionsStep({ onFile, importSource, onLiveSynced }: { onFile: (fil
       {method === 'live' ? (
         <LiveImportTab onSynced={onLiveSynced} />
       ) : method === 'bookmarklet' ? (
-        <BookmarkletTab onFile={onFile} importSource={importSource} />
+        <BookmarkletTab
+          onFile={onFile}
+          importSource={importSource}
+          bookmarkletHref={bookmarkletHref}
+          captureScriptsLoading={captureScriptsLoading}
+          captureScriptsError={captureScriptsError}
+        />
       ) : (
-        <ConsoleTab onFile={onFile} importSource={importSource} />
+        <ConsoleTab
+          onFile={onFile}
+          importSource={importSource}
+          consoleScript={captureConsole}
+          captureScriptsLoading={captureScriptsLoading}
+          captureScriptsError={captureScriptsError}
+        />
       )}
     </div>
   )
