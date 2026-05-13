@@ -244,7 +244,10 @@ export async function categorizeBatch(
   // Prefer CLI over SDK (avoids OAuth token extraction, uses CLI directly)
   if (provider === 'openai') {
     if (await getCodexCliAvailability()) {
-      const result = await codexPrompt(prompt, { timeoutMs: 60_000 })
+      // 60s is too short once the prompt grows (many categories, image OCR text,
+      // non-English bookmarks). A 20-bookmark batch routinely needs >60s on the
+      // CLI path -> hitting the timeout drops the whole batch to the SDK fallback.
+      const result = await codexPrompt(prompt, { timeoutMs: 180_000 })
       if (result.success && result.data) {
         try {
           return parseCategorizationResponse(result.data, new Set(allSlugs))
@@ -260,7 +263,8 @@ export async function categorizeBatch(
       const model = await getActiveModel()
       const cliModel = modelNameToCliAlias(model)
 
-      const result = await claudePrompt(prompt, { model: cliModel, timeoutMs: 60_000 })
+      // See note above on codexPrompt — same reasoning for the Claude CLI path.
+      const result = await claudePrompt(prompt, { model: cliModel, timeoutMs: 180_000 })
       if (result.success && result.data) {
         try {
           return parseCategorizationResponse(result.data, new Set(allSlugs))
