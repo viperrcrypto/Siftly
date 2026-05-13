@@ -148,15 +148,34 @@ function parseSingleTweet(tweet: RawTweet): ParsedBookmark | null {
   const tweetId = extractTweetId(tweet)
   if (!tweetId) return null
 
+  // Skip entries that some JSON exports include but that the AI pipeline can
+  // never enrich (0 semantic tags -> they end up force-classified as "general"):
+  //  - preview cards captured as tweets (id_str prefixed "card://")
+  //  - the id is a t.co URL string instead of a numeric id (extraction error in the export)
+  //  - deleted/inaccessible tweets where the export only kept an id (empty text AND no user data;
+  //    note some exports write the literal "unknown" as screen_name)
+  //  - quote-tweets that are just a bare t.co URL with no media (no usable signal at all)
+  if (tweetId.startsWith('card://')) return null
+  if (tweetId.startsWith('http://') || tweetId.startsWith('https://') || tweetId.startsWith('t.co/')) return null
+
+  const text = extractText(tweet)
+  const handle = tweet.user?.screen_name
+  const hasUser = !!((handle && handle !== 'unknown') || tweet.user?.name)
+  if (text === '' && !hasUser) return null
+
+  const media = extractMedia(tweet)
+  const isUrlOnly = /^https?:\/\/t\.co\/\S+\s*$/.test(text)
+  if (isUrlOnly && media.length === 0) return null
+
   return {
     tweetId,
-    text: extractText(tweet),
+    text,
     authorHandle: extractAuthorHandle(tweet),
     authorName: extractAuthorName(tweet),
     tweetCreatedAt: extractCreatedAt(tweet),
     hashtags: extractHashtags(tweet),
     urls: extractUrls(tweet),
-    media: extractMedia(tweet),
+    media,
     rawJson: JSON.stringify(tweet),
   }
 }
