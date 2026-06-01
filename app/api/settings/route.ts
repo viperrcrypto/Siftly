@@ -24,9 +24,8 @@ const ALLOWED_OPENAI_MODELS = [
 ] as const
 
 const ALLOWED_MINIMAX_MODELS = [
+  'MiniMax-M3',
   'MiniMax-M2.7',
-  'MiniMax-M2.5',
-  'MiniMax-M2.5-highspeed',
 ] as const
 
 export async function GET(): Promise<NextResponse> {
@@ -54,7 +53,7 @@ export async function GET(): Promise<NextResponse> {
       openaiModel: openaiModel?.value ?? 'gpt-4.1-mini',
       minimaxApiKey: maskKey(minimax?.value ?? null),
       hasMinimaxKey: minimax !== null,
-      minimaxModel: minimaxModel?.value ?? 'MiniMax-M2.7',
+      minimaxModel: minimaxModel?.value ?? 'MiniMax-M3',
       xOAuthClientId: maskKey(xClientId?.value ?? null),
       xOAuthClientSecret: maskKey(xClientSecret?.value ?? null),
       hasXOAuth: !!xClientId?.value,

@@ -26,7 +26,7 @@ describe('MiniMaxAIClient', () => {
     const client = new MiniMaxAIClient(mock)
 
     const result = await client.createMessage({
-      model: 'MiniMax-M2.7',
+      model: 'MiniMax-M3',
       max_tokens: 100,
       messages: [{ role: 'user', content: 'hi' }],
     })
@@ -41,7 +41,7 @@ describe('MiniMaxAIClient', () => {
     const client = new MiniMaxAIClient(mock)
 
     const result = await client.createMessage({
-      model: 'MiniMax-M2.5',
+      model: 'MiniMax-M3',
       max_tokens: 100,
       messages: [{ role: 'user', content: 'test' }],
     })
@@ -57,7 +57,7 @@ describe('MiniMaxAIClient', () => {
     const client = new MiniMaxAIClient(mock)
 
     const result = await client.createMessage({
-      model: 'MiniMax-M2.5',
+      model: 'MiniMax-M3',
       max_tokens: 100,
       messages: [{ role: 'user', content: 'test' }],
     })
@@ -113,14 +113,14 @@ describe('MiniMaxAIClient', () => {
     const client = new MiniMaxAIClient(mock)
 
     await client.createMessage({
-      model: 'MiniMax-M2.7',
+      model: 'MiniMax-M3',
       max_tokens: 512,
       messages: [{ role: 'user', content: 'test' }],
     })
 
     expect(createFn).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: 'MiniMax-M2.7',
+        model: 'MiniMax-M3',
         max_tokens: 512,
       })
     )

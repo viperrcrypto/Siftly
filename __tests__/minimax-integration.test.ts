@@ -32,7 +32,7 @@ describe('MiniMax integration - categorization pipeline', () => {
     const client = new MiniMaxAIClient(createMockSDK(jsonResponse))
 
     const result = await client.createMessage({
-      model: 'MiniMax-M2.7',
+      model: 'MiniMax-M3',
       max_tokens: 4096,
       messages: [
         {
@@ -53,7 +53,7 @@ describe('MiniMax integration - categorization pipeline', () => {
     const client = new MiniMaxAIClient(createMockSDK(response))
 
     const result = await client.createMessage({
-      model: 'MiniMax-M2.5',
+      model: 'MiniMax-M3',
       max_tokens: 4096,
       messages: [{ role: 'user', content: 'Categorize...' }],
     })
