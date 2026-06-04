@@ -26,6 +26,7 @@ const ALLOWED_OPENAI_MODELS = [
 const ALLOWED_MINIMAX_MODELS = [
   'MiniMax-M3',
   'MiniMax-M2.7',
+  'MiniMax-M2.7-highspeed',
 ] as const
 
 export async function GET(): Promise<NextResponse> {
