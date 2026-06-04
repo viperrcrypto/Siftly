@@ -55,7 +55,7 @@ export async function getOpenAIModel(): Promise<string> {
 export async function getMiniMaxModel(): Promise<string> {
   if (_cachedMiniMaxModel && Date.now() < _miniMaxModelCacheExpiry) return _cachedMiniMaxModel
   const setting = await prisma.setting.findUnique({ where: { key: 'minimaxModel' } })
-  _cachedMiniMaxModel = setting?.value ?? 'MiniMax-M2.7'
+  _cachedMiniMaxModel = setting?.value ?? 'MiniMax-M3'
   _miniMaxModelCacheExpiry = Date.now() + CACHE_TTL
   return _cachedMiniMaxModel
 }

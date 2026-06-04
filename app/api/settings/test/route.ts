@@ -90,7 +90,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     try {
       await client.chat.completions.create({
-        model: 'MiniMax-M2.7',
+        model: 'MiniMax-M3',
         max_tokens: 5,
         messages: [{ role: 'user', content: 'hi' }],
       })

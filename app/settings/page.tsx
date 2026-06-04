@@ -42,9 +42,9 @@ const OPENAI_MODELS = [
 ]
 
 const MINIMAX_MODELS = [
-  { value: 'MiniMax-M2.7', label: 'M2.7', description: '1M Context, Latest' },
-  { value: 'MiniMax-M2.5', label: 'M2.5', description: '204K Context' },
-  { value: 'MiniMax-M2.5-highspeed', label: 'M2.5 Highspeed', description: '204K, Fastest' },
+  { value: 'MiniMax-M3', label: 'M3', description: '512K Context, Latest' },
+  { value: 'MiniMax-M2.7', label: 'M2.7', description: '192K Context' },
+  { value: 'MiniMax-M2.7-highspeed', label: 'M2.7 Highspeed', description: 'Fast M2.7 Variant' },
 ]
 
 
@@ -678,10 +678,10 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
             <ModelSelector
               models={MINIMAX_MODELS}
               settingKey="minimaxModel"
-              defaultValue="MiniMax-M2.7"
+              defaultValue="MiniMax-M3"
               onToast={onToast}
             />
-            <p className="text-xs text-zinc-500 mt-1.5">MiniMax M2.7 supports 1M context window — great for large batch categorization</p>
+            <p className="text-xs text-zinc-500 mt-1.5">MiniMax M3 is the latest flagship with 512K context — M2.7 (1M context) remains available</p>
           </div>
         </div>
       )}
