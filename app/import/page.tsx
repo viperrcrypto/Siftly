@@ -92,7 +92,9 @@ const BOOKMARKLET_SCRIPT = `(async function(){
   function addTweet(t){
     if(!t||!t.rest_id||seen.has(t.rest_id))return;
     seen.add(t.rest_id);
-    var leg=t.legacy||{},usr=(t.core&&t.core.user_results&&t.core.user_results.result&&t.core.user_results.result.legacy)||{};
+    var leg=t.legacy||{},usrRes=(t.core&&t.core.user_results&&t.core.user_results.result)||{};
+    // X moved user fields from user_results.result.legacy to .core — read both
+    var usr=usrRes.legacy||{},usrCore=usrRes.core||{};
     var rawMedia=(leg.extended_entities&&leg.extended_entities.media)||(leg.entities&&leg.entities.media)||[];
     var media=rawMedia.map(function(m){
       var thumb=m.media_url_https||'';
@@ -106,8 +108,8 @@ const BOOKMARKLET_SCRIPT = `(async function(){
       }
       return thumb?{type:'photo',url:thumb}:null;
     }).filter(Boolean);
-    all.push({id:t.rest_id,author:usr.name||'Unknown',handle:'@'+(usr.screen_name||'unknown'),
-      avatar:usr.profile_image_url_https||'',timestamp:leg.created_at||'',
+    all.push({id:t.rest_id,author:usr.name||usrCore.name||'Unknown',handle:'@'+(usr.screen_name||usrCore.screen_name||'unknown'),
+      avatar:usr.profile_image_url_https||(usrRes.avatar&&usrRes.avatar.image_url)||'',timestamp:leg.created_at||'',
       text:leg.full_text||leg.text||'',media:media,
       hashtags:(leg.entities&&leg.entities.hashtags||[]).map(function(h){return h.text;}),
       urls:(leg.entities&&leg.entities.urls||[]).map(function(u){return u.expanded_url;}).filter(Boolean)});
@@ -217,7 +219,9 @@ const CONSOLE_SCRIPT = `(async function() {
   function addTweet(t) {
     if (!t?.rest_id || seen.has(t.rest_id)) return;
     seen.add(t.rest_id);
-    const leg = t.legacy ?? {}, usr = t.core?.user_results?.result?.legacy ?? {};
+    // X moved user fields from user_results.result.legacy to .core — read both
+    const usrRes = t.core?.user_results?.result ?? {};
+    const leg = t.legacy ?? {}, usr = usrRes.legacy ?? {}, usrCore = usrRes.core ?? {};
     const media = (leg.extended_entities?.media ?? leg.entities?.media ?? []).map(m => {
       const thumb = m.media_url_https ?? '';
       if (m.type === 'video' || m.type === 'animated_gif') {
@@ -230,7 +234,7 @@ const CONSOLE_SCRIPT = `(async function() {
       return thumb ? { type: 'photo', url: thumb } : null;
     }).filter(Boolean);
     all.push({
-      id: t.rest_id, author: usr.name ?? 'Unknown', handle: '@' + (usr.screen_name ?? 'unknown'),
+      id: t.rest_id, author: usr.name ?? usrCore.name ?? 'Unknown', handle: '@' + (usr.screen_name ?? usrCore.screen_name ?? 'unknown'),
       timestamp: leg.created_at ?? '', text: leg.full_text ?? leg.text ?? '', media,
       hashtags: (leg.entities?.hashtags ?? []).map(h => h.text),
       urls: (leg.entities?.urls ?? []).map(u => u.expanded_url).filter(Boolean)
