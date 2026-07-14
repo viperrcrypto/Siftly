@@ -158,9 +158,19 @@ const BOOKMARKLET_SCRIPT = `(async function(){
       if(all.length>lastCount){stagnant=0;lastCount=all.length;}
       else{
         stagnant++;
-        if(stagnant>=8){
+        // Loading often pauses for many seconds (rate limits, slow fetches);
+        // nudge the timeline up and back down to retrigger loading instead of giving up.
+        if(stagnant%10===0&&stagnant<40){
+          window.scrollTo(0,Math.max(0,document.documentElement.scrollHeight-2600));
+          if(col)col.scrollTo(0,Math.max(0,col.scrollHeight-2600));
+          await sleep(1200);
           window.scrollTo(0,document.documentElement.scrollHeight);
-          await sleep(2000);
+          if(col)col.scrollTo(0,col.scrollHeight);
+          await sleep(3000);
+        }
+        if(stagnant>=40){
+          window.scrollTo(0,document.documentElement.scrollHeight);
+          await sleep(5000);
           if(all.length===lastCount){
             autoScrolling=false;
             autoBtn.textContent='\u2705 Done \u2014 '+all.length+' captured';
@@ -295,9 +305,19 @@ const CONSOLE_SCRIPT = `(async function() {
       if (all.length > lastCount) { stagnant = 0; lastCount = all.length; }
       else {
         stagnant++;
-        if (stagnant >= 8) {
+        // Loading often pauses for many seconds (rate limits, slow fetches);
+        // nudge the timeline up and back down to retrigger loading instead of giving up.
+        if (stagnant % 10 === 0 && stagnant < 40) {
+          window.scrollTo(0, Math.max(0, document.documentElement.scrollHeight - 2600));
+          col?.scrollTo(0, Math.max(0, col.scrollHeight - 2600));
+          await sleep(1200);
           window.scrollTo(0, document.documentElement.scrollHeight);
-          await sleep(2000);
+          col?.scrollTo(0, col.scrollHeight);
+          await sleep(3000);
+        }
+        if (stagnant >= 40) {
+          window.scrollTo(0, document.documentElement.scrollHeight);
+          await sleep(5000);
           if (all.length === lastCount) {
             autoScrolling = false;
             autoBtn.textContent = \`✅ Done — \${all.length} captured\`;
