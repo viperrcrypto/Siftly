@@ -1,0 +1,38 @@
+{
+  "__typename": "Tweet",
+  "rest_id": "9200000000000000001",
+  "core": {
+    "user_results": {
+      "result": {
+        "core": { "name": "Card Author", "screen_name": "card_author" }
+      }
+    }
+  },
+  "legacy": {
+    "created_at": "Fri Jul 10 12:31:00 +0000 2026",
+    "full_text": "A useful linked resource https://t.co/exampleCard",
+    "entities": {
+      "urls": [
+        {
+          "url": "https://t.co/exampleCard",
+          "expanded_url": "https://example.com/design-guide",
+          "display_url": "example.com/design-guide"
+        }
+      ]
+    }
+  },
+  "card": {
+    "rest_id": "https://t.co/exampleCard",
+    "legacy": {
+      "name": "summary_large_image",
+      "url": "https://t.co/exampleCard",
+      "binding_values": [
+        { "key": "title", "value": { "type": "STRING", "string_value": "Example Design Guide" } },
+        { "key": "description", "value": { "type": "STRING", "string_value": "A representative field guide used by the normalization test." } },
+        { "key": "domain", "value": { "type": "STRING", "string_value": "example.com" } },
+        { "key": "card_url", "value": { "type": "STRING", "string_value": "https://t.co/exampleCard" } },
+        { "key": "thumbnail_image_original", "value": { "type": "IMAGE", "image_value": { "url": "https://pbs.twimg.com/card_img/9200000000000000002/example.jpg" } } }
+      ]
+    }
+  }
+}

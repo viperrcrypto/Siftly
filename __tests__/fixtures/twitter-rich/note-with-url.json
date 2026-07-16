@@ -1,0 +1,32 @@
+{
+  "__typename": "Tweet",
+  "rest_id": "7000000000000000001",
+  "core": {
+    "user_results": {
+      "result": {
+        "core": { "name": "Long Note Author", "screen_name": "longnote" }
+      }
+    }
+  },
+  "legacy": {
+    "created_at": "Wed Jul 15 10:00:00 +0000 2026",
+    "full_text": "This visible timeline preview is truncated before the useful conclusion and link…",
+    "entities": { "urls": [] }
+  },
+  "note_tweet": {
+    "note_tweet_results": {
+      "result": {
+        "text": "This is the complete long-form note-tweet text. It continues well past the collapsed timeline preview and preserves the useful conclusion with its source https://t.co/fullnote.",
+        "entity_set": {
+          "urls": [
+            {
+              "url": "https://t.co/fullnote",
+              "expanded_url": "https://example.com/full-note-source",
+              "display_url": "example.com/full-note-source"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

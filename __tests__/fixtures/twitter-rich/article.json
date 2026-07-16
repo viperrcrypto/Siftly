@@ -1,0 +1,45 @@
+{
+  "__typename": "Tweet",
+  "rest_id": "9300000000000000001",
+  "core": {
+    "user_results": {
+      "result": {
+        "core": { "name": "Article Author", "screen_name": "article_author" }
+      }
+    }
+  },
+  "legacy": {
+    "created_at": "Thu Jul 09 18:45:45 +0000 2026",
+    "full_text": "https://t.co/exampleArticle",
+    "entities": {
+      "urls": [
+        {
+          "url": "https://t.co/exampleArticle",
+          "expanded_url": "https://x.com/i/article/9300000000000000002",
+          "display_url": "x.com/i/article/9300…"
+        }
+      ]
+    }
+  },
+  "article": {
+    "article_results": {
+      "result": {
+        "rest_id": "9300000000000000002",
+        "title": "Example long-form article",
+        "preview_text": "A short timeline preview cannot represent the complete article body.",
+        "cover_media": {
+          "media_info": {
+            "original_img_url": "https://pbs.twimg.com/media/example-article-cover.jpg"
+          }
+        },
+        "content_state": {
+          "blocks": [
+            { "type": "unstyled", "text": "A short timeline preview cannot represent the complete article body." },
+            { "type": "header-two", "text": "The important section" },
+            { "type": "unstyled", "text": "This sentence appears only in the hydrated article body and proves it survives normalization." }
+          ]
+        }
+      }
+    }
+  }
+}

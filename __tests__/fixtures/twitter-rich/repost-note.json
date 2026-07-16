@@ -1,0 +1,41 @@
+{
+  "__typename": "Tweet",
+  "rest_id": "9000000000000000001",
+  "core": {
+    "user_results": {
+      "result": {
+        "core": { "name": "Reposter", "screen_name": "reposter" }
+      }
+    }
+  },
+  "legacy": {
+    "created_at": "Mon Jul 13 08:00:00 +0000 2026",
+    "full_text": "RT @source: short legacy preview",
+    "entities": { "urls": [] },
+    "retweeted_status_result": {
+      "result": {
+        "__typename": "Tweet",
+        "rest_id": "8000000000000000001",
+        "core": {
+          "user_results": {
+            "result": {
+              "core": { "name": "Source Author", "screen_name": "source" }
+            }
+          }
+        },
+        "legacy": {
+          "created_at": "Mon Jul 13 07:30:00 +0000 2026",
+          "full_text": "short legacy preview",
+          "entities": { "urls": [] }
+        },
+        "note_tweet": {
+          "note_tweet_results": {
+            "result": {
+              "text": "This is the complete long-form note-tweet text that must survive normalization."
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -70,3 +70,4 @@ promo-video/
 *.swp
 *.swo
 *~
+prisma/dev.db.bak-*

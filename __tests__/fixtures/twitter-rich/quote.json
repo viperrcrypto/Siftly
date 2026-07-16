@@ -1,0 +1,44 @@
+{
+  "__typename": "Tweet",
+  "rest_id": "9100000000000000001",
+  "core": {
+    "user_results": {
+      "result": {
+        "core": { "name": "Quote Author", "screen_name": "quote_author" }
+      }
+    }
+  },
+  "legacy": {
+    "created_at": "Sun Jul 12 12:00:10 +0000 2026",
+    "full_text": "A useful observation about the quoted resource",
+    "quoted_status_id_str": "9100000000000000002",
+    "is_quote_status": true,
+    "entities": { "urls": [] }
+  },
+  "quoted_status_result": {
+    "result": {
+      "__typename": "Tweet",
+      "rest_id": "9100000000000000002",
+      "core": {
+        "user_results": {
+          "result": {
+            "core": { "name": "Cited Author", "screen_name": "cited_author" }
+          }
+        }
+      },
+      "legacy": {
+        "created_at": "Sun Jul 12 11:38:01 +0000 2026",
+        "full_text": "https://t.co/exampleQuote",
+        "entities": {
+          "urls": [
+            {
+              "url": "https://t.co/exampleQuote",
+              "expanded_url": "https://x.com/i/article/9100000000000000003",
+              "display_url": "x.com/i/article/9100…"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
