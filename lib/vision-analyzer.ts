@@ -70,6 +70,14 @@ Rules:
 const RETRY_DELAYS_MS = [1500, 4000, 10000]
 const CONCURRENCY = 12
 
+// Output budget for one image analysis. Text-dense images (infographics,
+// slides, long screenshots) can need well over 700 tokens for the full
+// text_ocr transcription; when the response is cut off mid-JSON
+// (finish_reason: length) the no-JSON path below returns '' and the item
+// is marked '{}' as attempted, so the truncation is silent. Raise via env
+// when analyzing text-heavy collections or using verbose local models.
+const VISION_MAX_TOKENS = Number(process.env.VISION_MAX_TOKENS ?? 700)
+
 /**
  * CLI-based vision analysis: passes the image URL in the prompt text.
  * Works with Codex CLI (ChatGPT OAuth) and Claude CLI without needing SDK access.
@@ -117,7 +125,7 @@ async function analyzeImageWithRetry(
   try {
     const response = await client.createMessage({
       model,
-      max_tokens: 700,
+      max_tokens: VISION_MAX_TOKENS,
       messages: [
         {
           role: 'user',
