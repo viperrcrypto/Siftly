@@ -48,5 +48,10 @@
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"
+  },
+  "overrides": {
+    "keyv": "4.5.4",
+    "flat-cache": "4.0.1",
+    "file-entry-cache": "8.0.0"
   }
 }
