@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useRef, useEffect, useState } from 'react'
-import { ExternalLink, Download, FileText, Play, Pencil, X, Check, ImageOff, Bookmark, Globe } from 'lucide-react'
+import { ExternalLink, Download, FileText, Play, Pencil, X, Check, ImageOff, Bookmark, Globe, EyeOff, Eye } from 'lucide-react'
 import type { BookmarkWithMedia, Category } from '@/lib/types'
 
 // ── URL helpers ────────────────────────────────────────────────────────────────
@@ -579,12 +579,14 @@ function CategoryEditor({ bookmarkId, currentCategoryIds, onSave, onClose }: Cat
 
 interface BookmarkCardProps {
   bookmark: BookmarkWithMedia
+  onHiddenChange?: (id: string, hidden: boolean) => void
 }
 
-export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
+export default function BookmarkCard({ bookmark, onHiddenChange }: BookmarkCardProps) {
   const [categories, setCategories] = useState(bookmark.categories)
   const [expanded, setExpanded] = useState(false)
   const [editingCategories, setEditingCategories] = useState(false)
+  const [hidden, setHidden] = useState(bookmark.hidden ?? false)
 
   const tweetUrl = (bookmark.authorHandle && bookmark.authorHandle !== 'unknown')
     ? `https://twitter.com/${bookmark.authorHandle}/status/${bookmark.tweetId}`
@@ -614,6 +616,20 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ categoryIds: newIds }),
     }).catch(() => { setCategories(bookmark.categories) })
+  }
+
+  function handleToggleHidden() {
+    const next = !hidden
+    setHidden(next)
+    onHiddenChange?.(bookmark.id, next)
+    fetch(`/api/bookmarks/${bookmark.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hidden: next }),
+    }).catch(() => {
+      setHidden(!next)
+      onHiddenChange?.(bookmark.id, !next)
+    })
   }
 
   function handleSaveCategories(newIds: string[]) {
@@ -730,6 +746,13 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
 
           {/* Actions — visible on hover */}
           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5">
+            <button
+              onClick={handleToggleHidden}
+              className={`p-1.5 rounded-lg hover:bg-zinc-800 transition-colors ${hidden ? 'text-indigo-400 hover:text-indigo-300' : 'text-zinc-600 hover:text-zinc-200'}`}
+              title={hidden ? 'Unhide bookmark' : 'Hide bookmark'}
+            >
+              {hidden ? <Eye size={13} /> : <EyeOff size={13} />}
+            </button>
             <button
               onClick={handleDownloadMarkdown}
               className="p-1.5 rounded-lg text-zinc-600 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
