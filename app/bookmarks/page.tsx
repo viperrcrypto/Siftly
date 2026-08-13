@@ -15,7 +15,6 @@ import {
   X,
   ChevronDown,
   ArrowUpDown,
-  Eye,
   EyeOff,
 } from 'lucide-react'
 import * as Select from '@radix-ui/react-select'
@@ -356,20 +355,6 @@ function BookmarksPageInner() {
             >
               <ArrowUpDown size={13} />
               <span className="hidden sm:inline">{sortLabel}</span>
-            </button>
-
-            {/* Show hidden toggle */}
-            <button
-              onClick={() => updateFilter('includeHidden', !filters.includeHidden)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm transition-all shrink-0 ${
-                filters.includeHidden
-                  ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300'
-                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
-              }`}
-              title={filters.includeHidden ? 'Hiding hidden bookmarks' : 'Show hidden bookmarks'}
-            >
-              {filters.includeHidden ? <Eye size={13} /> : <EyeOff size={13} />}
-              <span className="hidden sm:inline">{filters.includeHidden ? 'Showing hidden' : 'Show hidden'}</span>
             </button>
 
             {/* View toggle */}
