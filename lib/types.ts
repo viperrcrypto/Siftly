@@ -49,6 +49,7 @@ export interface StatsResponse {
 export interface BookmarksResponse {
   bookmarks: BookmarkWithMedia[]
   total: number
+  hiddenTotal?: number
   page: number
   limit: number
 }

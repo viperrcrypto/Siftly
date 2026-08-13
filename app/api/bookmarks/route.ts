@@ -77,7 +77,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const [bookmarks, total] = await Promise.all([
+    // Count of hidden bookmarks matching the same (non-hidden) filters — for the UI badge
+    const hiddenWhere = { ...where, hidden: true }
+
+    const [bookmarks, total, hiddenTotal] = await Promise.all([
       prisma.bookmark.findMany({
         where,
         skip,
@@ -100,6 +103,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         },
       }),
       prisma.bookmark.count({ where }),
+      prisma.bookmark.count({ where: hiddenWhere }),
     ])
 
     const formatted = bookmarks.map((bookmark) => ({
@@ -130,6 +134,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({
       bookmarks: formatted,
       total,
+      hiddenTotal,
       page,
       limit,
     })
