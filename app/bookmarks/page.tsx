@@ -220,6 +220,7 @@ function BookmarksPageInner() {
   const [searchInput, setSearchInput] = useState('')
   const [bookmarks, setBookmarks] = useState<BookmarkWithMedia[]>([])
   const [total, setTotal] = useState(0)
+  const [hiddenTotal, setHiddenTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'compact'>('grid')
   const [openBookmark, setOpenBookmark] = useState<BookmarkWithMedia | null>(null)
@@ -233,10 +234,12 @@ function BookmarksPageInner() {
       const data: BookmarksResponse = await res.json()
       setBookmarks(data.bookmarks)
       setTotal(data.total)
+      setHiddenTotal(data.hiddenTotal ?? 0)
     } catch (err) {
       console.error(err)
       setBookmarks([])
       setTotal(0)
+      setHiddenTotal(0)
     } finally {
       setLoading(false)
     }
@@ -266,6 +269,8 @@ function BookmarksPageInner() {
   }
 
   function handleHiddenChange(id: string, hidden: boolean) {
+    // Keep the hidden-count badge in sync
+    setHiddenTotal((prev) => Math.max(0, prev + (hidden ? 1 : -1)))
     // If the item's new state no longer matches the current view, drop it from the list.
     // Normal view shows hidden=false; "Show hidden" view shows hidden=true.
     const belongsInView = hidden === filters.includeHidden
@@ -453,15 +458,25 @@ function BookmarksPageInner() {
         {/* Results count */}
         {!loading && (
           <div className="flex items-center justify-between mb-5">
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-zinc-500 flex items-center gap-2">
               {total > 0 ? (
-                <>
+                <span>
                   <span className="text-zinc-200 font-semibold">{total.toLocaleString()}</span>
                   {' '}bookmark{total !== 1 ? 's' : ''}
                   {filters.q && <span className="text-zinc-600"> for "{filters.q}"</span>}
-                </>
+                </span>
               ) : (
-                'No bookmarks found'
+                <span>No bookmarks found</span>
+              )}
+              {hiddenTotal > 0 && !filters.includeHidden && (
+                <button
+                  onClick={() => updateFilter('includeHidden', true)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-800/70 border border-zinc-700/60 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-colors"
+                  title="Show hidden bookmarks"
+                >
+                  <EyeOff size={11} />
+                  {hiddenTotal.toLocaleString()} hidden
+                </button>
               )}
             </p>
           </div>
