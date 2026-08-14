@@ -8,9 +8,9 @@
     "url": "https://github.com/viperrcrypto/Siftly.git"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 15000",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 15000",
     "lint": "eslint",
     "test": "vitest run",
     "siftly": "tsx cli/siftly.ts"

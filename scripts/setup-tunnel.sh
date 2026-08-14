@@ -9,7 +9,7 @@
 #   ./scripts/setup-tunnel.sh
 #
 # Creates subdomain:
-#   - {prefix}.atlasguide.dev -> http://localhost:3100
+#   - {prefix}.atlasguide.dev -> http://localhost:15000
 
 set -eo pipefail
 
@@ -57,7 +57,7 @@ fi
 
 PREFIX="$CLOUDFLARE_SUBDOMAIN_PREFIX"
 TUNNEL_NAME="${PREFIX}-dev"
-PORT="${PORT:-3100}"
+PORT="${PORT:-15000}"
 
 echo -e "${YELLOW}Setting up tunnel '${TUNNEL_NAME}' for domain: ${CLOUDFLARE_DOMAIN}${NC}"
 echo ""

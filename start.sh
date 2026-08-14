@@ -58,7 +58,7 @@ fi
 echo ""
 
 # ── 5. Start Cloudflare tunnel if token is present ───────────────────────────
-PORT=${PORT:-3000}
+PORT=${PORT:-15000}
 
 # Source tunnel token from .env
 if grep -q "CLOUDFLARE_TUNNEL_TOKEN" .env 2>/dev/null; then

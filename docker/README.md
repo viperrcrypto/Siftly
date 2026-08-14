@@ -22,7 +22,7 @@ cp ../.env.example .env
 docker compose up --build
 ```
 
-App is available at **http://localhost:3000**
+App is available at **http://localhost:15000**
 
 On subsequent starts (no code changes):
 
