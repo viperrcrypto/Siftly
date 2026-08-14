@@ -18,7 +18,11 @@ import { POST } from '@/app/api/import/x-oauth/fetch/route'
 describe('X OAuth bookmark fetch', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
-    mocks.db.setting.findUnique.mockImplementation(({ where }: { where: { key: string } }) => Promise.resolve(where.key === 'x_oauth_access_token' ? { value: 'token' } : null))
+    mocks.db.setting.findUnique.mockImplementation(({ where }: { where: { key: string } }) => Promise.resolve(
+      where.key === 'x_oauth_access_token' ? { value: 'token' }
+        : where.key === 'x_oauth_user_id' ? { value: 'x-user-1' }
+          : null,
+    ))
     mocks.db.bookmark.findUnique.mockResolvedValue(null)
     mocks.db.bookmark.create.mockResolvedValue({ id: 'bookmark-1' })
     mocks.db.$transaction.mockImplementation((fn: (tx: typeof mocks.db) => unknown) => fn(mocks.db))
@@ -39,6 +43,7 @@ describe('X OAuth bookmark fetch', () => {
     const response = await POST(new Request('http://localhost/api/import/x-oauth/fetch', { method: 'POST', body: '{}' }) as never)
     const requestUrl = new URL(fetchMock.mock.calls[0][0])
 
+    expect(requestUrl.pathname).toBe('/2/users/x-user-1/bookmarks')
     expect(requestUrl.searchParams.get('tweet.fields')).toBe('created_at,author_id,attachments,entities,note_tweet,referenced_tweets,conversation_id,in_reply_to_user_id')
     expect(mocks.db.bookmark.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ text: '長文 https://article.example/a' }) }))
     expect(mocks.enqueue).toHaveBeenCalledWith(['bookmark-1'])

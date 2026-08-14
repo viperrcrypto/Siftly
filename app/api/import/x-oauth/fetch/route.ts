@@ -102,6 +102,10 @@ export async function POST(req: NextRequest) {
   if (!token) {
     return NextResponse.json({ error: 'Not authenticated with X. Please connect your account first.' }, { status: 401 })
   }
+  const userId = await prisma.setting.findUnique({ where: { key: 'x_oauth_user_id' } })
+  if (!userId?.value) {
+    return NextResponse.json({ error: 'X user ID is missing. Please reconnect your X account.' }, { status: 401 })
+  }
 
   let imported = 0
   let skipped = 0
@@ -121,7 +125,7 @@ export async function POST(req: NextRequest) {
     })
     if (nextToken) params.set('pagination_token', nextToken)
 
-    const res = await fetch(`https://api.x.com/2/users/me/bookmarks?${params}`, {
+    const res = await fetch(`https://api.x.com/2/users/${encodeURIComponent(userId.value)}/bookmarks?${params}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
 
