@@ -36,6 +36,7 @@ export interface Category {
   isAiGenerated: boolean
   createdAt: string
   bookmarkCount: number
+  canDelete?: boolean
 }
 
 export interface StatsResponse {

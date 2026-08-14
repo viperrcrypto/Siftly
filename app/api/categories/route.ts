@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
-import { seedDefaultCategories } from '@/lib/categorizer'
+import { isDefaultCategorySlug, seedDefaultCategories } from '@/lib/categorizer'
 
 function generateSlug(name: string): string {
   return name
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
@@ -14,9 +14,8 @@ function generateSlug(name: string): string {
 
 export async function GET(): Promise<NextResponse> {
   try {
-    // Seed defaults on first load so the nav always has categories
-    const count = await prisma.category.count()
-    if (count === 0) await seedDefaultCategories()
+    // Add any newly introduced defaults without overwriting user edits.
+    await seedDefaultCategories()
 
     const categories = await prisma.category.findMany({
       orderBy: { name: 'asc' },
@@ -36,6 +35,7 @@ export async function GET(): Promise<NextResponse> {
       isAiGenerated: cat.isAiGenerated,
       createdAt: cat.createdAt.toISOString(),
       bookmarkCount: cat._count.bookmarks,
+      canDelete: !isDefaultCategorySlug(cat.slug),
     }))
 
     return NextResponse.json({ categories: formatted })
@@ -114,6 +114,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           isAiGenerated: category.isAiGenerated,
           createdAt: category.createdAt.toISOString(),
           bookmarkCount: 0,
+          canDelete: true,
         },
       },
       { status: 201 }

@@ -2,119 +2,131 @@ import prisma from '@/lib/db'
 import { buildImageContext } from '@/lib/image-context'
 import { getCliAvailability, claudePrompt, modelNameToCliAlias } from '@/lib/claude-cli-auth'
 import { getCodexCliAvailability, codexPrompt } from '@/lib/codex-cli'
-import { getActiveModel, getProvider } from '@/lib/settings'
+import { getActiveAuthMode, getActiveCliModel, getActiveModel, getProvider } from '@/lib/settings'
 import { AIClient, resolveAIClient } from '@/lib/ai-client'
 
 const BATCH_SIZE = 20
 
 const DEFAULT_CATEGORIES = [
   {
-    name: 'AI & Machine Learning',
+    name: 'AI・機械学習',
     slug: 'ai-resources',
     color: '#8b5cf6',
     description:
-      'Artificial intelligence, machine learning, LLMs, ChatGPT, Claude, Gemini, Grok, Midjourney, Sora, AI agents, RAG, fine-tuning, prompts, vector databases, model benchmarks, AI startups, AI safety, multimodal models',
+      '人工知能、機械学習、LLM、ChatGPT、Claude、Gemini、Grok、Midjourney、Sora、AIエージェント、RAG、ファインチューニング、プロンプト、ベクトルデータベース、モデル評価、AIスタートアップ、AI安全性、マルチモーダルモデル',
     isAiGenerated: false,
   },
   {
-    name: 'Crypto & Web3',
+    name: '暗号資産・Web3',
     slug: 'finance-crypto',
     color: '#f59e0b',
     description:
-      'Cryptocurrency, Bitcoin, Ethereum, Solana, DeFi protocols, NFTs, on-chain activity, crypto trading, altcoins, airdrops, memecoin, Web3 development, smart contracts, DAOs, Layer 2, Uniswap, pump.fun, wallets, blockchain analytics',
+      '暗号資産、Bitcoin、Ethereum、Solana、DeFiプロトコル、NFT、オンチェーン活動、暗号資産取引、アルトコイン、エアドロップ、ミームコイン、Web3開発、スマートコントラクト、DAO、Layer 2、Uniswap、ウォレット、ブロックチェーン分析',
     isAiGenerated: false,
   },
   {
-    name: 'Dev Tools & Engineering',
+    name: '開発ツール・エンジニアリング',
     slug: 'dev-tools',
     color: '#06b6d4',
     description:
-      'Software engineering, coding, GitHub, open source, frameworks, APIs, databases, DevOps, CI/CD, terminal tools, debugging, system design, backend, frontend, mobile dev, Rust, Go, TypeScript, Python, Vercel, Supabase, Docker',
+      'ソフトウェア開発、コーディング、GitHub、オープンソース、フレームワーク、API、データベース、DevOps、CI/CD、ターミナルツール、デバッグ、システム設計、バックエンド、フロントエンド、モバイル開発、Rust、Go、TypeScript、Python、Vercel、Supabase、Docker',
     isAiGenerated: false,
   },
   {
-    name: 'Finance & Investing',
+    name: '金融・投資',
     slug: 'finance-investing',
     color: '#10b981',
     description:
-      'Stock market, equities, options trading, macroeconomics, Federal Reserve, interest rates, hedge funds, venture capital, private equity, earnings reports, portfolio management, real estate investing, commodities, forex, financial charts — NOT crypto',
+      '株式市場、株式、オプション取引、マクロ経済、連邦準備制度、金利、ヘッジファンド、ベンチャーキャピタル、プライベートエクイティ、決算、ポートフォリオ管理、不動産投資、商品、外国為替、金融チャート。暗号資産は除く',
     isAiGenerated: false,
   },
   {
-    name: 'Startups & Business',
+    name: 'スタートアップ・ビジネス',
     slug: 'startups-business',
     color: '#f97316',
     description:
-      'Startups, founders, entrepreneurship, SaaS, product-market fit, fundraising, VC, angel investing, growth hacking, B2B, marketing, sales, revenue, bootstrapping, Y Combinator, acquisition, company building, business strategy',
+      'スタートアップ、創業者、起業、SaaS、プロダクトマーケットフィット、資金調達、VC、エンジェル投資、グロースハック、B2B、マーケティング、営業、売上、ブートストラップ、Y Combinator、買収、会社づくり、事業戦略',
     isAiGenerated: false,
   },
   {
-    name: 'News & Politics',
+    name: 'ニュース・政治',
     slug: 'news',
     color: '#6366f1',
     description:
-      'Breaking news, current events, US politics, global politics, geopolitics, government policy, elections, regulation, tech policy, AI regulation, crypto regulation, war and conflict, international relations, journalism, investigative reporting',
+      '速報、時事、国内外の政治、地政学、政府政策、選挙、規制、テック政策、戦争・紛争、国際関係、ジャーナリズム、調査報道。地震、台風、洪水、津波、豪雨などは災害カテゴリを優先し、社会的影響や速報性が強い場合は併用する',
     isAiGenerated: false,
   },
   {
-    name: 'Design & Product',
+    name: '災害',
+    slug: 'disaster',
+    color: '#ec4899',
+    description:
+      '地震、台風、洪水、津波、豪雨、土砂災害、火山、火災などの災害情報、防災、警報、避難、被害、復旧に関する内容。災害に関する投稿はこのカテゴリを優先し、速報性が高い場合はニュース・政治との併用も可',
+    isAiGenerated: false,
+  },
+  {
+    name: 'デザイン・プロダクト',
     slug: 'design',
     color: '#ec4899',
     description:
-      'UI/UX design, product design, visual design, Figma, typography, design systems, motion design, brand identity, user research, product strategy, wireframes, creative tools, color theory, web design, app design',
+      'UI/UXデザイン、プロダクトデザイン、ビジュアルデザイン、Figma、タイポグラフィ、デザインシステム、モーションデザイン、ブランドアイデンティティ、ユーザーリサーチ、プロダクト戦略、ワイヤーフレーム、クリエイティブツール、色彩理論、Webデザイン、アプリデザイン',
     isAiGenerated: false,
   },
   {
-    name: 'Health & Wellness',
+    name: '健康・ウェルネス',
     slug: 'health-wellness',
     color: '#14b8a6',
     description:
-      'Fitness, nutrition, longevity, biohacking, sleep, mental health, supplements, workout routines, diet, weight loss, strength training, cognitive performance, stress management, meditation, gut health, lab results, wearables like Whoop and Oura',
+      'フィットネス、栄養、長寿、バイオハッキング、睡眠、メンタルヘルス、サプリメント、運動習慣、食事、減量、筋力トレーニング、認知パフォーマンス、ストレス管理、瞑想、腸内環境、検査結果、WhoopやOuraなどのウェアラブル',
     isAiGenerated: false,
   },
   {
-    name: 'Security & Privacy',
+    name: 'セキュリティ・プライバシー',
     slug: 'security-privacy',
     color: '#ef4444',
     description:
-      'Cybersecurity, hacking, exploits, vulnerabilities, OPSEC, privacy tools, VPNs, encryption, threat intelligence, social engineering, phishing, malware, zero-days, pen testing, CTF, data breaches, authentication, identity security',
+      'サイバーセキュリティ、ハッキング、エクスプロイト、脆弱性、OPSEC、プライバシーツール、VPN、暗号化、脅威インテリジェンス、ソーシャルエンジニアリング、フィッシング、マルウェア、ゼロデイ、ペネトレーションテスト、CTF、情報漏えい、認証、アイデンティティセキュリティ',
     isAiGenerated: false,
   },
   {
-    name: 'Science & Research',
+    name: '科学・研究',
     slug: 'science-research',
     color: '#3b82f6',
     description:
-      'Scientific research, papers, discoveries, physics, biology, neuroscience, space exploration, climate, chemistry, medical breakthroughs, academic studies, emerging technology, robotics, quantum computing, energy, materials science',
+      '科学研究、論文、発見、物理学、生物学、神経科学、宇宙探査、気候、化学、医学の進歩、学術研究、新興技術、ロボティクス、量子コンピューティング、エネルギー、材料科学',
     isAiGenerated: false,
   },
   {
-    name: 'Productivity',
+    name: '生産性・ナレッジ管理',
     slug: 'productivity',
     color: '#a855f7',
     description:
-      'Productivity systems, time management, habits, focus techniques, note-taking, second brain, deep work, mental models, PKM tools like Obsidian and Notion, life optimization, workflows, automation, delegation',
+      '生産性システム、時間管理、習慣、集中法、ノート術、セカンドブレイン、ディープワーク、メンタルモデル、ObsidianやNotionなどのPKMツール、生活改善、ワークフロー、自動化、委任',
     isAiGenerated: false,
   },
   {
-    name: 'Funny & Memes',
+    name: 'ユーモア・ミーム',
     slug: 'funny-memes',
     color: '#eab308',
     description:
-      'Memes, jokes, satire, humor, viral content, relatable posts, shitposts, funny screenshots, comedy threads, parody, ironic takes — content whose primary purpose is to be funny or entertaining',
+      'ミーム、ジョーク、風刺、ユーモア、バイラルコンテンツ、共感系投稿、ネタ投稿、面白いスクリーンショット、コメディスレッド、パロディ、皮肉。主な目的が面白さや娯楽であるコンテンツ',
     isAiGenerated: false,
   },
   {
-    name: 'General',
+    name: '一般',
     slug: 'general',
     color: '#64748b',
-    description: "Miscellaneous content that doesn't clearly fit any other category — use sparingly, only when no other category applies",
+    description: '他のカテゴリに明確に当てはまらない雑多な内容。どのカテゴリにも当てはまらない場合だけ使用',
     isAiGenerated: false,
   },
 ] as const
 
 // Default slugs only used for seeding — all runtime categorization uses DB slugs
 const DEFAULT_SLUGS = DEFAULT_CATEGORIES.map((c) => c.slug)
+
+export function isDefaultCategorySlug(slug: string): boolean {
+  return DEFAULT_SLUGS.includes(slug as (typeof DEFAULT_SLUGS)[number])
+}
 
 interface BookmarkForCategorization {
   tweetId: string
@@ -140,15 +152,7 @@ export async function seedDefaultCategories(): Promise<void> {
   const existingSlugs = new Set(existing.map((c) => c.slug))
 
   for (const cat of DEFAULT_CATEGORIES) {
-    if (existingSlugs.has(cat.slug)) {
-      // Sync name, color, and description so renames/updates propagate to existing DBs
-      await prisma.category.update({
-        where: { slug: cat.slug },
-        data: { name: cat.name, color: cat.color, description: cat.description },
-      })
-    } else {
-      await prisma.category.create({ data: { ...cat } })
-    }
+    if (!existingSlugs.has(cat.slug)) await prisma.category.create({ data: { ...cat } })
   }
 }
 
@@ -171,31 +175,31 @@ function buildCategorizationPrompt(
     return entry
   })
 
-  return `You are an expert librarian categorizing Twitter/X bookmarks into a personal knowledge base. Your categorizations directly power search and discovery — accuracy is critical.
+  return `あなたは個人ナレッジベースのTwitter/Xブックマークを分類する司書です。分類結果は検索と発見に直接使われるため、正確さを最優先してください。
 
-AVAILABLE CATEGORIES:
+利用可能なカテゴリ:
 ${categoriesList}
 
-CATEGORIZATION RULES:
-- Assign 1-3 categories per bookmark — only what CLEARLY applies
-- Confidence 0.5-1.0: use 0.9+ for obvious fits, 0.6-0.8 for plausible, 0.5 for borderline
-- Priority: specific categories beat "general" — only use "general" when truly nothing else fits
-- Use ALL signals: tweet text, image analysis, OCR text inside images, hashtags, detected tools, semantic AI tags
+分類ルール:
+- 1件のブックマークに、明確に当てはまるカテゴリを1〜3個だけ付与する
+- 確信度は0.5〜1.0。明確なら0.9以上、妥当なら0.6〜0.8、境界例なら0.5を使う
+- 「一般」より具体的なカテゴリを優先し、本当に他が当てはまらない場合だけ general を使う
+- 投稿本文、画像分析、画像内OCR、ハッシュタグ、検出ツール、意味タグをすべて使う
 
-SIGNAL WEIGHTING (use all, not just text):
-- Image shows financial chart, price action, wallet UI → finance-crypto (even if tweet text is vague)
-- Image shows code, terminal, GitHub, a dev tool UI → dev-tools
-- Image is clearly a meme format or labeled as humor/satire → funny-memes with high confidence
-- Tools field mentions GitHub/Vercel/React/etc → dev-tools likely applies
-- aiTags field is pre-computed context — trust it heavily for category signals
-- Hashtags like #bitcoin #eth → finance-crypto; #buildinpublic #saas → dev-tools/productivity
+判断材料の重み付け（本文だけでなくすべて使う）:
+- 金融チャート、値動き、ウォレット画面 → finance-crypto（本文が曖昧でも適用）
+- コード、ターミナル、GitHub、開発ツール画面 → dev-tools
+- 明らかなミーム形式、ユーモア・風刺 → funny-memesを高い確信度で適用
+- GitHub/Vercel/Reactなどがtoolsにある → dev-toolsを検討
+- aiTagsは事前計算済みの文脈なので、分類の重要な手がかりとして重視する
+- #bitcoin #eth → finance-crypto、#buildinpublic #saas → dev-tools/productivity
 
-AVOID:
-- Over-assigning "general" — it's a catch-all, not a default
-- Conflating news about AI with AI resources (a news thread about OpenAI is "news", not "ai-resources")
-- Assigning categories based only on passing mentions (a dev tweet that mentions a price = dev-tools, not finance)
+避けること:
+- generalを付けすぎない。generalは最後の受け皿であり、既定値ではない
+- AIに関するニュースとAIリソースを混同しない（OpenAIに関するニューススレッドはnewsであり、ai-resourcesではない）
+- 単なる言及だけで分類しない（価格に触れた開発投稿はfinanceではなくdev-tools）
 
-Return ONLY valid JSON — no markdown, no explanation:
+有効なJSONだけを返す。Markdownや説明は不要:
 [{
   "tweetId": "123",
   "assignments": [
@@ -204,7 +208,7 @@ Return ONLY valid JSON — no markdown, no explanation:
   ]
 }]
 
-BOOKMARKS:
+ブックマーク:
 ${JSON.stringify(tweetData, null, 1)}`
 }
 
@@ -240,11 +244,13 @@ export async function categorizeBatch(
 
   const prompt = buildCategorizationPrompt(bookmarks, categoryDescriptions, allSlugs)
   const provider = await getProvider()
+  const authMode = await getActiveAuthMode()
+  const cliModel = await getActiveCliModel()
 
   // Prefer CLI over SDK (avoids OAuth token extraction, uses CLI directly)
-  if (provider === 'openai') {
+  if (provider === 'openai' && authMode === 'cli') {
     if (await getCodexCliAvailability()) {
-      const result = await codexPrompt(prompt, { timeoutMs: 60_000 })
+      const result = await codexPrompt(prompt, { model: cliModel || undefined, timeoutMs: 60_000 })
       if (result.success && result.data) {
         try {
           return parseCategorizationResponse(result.data, new Set(allSlugs))
@@ -255,12 +261,9 @@ export async function categorizeBatch(
         console.warn('[categorize] Codex CLI failed, falling back to SDK:', result.error)
       }
     }
-  } else {
+  } else if (provider === 'anthropic' && authMode === 'cli') {
     if (await getCliAvailability()) {
-      const model = await getActiveModel()
-      const cliModel = modelNameToCliAlias(model)
-
-      const result = await claudePrompt(prompt, { model: cliModel, timeoutMs: 60_000 })
+      const result = await claudePrompt(prompt, { model: modelNameToCliAlias(cliModel), timeoutMs: 60_000 })
       if (result.success && result.data) {
         try {
           return parseCategorizationResponse(result.data, new Set(allSlugs))

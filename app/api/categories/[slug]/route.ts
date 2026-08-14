@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { isDefaultCategorySlug } from '@/lib/categorizer'
 
 const DEFAULT_PAGE = 1
 const DEFAULT_LIMIT = 24
@@ -99,6 +100,7 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
         description: category.description,
         isAiGenerated: category.isAiGenerated,
         createdAt: category.createdAt.toISOString(),
+        canDelete: !isDefaultCategorySlug(category.slug),
       },
       bookmarks: formatted,
       total,
@@ -114,8 +116,78 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
   }
 }
 
+export async function PATCH(request: NextRequest, context: RouteContext): Promise<NextResponse> {
+  const { slug } = await context.params
+  const body = await request.json().catch(() => null) as {
+    name?: unknown
+    color?: unknown
+    description?: unknown
+  } | null
+
+  if (!body || typeof body.name !== 'string' || !body.name.trim()) {
+    return NextResponse.json({ error: 'カテゴリ名を入力してください' }, { status: 400 })
+  }
+  if (typeof body.color !== 'string' || !/^#[0-9a-fA-F]{3,8}$/.test(body.color)) {
+    return NextResponse.json({ error: '色の形式が正しくありません' }, { status: 400 })
+  }
+  if (body.description !== undefined && typeof body.description !== 'string') {
+    return NextResponse.json({ error: '説明の形式が正しくありません' }, { status: 400 })
+  }
+
+  const existing = await prisma.category.findUnique({ where: { slug }, select: { id: true } })
+  if (!existing) {
+    return NextResponse.json({ error: `カテゴリが見つかりません: ${slug}` }, { status: 404 })
+  }
+
+  const duplicate = await prisma.category.findFirst({
+    where: { name: body.name.trim(), NOT: { id: existing.id } },
+    select: { id: true },
+  })
+  if (duplicate) {
+    return NextResponse.json({ error: '同じ名前のカテゴリがすでにあります' }, { status: 409 })
+  }
+
+  try {
+    const category = await prisma.category.update({
+      where: { slug },
+      data: {
+        name: body.name.trim(),
+        color: body.color,
+        description: body.description?.trim() || null,
+      },
+      include: { _count: { select: { bookmarks: true } } },
+    })
+    return NextResponse.json({
+      category: {
+        id: category.id,
+        name: category.name,
+        slug: category.slug,
+        color: category.color,
+        description: category.description,
+        isAiGenerated: category.isAiGenerated,
+        createdAt: category.createdAt.toISOString(),
+        bookmarkCount: category._count.bookmarks,
+        canDelete: !isDefaultCategorySlug(category.slug),
+      },
+    })
+  } catch (err) {
+    console.error(`Category [${slug}] update error:`, err)
+    return NextResponse.json(
+      { error: `カテゴリを更新できませんでした: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 500 },
+    )
+  }
+}
+
 export async function DELETE(_request: NextRequest, context: RouteContext): Promise<NextResponse> {
   const { slug } = await context.params
+
+  if (isDefaultCategorySlug(slug)) {
+    return NextResponse.json(
+      { error: '標準カテゴリは削除できません。名前・説明・色は編集できます。' },
+      { status: 403 },
+    )
+  }
 
   try {
     const category = await prisma.category.findUnique({
