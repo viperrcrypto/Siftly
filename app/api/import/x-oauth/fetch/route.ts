@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { enqueueIncompleteArchives, ensureArchiveRecord } from '@/lib/archive/pipeline'
-import { createImportedBookmark } from '@/lib/media-import'
+import { createImportedBookmark, importedMediaData } from '@/lib/media-import'
 
 interface XTweet {
   id: string
@@ -11,9 +11,38 @@ interface XTweet {
   attachments?: { media_keys?: string[] }
   entities?: { urls?: Array<{ url?: string; expanded_url?: string; unwound_url?: string }> }
   note_tweet?: { text?: string; entities?: { urls?: Array<{ url?: string; expanded_url?: string; unwound_url?: string }> } }
+  article?: {
+    title?: string
+    plain_text?: string
+    preview_text?: string
+    cover_media?: string
+    media_entities?: string[]
+    entities?: { urls?: Array<{ text?: string }> }
+  }
   referenced_tweets?: Array<{ type: 'replied_to' | 'quoted' | 'retweeted'; id: string }>
   conversation_id?: string
   in_reply_to_user_id?: string
+}
+
+function tweetFullText(tweet: XTweet): string {
+  if (tweet.note_tweet?.text) return tweet.note_tweet.text
+  const article = tweet.article
+  if (article) {
+    const parts = [article.title, article.plain_text].map((part) => part?.trim()).filter(Boolean)
+    if (parts.length) return parts.join('\n\n')
+  }
+  return tweet.text
+}
+
+function mergeArticleRaw(rawJson: string | null | undefined, tweet: XTweet): string {
+  if (!rawJson) return JSON.stringify(tweet)
+  try {
+    const existing = JSON.parse(rawJson) as unknown
+    if (!existing || typeof existing !== 'object' || Array.isArray(existing)) return JSON.stringify(tweet)
+    return JSON.stringify({ ...existing, article: tweet.article })
+  } catch {
+    return JSON.stringify(tweet)
+  }
 }
 
 interface XUser {
@@ -114,11 +143,12 @@ export async function POST(req: NextRequest) {
   let nextToken = body.nextToken?.trim() || undefined
   const seenTokens = new Set(nextToken ? [nextToken] : [])
   let truncated = false
+  let deferred = 0
 
   for (let page = 0; page < maxPages; page++) {
     const params = new URLSearchParams({
-      'tweet.fields': 'created_at,author_id,attachments,entities,note_tweet,referenced_tweets,conversation_id,in_reply_to_user_id',
-      'expansions': 'author_id,attachments.media_keys',
+      'tweet.fields': 'created_at,author_id,attachments,entities,note_tweet,article,referenced_tweets,conversation_id,in_reply_to_user_id',
+      'expansions': 'author_id,attachments.media_keys,article.cover_media,article.media_entities',
       'user.fields': 'name,username',
       'media.fields': 'type,url,preview_image_url,variants',
       'max_results': '100',
@@ -149,16 +179,12 @@ export async function POST(req: NextRequest) {
 
     for (const tweet of data.data) {
       total++
-      const existing = await prisma.bookmark.findUnique({
-        where: { tweetId: tweet.id },
-        select: { id: true },
-      })
-      if (existing) { await ensureArchiveRecord(existing.id); archiveIds.push(existing.id); skipped++; continue }
-
       const author = tweet.author_id ? usersMap.get(tweet.author_id) : undefined
-
-      // Import media
-      const mediaKeys = tweet.attachments?.media_keys ?? []
+      const mediaKeys = [...new Set([
+        ...(tweet.attachments?.media_keys ?? []),
+        ...(tweet.article?.cover_media ? [tweet.article.cover_media] : []),
+        ...(tweet.article?.media_entities ?? []),
+      ])]
       const mediaItems = mediaKeys
         .map((key) => {
           const media = mediaMap.get(key)
@@ -168,12 +194,76 @@ export async function POST(req: NextRequest) {
           return url ? { ...media, url } : undefined
         })
         .filter((m): m is XMedia => !!m)
+      const importedMedia = mediaItems.map((m) => ({
+        type: m.type === 'animated_gif' ? 'gif' : m.type,
+        url: m.url,
+        thumbnailUrl: m.preview_image_url ?? null,
+        mediaKey: m.media_key,
+        sourceTweetId: tweet.id,
+        sourceTweetUrl: `https://x.com/${author?.username ?? 'i'}/status/${tweet.id}`,
+        sourceMediaIndex: mediaKeys.indexOf(m.media_key),
+        sourceAuthorId: tweet.author_id,
+        sourceAuthorHandle: author?.username,
+      }))
+
+      const existing = await prisma.bookmark.findUnique({
+        where: { tweetId: tweet.id },
+        select: { id: true, text: true, rawJson: true },
+      })
+      if (existing) {
+        await ensureArchiveRecord(existing.id)
+        const preserveExistingText = !!(tweet.article && !tweet.article.plain_text &&
+          existing.text.trim() && existing.text.trim() !== tweet.text.trim())
+        const text = preserveExistingText ? existing.text : tweetFullText(tweet)
+        let refreshDeferred = false
+        if (tweet.article) {
+          refreshDeferred = await prisma.$transaction(async (tx) => {
+            const archive = await tx.archiveRecord.findUnique({
+              where: { bookmarkId: existing.id },
+              select: { status: true, lastError: true, startedAt: true, finishedAt: true },
+            })
+            if (!archive || archive.status === 'processing') return true
+            const claim = await tx.archiveRecord.updateMany({
+              where: { bookmarkId: existing.id, status: archive.status },
+              data: { status: 'processing', startedAt: new Date(), finishedAt: null, lastError: null },
+            })
+            if (claim.count !== 1) return true
+            const existingMedia = await tx.mediaItem.findMany({
+              where: { bookmarkId: existing.id },
+              select: { url: true, mediaKey: true },
+            })
+            const urls = new Set(existingMedia.map((item) => item.url))
+            const mediaKeys = new Set(existingMedia.map((item) => item.mediaKey).filter(Boolean))
+            const missingMedia = importedMediaData(existing.id, importedMedia).filter(
+              (item) => !urls.has(item.url) && !(item.mediaKey && mediaKeys.has(item.mediaKey)),
+            )
+            const rawJson = mergeArticleRaw(existing.rawJson, tweet)
+            await tx.bookmark.update({
+              where: { id: existing.id },
+              data: { text, rawJson },
+            })
+            if (missingMedia.length) await tx.mediaItem.createMany({ data: missingMedia })
+            const changed = text !== existing.text || rawJson !== existing.rawJson || missingMedia.length > 0
+            await tx.archiveRecord.update({
+              where: { bookmarkId: existing.id },
+              data: changed
+                ? { status: 'pending', lastError: null, startedAt: null, finishedAt: null }
+                : { status: archive.status, lastError: archive.lastError, startedAt: archive.startedAt, finishedAt: archive.finishedAt },
+            })
+            return false
+          })
+        }
+        if (refreshDeferred) deferred++
+        else archiveIds.push(existing.id)
+        skipped++
+        continue
+      }
 
       const created = await createImportedBookmark(
         prisma,
         {
           tweetId: tweet.id,
-          text: tweet.note_tweet?.text ?? tweet.text,
+          text: tweetFullText(tweet),
           authorHandle: author?.username ?? 'unknown',
           authorName: author?.name ?? 'Unknown',
           tweetCreatedAt: tweet.created_at ? new Date(tweet.created_at) : null,
@@ -181,17 +271,7 @@ export async function POST(req: NextRequest) {
           source: 'bookmark',
           archive: { create: {} },
         },
-        mediaItems.map((m) => ({
-          type: m.type === 'animated_gif' ? 'gif' : m.type,
-          url: m.url,
-          thumbnailUrl: m.preview_image_url ?? null,
-          mediaKey: m.media_key,
-          sourceTweetId: tweet.id,
-          sourceTweetUrl: `https://x.com/${author?.username ?? 'i'}/status/${tweet.id}`,
-          sourceMediaIndex: mediaKeys.indexOf(m.media_key),
-          sourceAuthorId: tweet.author_id,
-          sourceAuthorHandle: author?.username,
-        })),
+        importedMedia,
       )
 
       imported++
@@ -206,5 +286,5 @@ export async function POST(req: NextRequest) {
   }
 
   await enqueueIncompleteArchives(archiveIds)
-  return NextResponse.json({ imported, skipped, total, ...(truncated ? { truncated: true, nextToken } : {}) })
+  return NextResponse.json({ imported, skipped, total, ...(deferred ? { deferred } : {}), ...(truncated ? { truncated: true, nextToken } : {}) })
 }
