@@ -24,6 +24,7 @@ export interface BookmarkWithMedia {
   importedAt?: string
   mediaItems: MediaItem[]
   categories: BookmarkCategory[]
+  archive?: { status: string; attemptCount: number; lastError: string | null; updatedAt: string; result: Record<string, unknown> } | null
 }
 
 export interface Category {

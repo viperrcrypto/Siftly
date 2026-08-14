@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isSafeHttpUrl, safeFetch } from '@/lib/archive/safe-fetch'
 
 const CACHE_HEADERS = {
   'Cache-Control': 'public, max-age=86400', // cache 24h
@@ -6,27 +7,6 @@ const CACHE_HEADERS = {
 
 const BROWSER_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
-
-/** Block requests to private/loopback addresses to prevent SSRF */
-function isPrivateUrl(raw: string): boolean {
-  try {
-    const { protocol, hostname } = new URL(raw)
-    if (protocol !== 'http:' && protocol !== 'https:') return true
-    if (hostname === 'localhost' || hostname === '0.0.0.0') return true
-    // IPv4 private ranges
-    if (/^127\./.test(hostname)) return true
-    if (/^10\./.test(hostname)) return true
-    if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname)) return true
-    if (/^192\.168\./.test(hostname)) return true
-    if (/^169\.254\./.test(hostname)) return true  // link-local
-    // IPv6 loopback / ULA
-    if (hostname === '::1' || /^\[::1\]$/.test(hostname)) return true
-    if (/^fd[0-9a-f]{2,}:/i.test(hostname)) return true
-    return false
-  } catch {
-    return true // malformed URL
-  }
-}
 
 /** For JS-rendered platforms that can't be scraped, derive a human-readable title */
 function syntheticTitle(finalUrl: string, siteName: string): string {
@@ -135,7 +115,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'url required' }, { status: 400 })
   }
 
-  if (isPrivateUrl(url)) {
+  if (!isSafeHttpUrl(url)) {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
   }
 
@@ -144,41 +124,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const tweetId = rawTweetId && /^\d+$/.test(rawTweetId) ? rawTweetId : null
 
   try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': BROWSER_UA,
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-      },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(10000),
-    })
+    const res = await safeFetch(url, { maxBytes: 50_000, timeoutMs: 10_000, accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', truncate: true })
 
-    if (!res.ok) {
+    if (res.status < 200 || res.status >= 300) {
       return NextResponse.json({ error: `HTTP ${res.status}` }, { status: 502 })
     }
 
     // SSRF: re-check the final URL after redirects to prevent open-redirect chaining into private networks
-    if (isPrivateUrl(res.url)) {
+    if (!isSafeHttpUrl(res.url)) {
       return NextResponse.json({ error: 'Invalid URL' }, { status: 400 })
     }
 
-    // Only read first 50KB — enough for head tags
-    const reader = res.body?.getReader()
-    if (!reader) return NextResponse.json({ error: 'no body' }, { status: 502 })
-
-    let html = ''
-    let bytes = 0
-    while (bytes < 50_000) {
-      const { done, value } = await reader.read()
-      if (done) break
-      html += new TextDecoder().decode(value)
-      bytes += value.length
-      // Stop once we've passed </head>
-      if (html.includes('</head>')) break
-    }
-    reader.cancel().catch(() => {})
+    const html = res.body.toString('utf8')
 
     let finalUrl = res.url
 

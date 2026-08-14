@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { enqueueIncompleteArchives, ensureArchiveRecord } from '@/lib/archive/pipeline'
+import { createImportedBookmark } from '@/lib/media-import'
 
 const BEARER = 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I%2BxMb1nYFAA%3DUognEfK4ZPxYowpr4nMskopkC%2FDO'
 
@@ -65,6 +67,9 @@ interface MediaVariant {
 interface MediaEntity {
   type?: string
   media_url_https?: string
+  media_key?: string
+  id_str?: string
+  id?: string | number
   video_info?: { variants?: MediaVariant[] }
 }
 
@@ -217,17 +222,22 @@ function extractMedia(tweet: TweetResult) {
   const entities =
     tweet.legacy?.extended_entities?.media ?? tweet.legacy?.entities?.media ?? []
   const results = entities
-    .map((m) => {
+    .map((m, sourceMediaIndex) => {
       const thumb = m.media_url_https ?? ''
+      const identity = {
+        sourceTweetId: tweet.rest_id ?? null,
+        sourceMediaIndex,
+        mediaKey: m.media_key ?? m.id_str ?? (m.id === undefined ? null : String(m.id)),
+      }
       if (m.type === 'video' || m.type === 'animated_gif') {
         const url = bestVideoUrl(m.video_info?.variants ?? []) ?? thumb
         if (!url) return null
-        return { type: m.type === 'animated_gif' ? 'gif' : 'video', url, thumbnailUrl: thumb }
+        return { type: m.type === 'animated_gif' ? 'gif' : 'video', url, thumbnailUrl: thumb, ...identity }
       }
       if (!thumb) return null
-      return { type: 'photo' as const, url: thumb, thumbnailUrl: thumb }
+      return { type: 'photo' as const, url: thumb, thumbnailUrl: thumb, ...identity }
     })
-    .filter(Boolean) as { type: string; url: string; thumbnailUrl: string }[]
+    .filter(Boolean) as { type: string; url: string; thumbnailUrl: string; mediaKey: string | null; sourceTweetId: string | null; sourceMediaIndex: number }[]
 
   if (results.length === 0) {
     const article = tweet.article?.article_results?.result
@@ -235,7 +245,7 @@ function extractMedia(tweet: TweetResult) {
       article?.cover_media?.media_info?.original_img_url ??
       article?.preview_image?.url
     if (coverUrl) {
-      results.push({ type: 'photo', url: coverUrl, thumbnailUrl: coverUrl })
+      results.push({ type: 'photo', url: coverUrl, thumbnailUrl: coverUrl, mediaKey: null, sourceTweetId: tweet.rest_id ?? null, sourceMediaIndex: 0 })
     }
   }
 
@@ -243,33 +253,48 @@ function extractMedia(tweet: TweetResult) {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  let body: { authToken?: string; ct0?: string; source?: string; userId?: string } = {}
+  let body: { authToken?: string; ct0?: string; source?: string; userId?: string; cursor?: string; nextCursor?: string } = {}
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
 
-  const { authToken, ct0 } = body
+  const authToken = typeof body.authToken === 'string' ? body.authToken.trim() : ''
+  const ct0 = typeof body.ct0 === 'string' ? body.ct0.trim() : ''
   const source: Source = body.source === 'like' ? 'like' : 'bookmark'
-  const userId = body.userId?.trim()
+  const userId = typeof body.userId === 'string' ? body.userId.trim() : undefined
+  const requestedCursor = body.cursor ?? body.nextCursor
 
-  if (!authToken?.trim() || !ct0?.trim()) {
+  if (!authToken || !ct0) {
     return NextResponse.json({ error: 'authToken and ct0 are required' }, { status: 400 })
   }
 
   if (source === 'like' && !userId) {
     return NextResponse.json({ error: 'userId is required for importing likes' }, { status: 400 })
   }
+  if (requestedCursor !== undefined && typeof requestedCursor !== 'string') {
+    return NextResponse.json({ error: 'cursor must be a string' }, { status: 400 })
+  }
 
   let imported = 0
   let skipped = 0
-  let cursor: string | undefined
+  const archiveIds: string[] = []
+  let cursor = requestedCursor?.trim() || undefined
+  const seenCursors = new Set(cursor ? [cursor] : [])
+  const maxPages = 20
+  let truncated = false
+  let nextCursor: string | null = null
 
   try {
-    while (true) {
-      const data = await fetchPage(authToken.trim(), ct0.trim(), source, cursor, userId)
-      const { tweets, nextCursor } = parsePage(data, source)
+    for (let page = 0; page < maxPages; page++) {
+      const data = await fetchPage(authToken, ct0, source, cursor, userId)
+      const pageResult = parsePage(data, source)
+      nextCursor = pageResult.nextCursor
+      const { tweets } = pageResult
 
       for (const tweet of tweets) {
         if (!tweet.rest_id) continue
@@ -280,6 +305,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         })
 
         if (exists) {
+          await ensureArchiveRecord(exists.id)
+          archiveIds.push(exists.id)
           skipped++
           continue
         }
@@ -287,8 +314,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const media = extractMedia(tweet)
         const userLegacy = tweet.core?.user_results?.result?.legacy ?? {}
 
-        const created = await prisma.bookmark.create({
-          data: {
+        const created = await createImportedBookmark(
+          prisma,
+          {
             tweetId: tweet.rest_id,
             text: tweetFullText(tweet),
             authorHandle: userLegacy.screen_name ?? 'unknown',
@@ -298,24 +326,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               : null,
             rawJson: JSON.stringify(tweet),
             source,
+            archive: { create: {} },
           },
-        })
-
-        if (media.length > 0) {
-          await prisma.mediaItem.createMany({
-            data: media.map((m) => ({
-              bookmarkId: created.id,
-              type: m.type,
-              url: m.url,
-              thumbnailUrl: m.thumbnailUrl ?? null,
-            })),
-          })
-        }
+          media,
+        )
 
         imported++
+        archiveIds.push(created.id)
       }
 
-      if (!nextCursor || tweets.length === 0) break
+      if (!nextCursor || tweets.length === 0 || seenCursors.has(nextCursor)) break
+      if (page === maxPages - 1) {
+        truncated = true
+        break
+      }
+      seenCursors.add(nextCursor)
       cursor = nextCursor
     }
   } catch (err) {
@@ -336,5 +361,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }).catch(() => { /* best-effort */ })
   }
 
-  return NextResponse.json({ imported, skipped })
+  await enqueueIncompleteArchives(archiveIds)
+
+  return NextResponse.json({ imported, skipped, ...(truncated ? { truncated: true, nextCursor } : {}) })
 }

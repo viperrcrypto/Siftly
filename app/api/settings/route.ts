@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { invalidateSettingsCache } from '@/lib/settings'
 import { validateVaultPath } from '@/lib/obsidian-exporter'
+import { safeRelativePath } from '@/lib/archive/clipper'
+import { validateGallerySettings } from '@/lib/archive/gallery-dl'
 
 function maskKey(raw: string | null): string | null {
   if (!raw) return null
@@ -31,7 +33,7 @@ const ALLOWED_MINIMAX_MODELS = [
 
 export async function GET(): Promise<NextResponse> {
   try {
-    const [anthropic, anthropicModel, provider, openai, openaiModel, minimax, minimaxModel, xClientId, xClientSecret, obsidianVault] = await Promise.all([
+    const [anthropic, anthropicModel, provider, openai, openaiModel, minimax, minimaxModel, xClientId, xClientSecret, obsidianVault, archiveEnabled, autoAfterImport, archiveTemplateDir, galleryDlPath, cookieBrowser, downloadXVideo, downloadPdf, sourceResolverEnabled, archiveRoot] = await Promise.all([
       prisma.setting.findUnique({ where: { key: 'anthropicApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'anthropicModel' } }),
       prisma.setting.findUnique({ where: { key: 'aiProvider' } }),
@@ -42,6 +44,15 @@ export async function GET(): Promise<NextResponse> {
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_id' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_secret' } }),
       prisma.setting.findUnique({ where: { key: 'obsidianVaultPath' } }),
+      prisma.setting.findUnique({ where: { key: 'archiveEnabled' } }),
+      prisma.setting.findUnique({ where: { key: 'autoAfterImport' } }),
+      prisma.setting.findUnique({ where: { key: 'archiveTemplateDir' } }),
+      prisma.setting.findUnique({ where: { key: 'galleryDlPath' } }),
+      prisma.setting.findUnique({ where: { key: 'cookieBrowser' } }),
+      prisma.setting.findUnique({ where: { key: 'downloadXVideo' } }),
+      prisma.setting.findUnique({ where: { key: 'downloadPdf' } }),
+      prisma.setting.findUnique({ where: { key: 'sourceResolverEnabled' } }),
+      prisma.setting.findUnique({ where: { key: 'archiveRoot' } }),
     ])
 
     return NextResponse.json({
@@ -59,6 +70,10 @@ export async function GET(): Promise<NextResponse> {
       xOAuthClientSecret: maskKey(xClientSecret?.value ?? null),
       hasXOAuth: !!xClientId?.value,
       obsidianVaultPath: obsidianVault?.value ?? null,
+      archiveEnabled: archiveEnabled?.value === 'true', autoAfterImport: autoAfterImport?.value === 'true',
+      archiveTemplateDir: archiveTemplateDir?.value ?? null, galleryDlPath: galleryDlPath?.value ?? null,
+      cookieBrowser: cookieBrowser?.value ?? null, downloadXVideo: downloadXVideo?.value === 'true',
+      downloadPdf: downloadPdf?.value === 'true', sourceResolverEnabled: sourceResolverEnabled?.value !== 'false', archiveRoot: archiveRoot?.value ?? 'Clippings/Siftly',
     })
   } catch (err) {
     console.error('Settings GET error:', err)
@@ -81,187 +96,103 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     xOAuthClientId?: string
     xOAuthClientSecret?: string
     obsidianVaultPath?: string
+    archiveEnabled?: boolean
+    autoAfterImport?: boolean
+    archiveTemplateDir?: string
+    galleryDlPath?: string
+    cookieBrowser?: string
+    downloadXVideo?: boolean
+    downloadPdf?: boolean
+    sourceResolverEnabled?: boolean
+    archiveRoot?: string
   } = {}
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
-
-  const { anthropicApiKey, anthropicModel, provider, openaiApiKey, openaiModel, minimaxApiKey, minimaxModel } = body
-
-  // Save provider if provided
-  if (provider !== undefined) {
-    if (provider !== 'anthropic' && provider !== 'openai' && provider !== 'minimax') {
-      return NextResponse.json({ error: 'Invalid provider' }, { status: 400 })
-    }
-    await prisma.setting.upsert({
-      where: { key: 'aiProvider' },
-      update: { value: provider },
-      create: { key: 'aiProvider', value: provider },
-    })
-    invalidateSettingsCache()
-    return NextResponse.json({ saved: true })
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  // Save Anthropic model if provided
-  if (anthropicModel !== undefined) {
-    if (!(ALLOWED_ANTHROPIC_MODELS as readonly string[]).includes(anthropicModel)) {
-      return NextResponse.json({ error: 'Invalid Anthropic model' }, { status: 400 })
-    }
-    await prisma.setting.upsert({
-      where: { key: 'anthropicModel' },
-      update: { value: anthropicModel },
-      create: { key: 'anthropicModel', value: anthropicModel },
-    })
-    invalidateSettingsCache()
-    return NextResponse.json({ saved: true })
+  const updates: Array<{ key: string; value: string }> = []
+  let clearVault = false
+  const set = (key: string, value: string) => updates.push({ key, value })
+  const keyValues = [
+    ['anthropicApiKey', body.anthropicApiKey], ['openaiApiKey', body.openaiApiKey], ['minimaxApiKey', body.minimaxApiKey],
+  ] as const
+  for (const [key, value] of keyValues) {
+    if (value === undefined) continue
+    if (typeof value !== 'string' || !value.trim()) return NextResponse.json({ error: `Invalid ${key} value` }, { status: 400 })
+    set(key, value.trim())
   }
 
-  // Save OpenAI model if provided
-  if (openaiModel !== undefined) {
-    if (!(ALLOWED_OPENAI_MODELS as readonly string[]).includes(openaiModel)) {
-      return NextResponse.json({ error: 'Invalid OpenAI model' }, { status: 400 })
-    }
-    await prisma.setting.upsert({
-      where: { key: 'openaiModel' },
-      update: { value: openaiModel },
-      create: { key: 'openaiModel', value: openaiModel },
-    })
-    invalidateSettingsCache()
-    return NextResponse.json({ saved: true })
+  if (body.provider !== undefined) {
+    if (body.provider !== 'anthropic' && body.provider !== 'openai' && body.provider !== 'minimax') return NextResponse.json({ error: 'Invalid provider' }, { status: 400 })
+    set('aiProvider', body.provider)
+  }
+  const models = [
+    ['anthropicModel', body.anthropicModel, ALLOWED_ANTHROPIC_MODELS, 'Invalid Anthropic model'],
+    ['openaiModel', body.openaiModel, ALLOWED_OPENAI_MODELS, 'Invalid OpenAI model'],
+    ['minimaxModel', body.minimaxModel, ALLOWED_MINIMAX_MODELS, 'Invalid MiniMax model'],
+  ] as const
+  for (const [key, value, allowed, error] of models) {
+    if (value === undefined) continue
+    if (!(allowed as readonly string[]).includes(value)) return NextResponse.json({ error }, { status: 400 })
+    set(key, value)
   }
 
-  // Save MiniMax model if provided
-  if (minimaxModel !== undefined) {
-    if (!(ALLOWED_MINIMAX_MODELS as readonly string[]).includes(minimaxModel)) {
-      return NextResponse.json({ error: 'Invalid MiniMax model' }, { status: 400 })
-    }
-    await prisma.setting.upsert({
-      where: { key: 'minimaxModel' },
-      update: { value: minimaxModel },
-      create: { key: 'minimaxModel', value: minimaxModel },
-    })
-    invalidateSettingsCache()
-    return NextResponse.json({ saved: true })
+  for (const [key, value] of [['x_oauth_client_id', body.xOAuthClientId], ['x_oauth_client_secret', body.xOAuthClientSecret]] as const) {
+    if (value === undefined) continue
+    if (typeof value !== 'string') return NextResponse.json({ error: `Invalid ${key} value` }, { status: 400 })
+    if (value.trim()) set(key, value.trim())
   }
 
-  // Save Anthropic key if provided
-  if (anthropicApiKey !== undefined) {
-    if (typeof anthropicApiKey !== 'string' || anthropicApiKey.trim() === '') {
-      return NextResponse.json({ error: 'Invalid anthropicApiKey value' }, { status: 400 })
-    }
-    const trimmed = anthropicApiKey.trim()
-    try {
-      await prisma.setting.upsert({
-        where: { key: 'anthropicApiKey' },
-        update: { value: trimmed },
-        create: { key: 'anthropicApiKey', value: trimmed },
-      })
-      invalidateSettingsCache()
-      return NextResponse.json({ saved: true })
-    } catch (err) {
-      console.error('Settings POST (anthropic) error:', err)
-      return NextResponse.json(
-        { error: `Failed to save: ${err instanceof Error ? err.message : String(err)}` },
-        { status: 500 }
-      )
-    }
-  }
-
-  // Save OpenAI key if provided
-  if (openaiApiKey !== undefined) {
-    if (typeof openaiApiKey !== 'string' || openaiApiKey.trim() === '') {
-      return NextResponse.json({ error: 'Invalid openaiApiKey value' }, { status: 400 })
-    }
-    const trimmed = openaiApiKey.trim()
-    try {
-      await prisma.setting.upsert({
-        where: { key: 'openaiApiKey' },
-        update: { value: trimmed },
-        create: { key: 'openaiApiKey', value: trimmed },
-      })
-      invalidateSettingsCache()
-      return NextResponse.json({ saved: true })
-    } catch (err) {
-      console.error('Settings POST (openai) error:', err)
-      return NextResponse.json(
-        { error: `Failed to save: ${err instanceof Error ? err.message : String(err)}` },
-        { status: 500 }
-      )
-    }
-  }
-
-  // Save MiniMax key if provided
-  if (minimaxApiKey !== undefined) {
-    if (typeof minimaxApiKey !== 'string' || minimaxApiKey.trim() === '') {
-      return NextResponse.json({ error: 'Invalid minimaxApiKey value' }, { status: 400 })
-    }
-    const trimmed = minimaxApiKey.trim()
-    try {
-      await prisma.setting.upsert({
-        where: { key: 'minimaxApiKey' },
-        update: { value: trimmed },
-        create: { key: 'minimaxApiKey', value: trimmed },
-      })
-      invalidateSettingsCache()
-      return NextResponse.json({ saved: true })
-    } catch (err) {
-      console.error('Settings POST (minimax) error:', err)
-      return NextResponse.json(
-        { error: `Failed to save: ${err instanceof Error ? err.message : String(err)}` },
-        { status: 500 }
-      )
-    }
-  }
-
-  // Save Obsidian vault path if provided
   if (body.obsidianVaultPath !== undefined) {
-    const trimmed = body.obsidianVaultPath.trim()
-    if (!trimmed) {
-      // Allow clearing the path
-      await prisma.setting.deleteMany({ where: { key: 'obsidianVaultPath' } })
-      return NextResponse.json({ saved: true })
+    if (typeof body.obsidianVaultPath !== 'string') return NextResponse.json({ error: 'Invalid obsidianVaultPath value' }, { status: 400 })
+    const vaultPath = body.obsidianVaultPath.trim()
+    if (!vaultPath) clearVault = true
+    else {
+      const validation = await validateVaultPath(vaultPath)
+      if (!validation.valid) return NextResponse.json({ error: `Invalid vault path: ${validation.error}` }, { status: 400 })
+      set('obsidianVaultPath', vaultPath)
     }
-    const validation = await validateVaultPath(trimmed)
-    if (!validation.valid) {
-      return NextResponse.json({ error: `Invalid vault path: ${validation.error}` }, { status: 400 })
-    }
-    await prisma.setting.upsert({
-      where: { key: 'obsidianVaultPath' },
-      update: { value: trimmed },
-      create: { key: 'obsidianVaultPath', value: trimmed },
-    })
-    return NextResponse.json({ saved: true })
   }
 
-  // Save X OAuth credentials if provided
-  const { xOAuthClientId, xOAuthClientSecret } = body
-  const xKeys: { key: string; value: string | undefined }[] = [
-    { key: 'x_oauth_client_id', value: xOAuthClientId },
-    { key: 'x_oauth_client_secret', value: xOAuthClientSecret },
-  ]
-  const xToSave = xKeys.filter((k) => k.value !== undefined && k.value.trim() !== '')
-  if (xToSave.length > 0) {
+  const booleanArchiveKeys = ['archiveEnabled', 'autoAfterImport', 'downloadXVideo', 'downloadPdf', 'sourceResolverEnabled'] as const
+  for (const key of booleanArchiveKeys) {
+    const value = body[key]
+    if (value === undefined) continue
+    if (typeof value !== 'boolean') return NextResponse.json({ error: `Invalid ${key}` }, { status: 400 })
+    set(key, String(value))
+  }
+  for (const key of ['archiveTemplateDir', 'galleryDlPath', 'cookieBrowser', 'archiveRoot'] as const) {
+    const value = body[key]
+    if (value === undefined) continue
+    if (typeof value !== 'string') return NextResponse.json({ error: `Invalid ${key}` }, { status: 400 })
+    const normalized = value.trim()
     try {
-      for (const { key, value } of xToSave) {
-        await prisma.setting.upsert({
-          where: { key },
-          update: { value: value!.trim() },
-          create: { key, value: value!.trim() },
-        })
-      }
-      return NextResponse.json({ saved: true })
-    } catch (err) {
-      console.error('Settings POST (X OAuth) error:', err)
-      return NextResponse.json(
-        { error: `Failed to save: ${err instanceof Error ? err.message : String(err)}` },
-        { status: 500 },
-      )
+      if (key === 'archiveRoot') safeRelativePath(normalized)
+      if (key === 'galleryDlPath') validateGallerySettings(normalized || undefined, undefined)
+      if (key === 'cookieBrowser') validateGallerySettings(undefined, normalized || undefined)
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : `Invalid ${key}` }, { status: 400 })
     }
+    set(key, normalized)
   }
 
-  return NextResponse.json({ error: 'No setting provided' }, { status: 400 })
+  if (!updates.length && !clearVault) return NextResponse.json({ error: 'No setting provided' }, { status: 400 })
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (clearVault) await tx.setting.deleteMany({ where: { key: 'obsidianVaultPath' } })
+      for (const { key, value } of updates) await tx.setting.upsert({ where: { key }, update: { value }, create: { key, value } })
+    })
+    invalidateSettingsCache()
+    return NextResponse.json({ saved: true })
+  } catch (error) {
+    console.error('Settings POST error:', error)
+    return NextResponse.json({ error: `Failed to save: ${error instanceof Error ? error.message : String(error)}` }, { status: 500 })
+  }
 }
 
 export async function DELETE(request: NextRequest): Promise<NextResponse> {

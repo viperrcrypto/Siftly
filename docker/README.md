@@ -45,6 +45,10 @@ The `docker/.env` file is loaded automatically by Compose and is gitignored — 
 
 *AI features won't work without at least one of `ANTHROPIC_CLI_KEY` or `ANTHROPIC_API_KEY`.
 
+## Obsidian 自動アーカイブ
+
+コンテナからVaultを使う場合は、Vaultを書き込み可能なホストボリュームとして明示的にマウントし、そのコンテナ内パスをSettingsに設定してください。`gallery-dl` はイメージに含まれないため、Xスレッド復元を使う場合はカスタムイメージで導入し、Settingsのbinary pathへ設定します。外部動画は保存しません。
+
 **Which key should I use?**
 
 - If you have a Claude subscription (Max, Pro, etc.) and use the CLI locally, use `ANTHROPIC_CLI_KEY` — it's free under your subscription.

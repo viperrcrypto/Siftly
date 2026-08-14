@@ -79,6 +79,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         orderBy: [{ tweetCreatedAt: orderDir }, { importedAt: orderDir }],
         include: {
           mediaItems: true,
+          archive: { select: { status: true, attemptCount: true, lastError: true, resultJson: true, updatedAt: true } },
           categories: {
             include: {
               category: {
@@ -118,6 +119,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         color: bc.category.color,
         confidence: bc.confidence,
       })),
+      archive: bookmark.archive ? {
+        status: bookmark.archive.status, attemptCount: bookmark.archive.attemptCount, lastError: bookmark.archive.lastError,
+        updatedAt: bookmark.archive.updatedAt.toISOString(),
+        result: (() => { try { return JSON.parse(bookmark.archive!.resultJson) } catch { return {} } })(),
+      } : null,
     }))
 
     return NextResponse.json({

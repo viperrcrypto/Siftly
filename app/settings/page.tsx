@@ -749,7 +749,7 @@ function FolderBrowser({ onSelect, onClose }: { onSelect: (path: string) => void
     setLoading(false)
   }, [])
 
-  useEffect(() => { browse() }, [browse])
+  useEffect(() => { queueMicrotask(() => { void browse() }) }, [browse])
 
   return (
     <div className="border border-zinc-700 rounded-xl bg-zinc-800/50 overflow-hidden">
@@ -960,6 +960,23 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
       </div>
     </Section>
   )
+}
+
+function ArchiveSettingsBlock({ onToast }: { onToast: (t: Toast) => void }) {
+  const [settings, setSettings] = useState({ archiveEnabled: false, autoAfterImport: false, archiveTemplateDir: '', galleryDlPath: '', cookieBrowser: '', downloadXVideo: false, downloadPdf: false, sourceResolverEnabled: true, archiveRoot: 'Clippings/Siftly' })
+  useEffect(() => { fetch('/api/settings').then((r) => r.json()).then((data) => setSettings({ archiveEnabled: data.archiveEnabled === true, autoAfterImport: data.autoAfterImport === true, archiveTemplateDir: data.archiveTemplateDir ?? '', galleryDlPath: data.galleryDlPath ?? '', cookieBrowser: data.cookieBrowser ?? '', downloadXVideo: data.downloadXVideo === true, downloadPdf: data.downloadPdf === true, sourceResolverEnabled: data.sourceResolverEnabled !== false, archiveRoot: data.archiveRoot ?? 'Clippings/Siftly' })).catch(() => {}) }, [])
+  async function save() {
+    const res = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) })
+    const body = await res.json().catch(() => ({}))
+    onToast({ type: res.ok ? 'success' : 'error', message: res.ok ? 'アーカイブ設定を保存しました' : body.error ?? '保存できませんでした' })
+  }
+  return <Section icon={BookOpen} title="自動アーカイブ" description="新しいXブックマークをObsidian Web Clipperテンプレートで保存します。">
+    <div className="space-y-3 text-sm text-zinc-300">
+      {[['archiveEnabled', 'アーカイブを有効化'], ['autoAfterImport', 'インポート後に自動実行'], ['sourceResolverEnabled', '外部Sourceを解決・clip'], ['downloadXVideo', 'Xネイティブ動画を保存'], ['downloadPdf', 'PDFを保存（既定では無効）']].map(([key, label]) => <label key={key} className="flex items-center gap-2"><input type="checkbox" checked={settings[key as keyof typeof settings] as boolean} onChange={(event) => setSettings({ ...settings, [key]: event.target.checked })} />{label}</label>)}
+      {[['archiveTemplateDir', 'Web Clipper テンプレート'], ['galleryDlPath', 'gallery-dl のパス'], ['cookieBrowser', 'Cookieブラウザー名（任意）'], ['archiveRoot', 'アーカイブ保存先']].map(([key, label]) => <label key={key} className="block"><span className="mb-1 block text-xs text-zinc-500">{label}</span><input value={settings[key as keyof typeof settings] as string} onChange={(event) => setSettings({ ...settings, [key]: event.target.value })} className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-xs" /></label>)}
+      <button onClick={() => void save()} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-500">保存</button>
+    </div>
+  </Section>
 }
 
 function DataSection() {
@@ -1315,6 +1332,7 @@ export default function SettingsPage() {
         <XOAuthSection onToast={showToast} />
         <DataSection />
         <ObsidianExportBlock onToast={showToast} />
+        <ArchiveSettingsBlock onToast={showToast} />
         <DangerZoneSection onToast={showToast} />
         <AboutSection />
       </div>

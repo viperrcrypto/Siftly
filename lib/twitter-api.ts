@@ -1,4 +1,6 @@
 import prisma from '@/lib/db'
+import { enqueueIncompleteArchives, ensureArchiveRecord } from '@/lib/archive/pipeline'
+import { createImportedBookmark } from '@/lib/media-import'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -42,6 +44,8 @@ interface MediaVariant {
 interface MediaEntity {
   type?: string
   media_url_https?: string
+  media_key?: string
+  id_str?: string
   video_info?: { variants?: MediaVariant[] }
 }
 
@@ -165,17 +169,17 @@ export function extractMedia(tweet: TweetResult) {
   const entities =
     tweet.legacy?.extended_entities?.media ?? tweet.legacy?.entities?.media ?? []
   const results = entities
-    .map((m) => {
+    .map((m, sourceMediaIndex) => {
       const thumb = m.media_url_https ?? ''
       if (m.type === 'video' || m.type === 'animated_gif') {
         const url = bestVideoUrl(m.video_info?.variants ?? []) ?? thumb
         if (!url) return null
-        return { type: m.type === 'animated_gif' ? 'gif' : 'video', url, thumbnailUrl: thumb }
+        return { type: m.type === 'animated_gif' ? 'gif' : 'video', url, thumbnailUrl: thumb, mediaKey: m.media_key ?? m.id_str ?? null, sourceTweetId: tweet.rest_id ?? null, sourceMediaIndex }
       }
       if (!thumb) return null
-      return { type: 'photo' as const, url: thumb, thumbnailUrl: thumb }
+      return { type: 'photo' as const, url: thumb, thumbnailUrl: thumb, mediaKey: m.media_key ?? m.id_str ?? null, sourceTweetId: tweet.rest_id ?? null, sourceMediaIndex }
     })
-    .filter(Boolean) as { type: string; url: string; thumbnailUrl: string }[]
+    .filter(Boolean) as { type: string; url: string; thumbnailUrl: string; mediaKey: string | null; sourceTweetId: string | null; sourceMediaIndex: number }[]
 
   // If no media from entities, try article cover/preview image
   if (results.length === 0) {
@@ -184,7 +188,7 @@ export function extractMedia(tweet: TweetResult) {
       article?.cover_media?.media_info?.original_img_url ??
       article?.preview_image?.url
     if (coverUrl) {
-      results.push({ type: 'photo', url: coverUrl, thumbnailUrl: coverUrl })
+      results.push({ type: 'photo', url: coverUrl, thumbnailUrl: coverUrl, mediaKey: null, sourceTweetId: tweet.rest_id ?? null, sourceMediaIndex: 0 })
     }
   }
 
@@ -239,6 +243,7 @@ export async function importTweets(
 ): Promise<{ imported: number; skipped: number }> {
   let imported = 0
   let skipped = 0
+  const archiveIds: string[] = []
 
   for (const tweet of tweets) {
     if (!tweet.rest_id) continue
@@ -250,6 +255,8 @@ export async function importTweets(
       })
 
       if (exists) {
+        await ensureArchiveRecord(exists.id)
+        archiveIds.push(exists.id)
         skipped++
         continue
       }
@@ -264,33 +271,27 @@ export async function importTweets(
         if (!isNaN(d.getTime())) parsedDate = d
       }
 
-      const created = await prisma.bookmark.create({
-        data: {
+      const created = await createImportedBookmark(
+        prisma,
+        {
           tweetId: tweet.rest_id,
           text: tweetFullText(tweet),
           authorHandle: userLegacy.screen_name ?? 'unknown',
           authorName: userLegacy.name ?? 'Unknown',
           tweetCreatedAt: parsedDate,
           rawJson: JSON.stringify(tweet),
+          archive: { create: {} },
         },
-      })
-
-      if (media.length > 0) {
-        await prisma.mediaItem.createMany({
-          data: media.map((m) => ({
-            bookmarkId: created.id,
-            type: m.type,
-            url: m.url,
-            thumbnailUrl: m.thumbnailUrl ?? null,
-          })),
-        })
-      }
+        media,
+      )
 
       imported++
+      archiveIds.push(created.id)
     } catch (err) {
       console.error(`[twitter-api] Failed to import tweet ${tweet.rest_id}:`, err instanceof Error ? err.message : err)
     }
   }
 
+  await enqueueIncompleteArchives(archiveIds)
   return { imported, skipped }
 }

@@ -665,6 +665,7 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
   const [syncing, setSyncing] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
   const [error, setError] = useState('')
+  const [continuationToken, setContinuationToken] = useState<string | null>(null)
 
   // Check for OAuth callback params in URL
   useEffect(() => {
@@ -674,7 +675,7 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
       window.history.replaceState({}, '', window.location.pathname)
     }
     if (params.get('x_error')) {
-      setError(`OAuth error: ${params.get('x_error')}`)
+      queueMicrotask(() => setError(`OAuth error: ${params.get('x_error')}`))
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
@@ -719,22 +720,19 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
     }
   }
 
-  async function handleFetchBookmarks() {
+  async function handleFetchBookmarks(nextToken?: string) {
     setError('')
     setSyncing(true)
     try {
       const res = await fetch('/api/import/x-oauth/fetch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ maxPages: 10 }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxPages: 10, ...(nextToken ? { nextToken } : {}) }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Fetch failed')
+      setContinuationToken(data.truncated && data.nextToken ? data.nextToken : null)
       onSynced({
-        imported: data.imported ?? 0,
-        skipped: data.skipped ?? 0,
-        total: data.total ?? 0,
-        parsed: data.total ?? 0,
+        imported: data.imported ?? 0, skipped: data.skipped ?? 0, total: data.total ?? 0, parsed: data.total ?? 0,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Fetch failed')
@@ -833,7 +831,7 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
           )}
 
           <button
-            onClick={handleFetchBookmarks}
+            onClick={() => handleFetchBookmarks()}
             disabled={syncing}
             className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-medium transition-colors flex items-center justify-center gap-2"
           >
@@ -849,6 +847,11 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
               </>
             )}
           </button>
+          {continuationToken && (
+            <button onClick={() => handleFetchBookmarks(continuationToken)} disabled={syncing} className="w-full py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-60 text-sm text-white transition-colors">
+              Continue next 10 pages
+            </button>
+          )}
         </>
       )}
 

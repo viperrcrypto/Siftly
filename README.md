@@ -148,6 +148,12 @@ Siftly has **built-in import tools** — no browser extensions required. Go to t
 
 Re-import anytime — Siftly automatically skips duplicates and only adds new bookmarks.
 
+### Obsidian 自動アーカイブ
+
+Settings で Vault、Web Clipper テンプレートディレクトリ、必要に応じて `gallery-dl` の絶対パスを設定し、「アーカイブを有効化」と「インポート後に自動実行」をオンにします。`gallery-dl` はホストに別途導入してください（例: `brew install gallery-dl`）。Cookie を使う場合はブラウザー名だけを設定します。Cookie の値はSiftlyのDBやログに保存されません。
+
+Xに直接添付された写真を保存し、設定を有効にした場合はネイティブGIF・動画も保存します。YouTube/Vimeo/TikTokなど外部動画とPDFはURLだけを記録し、PDFの保存は既定で無効です。アーカイブは詳細画面の「再実行」から部分失敗だけを安全に再試行できます。
+
 ---
 
 ## AI Categorization
@@ -411,7 +417,7 @@ Add domain strings to `KNOWN_TOOL_DOMAINS` in `lib/rawjson-extractor.ts` to have
 ## Privacy
 
 - All data is stored **locally** in a SQLite file on your machine
-- The only external calls are to the AI provider you configure (tweet text + image data)
+- AI機能の外部通信先は、設定したAI providerだけです（tweet text + image data）。ただし自動アーカイブを明示的に有効化した場合は、gallery-dl/X、参照記事、および許可したXネイティブメディアへも通信します。外部動画のダウンロードは行いません。
 - No telemetry, no tracking, no accounts required
 - Your bookmarks never touch any third-party server except your configured AI endpoint
 

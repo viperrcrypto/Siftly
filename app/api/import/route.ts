@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { parseBookmarksJson } from '@/lib/parser'
+import { enqueueIncompleteArchives, ensureArchiveRecord } from '@/lib/archive/pipeline'
+import { createImportedBookmark } from '@/lib/media-import'
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let formData: FormData
@@ -73,6 +75,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   let importedCount = 0
   let skippedCount = 0
+  const archiveIds: string[] = []
 
   for (const bookmark of parsedBookmarks) {
     try {
@@ -82,12 +85,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       })
 
       if (existing) {
+        await ensureArchiveRecord(existing.id)
+        archiveIds.push(existing.id)
         skippedCount++
         continue
       }
 
-      const created = await prisma.bookmark.create({
-        data: {
+      const created = await createImportedBookmark(
+        prisma,
+        {
           tweetId: bookmark.tweetId,
           text: bookmark.text,
           authorHandle: bookmark.authorHandle,
@@ -95,21 +101,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           tweetCreatedAt: bookmark.tweetCreatedAt,
           rawJson: bookmark.rawJson,
           source,
+          archive: { create: {} },
         },
-      })
-
-      if (bookmark.media.length > 0) {
-        await prisma.mediaItem.createMany({
-          data: bookmark.media.map((m) => ({
-            bookmarkId: created.id,
-            type: m.type,
-            url: m.url,
-            thumbnailUrl: m.thumbnailUrl ?? null,
-          })),
-        })
-      }
+        bookmark.media,
+      )
 
       importedCount++
+      archiveIds.push(created.id)
     } catch (err) {
       console.error(`Failed to import tweet ${bookmark.tweetId}:`, err)
       skippedCount++
@@ -123,6 +121,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       processedCount: importedCount,
     },
   })
+
+  await enqueueIncompleteArchives(archiveIds)
 
   return NextResponse.json({
     jobId: importJob.id,

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { enqueueIncompleteArchives, ensureArchiveRecord } from '@/lib/archive/pipeline'
+import { createImportedBookmark } from '@/lib/media-import'
 
 interface XTweet {
   id: string
@@ -7,6 +9,11 @@ interface XTweet {
   created_at?: string
   author_id?: string
   attachments?: { media_keys?: string[] }
+  entities?: { urls?: Array<{ url?: string; expanded_url?: string; unwound_url?: string }> }
+  note_tweet?: { text?: string; entities?: { urls?: Array<{ url?: string; expanded_url?: string; unwound_url?: string }> } }
+  referenced_tweets?: Array<{ type: 'replied_to' | 'quoted' | 'retweeted'; id: string }>
+  conversation_id?: string
+  in_reply_to_user_id?: string
 }
 
 interface XUser {
@@ -20,6 +27,7 @@ interface XMedia {
   type: 'photo' | 'video' | 'animated_gif'
   url?: string
   preview_image_url?: string
+  variants?: Array<{ content_type?: string; bit_rate?: number; url?: string }>
 }
 
 interface XBookmarksResponse {
@@ -84,8 +92,11 @@ async function getValidToken(): Promise<string | null> {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({})) as { maxPages?: number }
-  const maxPages = Math.min(body.maxPages ?? 5, 20)
+  const body = await req.json().catch(() => ({})) as { maxPages?: number; nextToken?: string }
+  const maxPages = Math.min(Math.max(1, Number.isInteger(body.maxPages) ? body.maxPages! : 10), 10)
+  if (body.nextToken !== undefined && (typeof body.nextToken !== 'string' || !body.nextToken.trim())) {
+    return NextResponse.json({ error: 'Invalid nextToken' }, { status: 400 })
+  }
 
   const token = await getValidToken()
   if (!token) {
@@ -95,14 +106,17 @@ export async function POST(req: NextRequest) {
   let imported = 0
   let skipped = 0
   let total = 0
-  let nextToken: string | undefined
+  const archiveIds: string[] = []
+  let nextToken = body.nextToken?.trim() || undefined
+  const seenTokens = new Set(nextToken ? [nextToken] : [])
+  let truncated = false
 
   for (let page = 0; page < maxPages; page++) {
     const params = new URLSearchParams({
-      'tweet.fields': 'created_at,author_id,attachments',
+      'tweet.fields': 'created_at,author_id,attachments,entities,note_tweet,referenced_tweets,conversation_id,in_reply_to_user_id',
       'expansions': 'author_id,attachments.media_keys',
       'user.fields': 'name,username',
-      'media.fields': 'type,url,preview_image_url',
+      'media.fields': 'type,url,preview_image_url,variants',
       'max_results': '100',
     })
     if (nextToken) params.set('pagination_token', nextToken)
@@ -135,45 +149,58 @@ export async function POST(req: NextRequest) {
         where: { tweetId: tweet.id },
         select: { id: true },
       })
-      if (existing) { skipped++; continue }
+      if (existing) { await ensureArchiveRecord(existing.id); archiveIds.push(existing.id); skipped++; continue }
 
       const author = tweet.author_id ? usersMap.get(tweet.author_id) : undefined
-
-      const created = await prisma.bookmark.create({
-        data: {
-          tweetId: tweet.id,
-          text: tweet.text,
-          authorHandle: author?.username ?? null,
-          authorName: author?.name ?? null,
-          tweetCreatedAt: tweet.created_at ? new Date(tweet.created_at) : null,
-          rawJson: JSON.stringify(tweet),
-          source: 'bookmark',
-        },
-      })
 
       // Import media
       const mediaKeys = tweet.attachments?.media_keys ?? []
       const mediaItems = mediaKeys
-        .map((key) => mediaMap.get(key))
+        .map((key) => {
+          const media = mediaMap.get(key)
+          if (!media) return undefined
+          if (media.type !== 'video' && media.type !== 'animated_gif') return media
+          const url = media.variants?.filter((variant) => variant.content_type === 'video/mp4' && variant.url).sort((a, b) => (b.bit_rate ?? 0) - (a.bit_rate ?? 0))[0]?.url
+          return url ? { ...media, url } : undefined
+        })
         .filter((m): m is XMedia => !!m)
 
-      if (mediaItems.length > 0) {
-        await prisma.mediaItem.createMany({
-          data: mediaItems.map((m) => ({
-            bookmarkId: created.id,
-            type: m.type === 'animated_gif' ? 'gif' : m.type,
-            url: m.url ?? m.preview_image_url ?? '',
-            thumbnailUrl: m.preview_image_url ?? null,
-          })),
-        })
-      }
+      const created = await createImportedBookmark(
+        prisma,
+        {
+          tweetId: tweet.id,
+          text: tweet.note_tweet?.text ?? tweet.text,
+          authorHandle: author?.username ?? 'unknown',
+          authorName: author?.name ?? 'Unknown',
+          tweetCreatedAt: tweet.created_at ? new Date(tweet.created_at) : null,
+          rawJson: JSON.stringify(tweet),
+          source: 'bookmark',
+          archive: { create: {} },
+        },
+        mediaItems.map((m) => ({
+          type: m.type === 'animated_gif' ? 'gif' : m.type,
+          url: m.url,
+          thumbnailUrl: m.preview_image_url ?? null,
+          mediaKey: m.media_key,
+          sourceTweetId: tweet.id,
+          sourceTweetUrl: `https://x.com/${author?.username ?? 'i'}/status/${tweet.id}`,
+          sourceMediaIndex: mediaKeys.indexOf(m.media_key),
+          sourceAuthorId: tweet.author_id,
+          sourceAuthorHandle: author?.username,
+        })),
+      )
 
       imported++
+      archiveIds.push(created.id)
     }
 
-    nextToken = data.meta?.next_token
-    if (!nextToken) break
+    const pageToken = data.meta?.next_token
+    if (!pageToken || seenTokens.has(pageToken)) { nextToken = undefined; break }
+    nextToken = pageToken
+    if (page === maxPages - 1) { truncated = true; break }
+    seenTokens.add(nextToken)
   }
 
-  return NextResponse.json({ imported, skipped, total })
+  await enqueueIncompleteArchives(archiveIds)
+  return NextResponse.json({ imported, skipped, total, ...(truncated ? { truncated: true, nextToken } : {}) })
 }
