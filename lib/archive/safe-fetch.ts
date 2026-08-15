@@ -196,7 +196,13 @@ export async function safeFetch(raw: string, options: {
       const request = transport.request(current, {
         method: 'GET',
         headers: { 'User-Agent': 'Siftly Archive/1.0', Accept: options.accept ?? '*/*' },
-        lookup: (_host, _opts, callback) => callback(null, target.address, target.family),
+        lookup: (_host, options, callback) => {
+          if (options.all) {
+            callback(null, [target])
+            return
+          }
+          callback(null, target.address, target.family)
+        },
       }, (incoming) => {
         if (settled) {
           incoming.resume()

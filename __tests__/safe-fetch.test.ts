@@ -47,6 +47,22 @@ describe('safeFetch deadline boundary', () => {
   })
   it('公開URLはDNS検査へ進める', () => expect(isSafeHttpUrl('https://example.com/')).toBe(true))
 
+  it('Nodeが全アドレスを要求した場合もpin済みIPを配列で返す', async () => {
+    const fakeRequest = request(() => {
+      const fakeResponse = response()
+      mocks.request.mock.calls[0]?.[2](fakeResponse)
+      fakeResponse.emit('end')
+    })
+    mocks.request.mockImplementation((_url, options) => {
+      const callback = vi.fn()
+      options.lookup('example.com', { all: true }, callback)
+      expect(callback).toHaveBeenCalledWith(null, [{ address: '93.184.216.34', family: 4 }])
+      return fakeRequest
+    })
+
+    await expect(safeFetch('http://example.com/')).resolves.toMatchObject({ status: 200 })
+  })
+
   it('DNS待機中でも総deadlineで失敗しHTTPを開始しない', async () => {
     mocks.lookup.mockImplementation(() => new Promise(() => undefined))
 

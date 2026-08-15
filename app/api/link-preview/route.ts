@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isSafeHttpUrl, safeFetch } from '@/lib/archive/safe-fetch'
+import { createLinkPreviewScreenshot } from '@/lib/link-preview-screenshot'
 
 const CACHE_HEADERS = {
   'Cache-Control': 'public, max-age=86400', // cache 24h
@@ -7,6 +8,44 @@ const CACHE_HEADERS = {
 
 const BROWSER_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+
+function youtubeVideoId(raw: string): string | null {
+  try {
+    const url = new URL(raw)
+    const host = url.hostname.replace(/^www\./, '')
+    let id = ''
+    if (host === 'youtu.be') id = url.pathname.split('/').filter(Boolean)[0] ?? ''
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      id = url.pathname === '/watch'
+        ? url.searchParams.get('v') ?? ''
+        : url.pathname.match(/^\/(?:shorts|embed|live)\/([^/?]+)/)?.[1] ?? ''
+    }
+    return /^[\w-]{6,20}$/.test(id) ? id : null
+  } catch { return null }
+}
+
+async function fetchYouTubePreview(finalUrl: string): Promise<{
+  title: string; description: string; image: string; siteName: string; domain: string; url: string
+} | null> {
+  if (!youtubeVideoId(finalUrl)) return null
+  try {
+    const endpoint = new URL('https://www.youtube.com/oembed')
+    endpoint.searchParams.set('url', finalUrl)
+    endpoint.searchParams.set('format', 'json')
+    const response = await safeFetch(endpoint.toString(), { maxBytes: 50_000, timeoutMs: 8_000, accept: 'application/json' })
+    if (response.status !== 200) return null
+    const data = JSON.parse(response.body.toString('utf8')) as { title?: string; author_name?: string; thumbnail_url?: string }
+    if (!data.title) return null
+    return {
+      title: data.title,
+      description: data.author_name ? `YouTube · ${data.author_name}` : 'YouTube',
+      image: data.thumbnail_url ?? '',
+      siteName: 'YouTube',
+      domain: 'youtube.com',
+      url: finalUrl,
+    }
+  } catch { return null }
+}
 
 /** For JS-rendered platforms that can't be scraped, derive a human-readable title */
 function syntheticTitle(finalUrl: string, siteName: string): string {
@@ -44,6 +83,14 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&apos;/g, "'")
+}
+
+function resolvePreviewImage(value: string, baseUrl: string): string {
+  if (!value) return ''
+  try {
+    const resolved = new URL(value, baseUrl).toString()
+    return isSafeHttpUrl(resolved) ? resolved : ''
+  } catch { return '' }
 }
 
 /** Try to fetch rich data from Twitter's syndication API (articles, cards, etc.) */
@@ -122,6 +169,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // Also accept an optional tweetId param for X article enrichment
   const rawTweetId = request.nextUrl.searchParams.get('tweetId')
   const tweetId = rawTweetId && /^\d+$/.test(rawTweetId) ? rawTweetId : null
+  const screenshot = request.nextUrl.searchParams.get('screenshot') === '1'
 
   try {
     const res = await safeFetch(url, { maxBytes: 50_000, timeoutMs: 10_000, accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', truncate: true })
@@ -155,6 +203,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     })()
 
     const isXDomain = domain === 'x.com' || domain === 'twitter.com'
+
+    if (!screenshot) {
+      const youtube = await fetchYouTubePreview(finalUrl)
+      if (youtube) return NextResponse.json(youtube, { headers: CACHE_HEADERS })
+    }
 
     // X article pages (and many X URLs) are JS-rendered — OG scraping returns
     // nothing useful. Try the syndication API first for any X URL when we have a tweetId.
@@ -202,10 +255,28 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    const resolvedTitle = title || syntheticTitle(finalUrl, siteName)
+    const documentTitle = /^https?:\/\//i.test(titleTagText) ? '' : decodeHtmlEntities(titleTagText)
+    const resolvedTitle = title || documentTitle || syntheticTitle(finalUrl, siteName) || domain
+
+    if (screenshot) {
+      const png = await createLinkPreviewScreenshot({
+        url: finalUrl,
+        html,
+        title: resolvedTitle,
+        description,
+        siteName,
+      })
+      return new NextResponse(new Uint8Array(png), {
+        headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=604800' },
+      })
+    }
+
+    const previewImage = resolvePreviewImage(image, finalUrl) || (!isXDomain
+      ? `/api/link-preview?${new URLSearchParams({ url: finalUrl, screenshot: '1' })}`
+      : '')
 
     return NextResponse.json(
-      { title: resolvedTitle, description, image, siteName, domain, url: finalUrl },
+      { title: resolvedTitle, description, image: previewImage, siteName, domain, url: finalUrl },
       { headers: CACHE_HEADERS },
     )
   } catch (err) {
