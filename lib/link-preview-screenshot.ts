@@ -10,14 +10,7 @@ import { parseHTML } from 'linkedom'
 const execFileAsync = promisify(execFile)
 const pending = new Map<string, Promise<Buffer>>()
 let screenshotQueue: Promise<void> = Promise.resolve()
-const CHROME_PATHS = [
-  process.env.SIFTLY_CHROME_PATH,
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  '/usr/bin/google-chrome',
-  '/usr/bin/chromium',
-  '/usr/bin/chromium-browser',
-].filter((value): value is string => !!value)
+const MAX_SCREENSHOT_BYTES = 8_000_000
 
 export interface LinkPreviewScreenshotInput {
   url: string
@@ -58,7 +51,15 @@ export function renderLinkPreviewScreenshotHtml(input: LinkPreviewScreenshotInpu
 }
 
 async function findChrome(): Promise<string> {
-  for (const candidate of CHROME_PATHS) {
+  const candidates = [
+    process.env.SIFTLY_CHROME_PATH,
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+  ].filter((value): value is string => !!value)
+  for (const candidate of candidates) {
     try {
       await fs.access(candidate)
       return candidate
@@ -68,8 +69,11 @@ async function findChrome(): Promise<string> {
 }
 
 async function generate(input: LinkPreviewScreenshotInput, cachePath: string): Promise<Buffer> {
-  const cached = await fs.readFile(cachePath).catch(() => null)
-  if (cached) return cached
+  const cached = await fs.stat(cachePath).catch(() => null)
+  if (cached) {
+    if (!cached.isFile() || cached.size > MAX_SCREENSHOT_BYTES) throw new Error('プレビュー画像が大きすぎます')
+    return fs.readFile(cachePath)
+  }
 
   const chrome = await findChrome()
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'siftly-link-preview-'))
@@ -90,6 +94,8 @@ async function generate(input: LinkPreviewScreenshotInput, cachePath: string): P
       `--screenshot=${pngPath}`,
       pathToFileURL(htmlPath).toString(),
     ], { timeout: 20_000, maxBuffer: 1_000_000 })
+    const stat = await fs.stat(pngPath)
+    if (!stat.isFile() || stat.size > MAX_SCREENSHOT_BYTES) throw new Error('プレビュー画像が大きすぎます')
     const png = await fs.readFile(pngPath)
     await fs.mkdir(path.dirname(cachePath), { recursive: true })
     await fs.writeFile(cachePath, png)

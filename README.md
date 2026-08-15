@@ -20,7 +20,7 @@
 
 ## What is Siftly?
 
-Siftly turns your Twitter/X bookmarks into a **searchable, categorized, visual knowledge base** — running entirely on your machine. No cloud, no subscriptions, no browser extensions required. Everything stays local except the AI API calls you configure.
+Siftly turns your Twitter/X bookmarks into a **searchable, categorized, visual knowledge base** — running on your machine. No Siftly account, subscriptions, or browser extensions are required. Network access is limited to the AI provider you configure, links shown in external previews, and sources you explicitly enable for archiving.
 
 It runs a **4-stage AI pipeline** on your bookmarks:
 
@@ -51,7 +51,7 @@ After the pipeline runs, you get:
 - [Node.js 18+](https://nodejs.org)
 - npm (comes with Node.js)
 
-**That's it.** If you have [Claude Code CLI](https://claude.ai/code) installed and signed in, AI features work automatically — no API key needed.
+**That's it.** If you have [Claude Code CLI](https://claude.ai/code) installed and signed in, AI features work automatically — no API key needed. Google Chrome or Chromium is optional and is used only to create a local preview image when an external page has no OG image.
 
 ### Option A — One command (recommended)
 
@@ -416,10 +416,10 @@ Add domain strings to `KNOWN_TOOL_DOMAINS` in `lib/rawjson-extractor.ts` to have
 
 ## Privacy
 
-- All data is stored **locally** in a SQLite file on your machine
-- AI機能の外部通信先は、設定したAI providerだけです（tweet text + image data）。ただし自動アーカイブを明示的に有効化した場合は、gallery-dl/X、参照記事、および許可したXネイティブメディアへも通信します。外部動画のダウンロードは行いません。
+- ブックマークデータはローカルのSQLiteファイルに保存されます。OG画像がない外部ページのプレビュー画像だけは `~/.cache/siftly/link-previews` に保存され、削除しても必要時に再生成されます。
+- AI機能の外部通信先は、設定したAI providerです（tweet text + image data）。外部リンクのプレビュー表示時はリンク先ページへアクセスし、YouTubeはタイトルとサムネイル取得のためYouTube oEmbedも利用します。自動アーカイブを明示的に有効化した場合は、gallery-dl/X、参照記事、および許可したXネイティブメディアへも通信します。外部動画のダウンロードは行いません。
 - No telemetry, no tracking, no accounts required
-- Your bookmarks never touch any third-party server except your configured AI endpoint
+- Siftly does not upload your bookmark database. Only the data required for configured AI features, external link previews, or explicitly enabled archiving is sent to the corresponding service.
 
 ---
 

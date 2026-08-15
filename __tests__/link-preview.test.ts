@@ -54,6 +54,19 @@ describe('外部リンクプレビュー', () => {
     })
   })
 
+  it('YouTubeでもOG画像があればoEmbedより優先する', async () => {
+    mocks.safeFetch.mockResolvedValue({
+      status: 200,
+      url: 'https://youtu.be/abcdefghijk',
+      headers: {},
+      body: Buffer.from('<meta property="og:title" content="OG動画"><meta property="og:image" content="https://img.example/og.jpg">'),
+    })
+
+    const response = await GET(request('https://youtu.be/abcdefghijk'))
+    await expect(response.json()).resolves.toMatchObject({ title: 'OG動画', image: 'https://img.example/og.jpg' })
+    expect(mocks.safeFetch).toHaveBeenCalledTimes(1)
+  })
+
   it('OG画像がない公開ページにはローカルスナップショットURLを返す', async () => {
     mocks.safeFetch.mockResolvedValue({ status: 200, url: 'https://example.com/article', headers: {}, body: Buffer.from('<html><title>一般サイトの記事</title><body>本文</body></html>') })
 
@@ -72,6 +85,15 @@ describe('外部リンクプレビュー', () => {
     expect(response.headers.get('content-type')).toBe('image/png')
     expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from('png'))
     expect(mocks.screenshot).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://example.com/article' }))
+  })
+
+  it('スナップショット生成に失敗してもAPIは制御されたエラーを返す', async () => {
+    mocks.safeFetch.mockResolvedValue({ status: 200, url: 'https://example.com/article', headers: {}, body: Buffer.from('<html><body>本文</body></html>') })
+    mocks.screenshot.mockRejectedValue(new Error('Chrome unavailable'))
+
+    const response = await GET(request('https://example.com/article', true))
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toEqual({ error: 'Chrome unavailable' })
   })
 
   it('ローカルネットワークURLは撮影しない', async () => {

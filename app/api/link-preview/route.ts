@@ -204,11 +204,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const isXDomain = domain === 'x.com' || domain === 'twitter.com'
 
-    if (!screenshot) {
-      const youtube = await fetchYouTubePreview(finalUrl)
-      if (youtube) return NextResponse.json(youtube, { headers: CACHE_HEADERS })
-    }
-
     // X article pages (and many X URLs) are JS-rendered — OG scraping returns
     // nothing useful. Try the syndication API first for any X URL when we have a tweetId.
     if (isXDomain && tweetId) {
@@ -257,6 +252,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const documentTitle = /^https?:\/\//i.test(titleTagText) ? '' : decodeHtmlEntities(titleTagText)
     const resolvedTitle = title || documentTitle || syntheticTitle(finalUrl, siteName) || domain
+
+    if (!screenshot && !image) {
+      const youtube = await fetchYouTubePreview(finalUrl)
+      if (youtube) return NextResponse.json(youtube, { headers: CACHE_HEADERS })
+    }
 
     if (screenshot) {
       const png = await createLinkPreviewScreenshot({
