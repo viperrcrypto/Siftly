@@ -8,15 +8,16 @@
     "url": "https://github.com/viperrcrypto/Siftly.git"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 15000",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 15000",
     "lint": "eslint",
     "test": "vitest run",
     "siftly": "tsx cli/siftly.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@mozilla/readability": "^0.6.0",
     "@prisma/adapter-better-sqlite3": "^7.4.2",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-progress": "^1.1.8",
@@ -28,12 +29,14 @@
     "better-sqlite3": "^12.6.2",
     "class-variance-authority": "^0.7.1",
     "jszip": "^3.10.1",
+    "linkedom": "^0.18.13",
     "lucide-react": "^0.576.0",
     "next": "16.1.6",
     "openai": "^6.27.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "turndown": "^7.2.4"
   },
   "devDependencies": {
     "@prisma/client": "^7.4.2",
@@ -42,6 +45,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/turndown": "^5.0.6",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "prisma": "^7.4.2",

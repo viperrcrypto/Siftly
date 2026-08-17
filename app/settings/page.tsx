@@ -26,25 +26,37 @@ import {
   Folder,
   FolderOpen,
 } from 'lucide-react'
+import { useLanguage } from '@/components/language-provider'
+import { uiText } from '@/lib/i18n'
 
 const ANTHROPIC_MODELS = [
-  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', description: 'Fast & Cheap' },
-  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6', description: 'Smart & Balanced' },
-  { value: 'claude-opus-4-6', label: 'Opus 4.6', description: 'Most Capable' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', description: '高速・低コスト' },
+  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6', description: '高性能・バランス型' },
+  { value: 'claude-opus-4-6', label: 'Opus 4.6', description: '最高性能' },
 ]
 
 const OPENAI_MODELS = [
-  { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini', description: 'Fast & Cheap' },
-  { value: 'gpt-4.1', label: 'GPT-4.1', description: 'Most Capable' },
-  { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano', description: 'Fastest' },
-  { value: 'o4-mini', label: 'o4-mini', description: 'Reasoning (mini)' },
-  { value: 'o3', label: 'o3', description: 'Reasoning' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o mini', description: '高速・低コスト' },
+  { value: 'gpt-4o', label: 'GPT-4o', description: '高性能・マルチモーダル' },
+  { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini', description: '高速・低コスト' },
+  { value: 'gpt-4.1', label: 'GPT-4.1', description: '最高性能' },
+  { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano', description: '最速' },
+  { value: 'o4-mini', label: 'o4-mini', description: '推論（mini）' },
+  { value: 'o3', label: 'o3', description: '推論' },
+]
+
+const CODEX_MODELS = [
+  { value: '', label: 'CLIの既定モデル', description: 'Codexの設定に従う' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o mini', description: '高速・低コスト' },
+  { value: 'gpt-4o', label: 'GPT-4o', description: '高性能・マルチモーダル' },
+  { value: 'o4-mini', label: 'o4-mini', description: '推論（mini）' },
+  { value: 'o3', label: 'o3', description: '推論' },
 ]
 
 const MINIMAX_MODELS = [
-  { value: 'MiniMax-M2.7', label: 'M2.7', description: '1M Context, Latest' },
-  { value: 'MiniMax-M2.5', label: 'M2.5', description: '204K Context' },
-  { value: 'MiniMax-M2.5-highspeed', label: 'M2.5 Highspeed', description: '204K, Fastest' },
+  { value: 'MiniMax-M2.7', label: 'M2.7', description: '100万コンテキスト・最新版' },
+  { value: 'MiniMax-M2.5', label: 'M2.5', description: '20.4万コンテキスト' },
+  { value: 'MiniMax-M2.5-highspeed', label: 'M2.5 Highspeed', description: '20.4万・最速' },
 ]
 
 
@@ -146,7 +158,7 @@ function ApiKeyField({
 
   async function handleSave() {
     if (!key.trim()) {
-      onToast({ type: 'error', message: 'Please enter an API key' })
+      onToast({ type: 'error', message: 'APIキーを入力してください' })
       return
     }
     setSaving(true)
@@ -159,17 +171,17 @@ function ApiKeyField({
       })
       if (!res.ok) {
         const data = await res.json() as { error?: string }
-        throw new Error(data.error ?? 'Failed to save')
+        throw new Error(data.error ?? '保存に失敗しました')
       }
       setSavedMasked(key.trim().slice(0, 6) + '••••••••' + key.trim().slice(-4))
       setKey('')
       // Auto-test after save
       if (testProvider) void handleTest()
-      else onToast({ type: 'success', message: `${label} saved successfully` })
+      else onToast({ type: 'success', message: `${label}を保存しました` })
     } catch (err) {
       onToast({
         type: 'error',
-        message: err instanceof Error ? err.message : 'Failed to save API key',
+        message: err instanceof Error ? err.message : 'APIキーの保存に失敗しました',
       })
     } finally {
       setSaving(false)
@@ -186,13 +198,13 @@ function ApiKeyField({
       })
       if (!res.ok) {
         const data = await res.json() as { error?: string }
-        throw new Error(data.error ?? 'Failed to remove')
+        throw new Error(data.error ?? '削除に失敗しました')
       }
       setSavedMasked(null)
       setTestState('idle')
-      onToast({ type: 'success', message: `${label} removed` })
+      onToast({ type: 'success', message: `${label}を削除しました` })
     } catch (err) {
-      onToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to remove key' })
+      onToast({ type: 'error', message: err instanceof Error ? err.message : 'キーの削除に失敗しました' })
     } finally {
       setRemoving(false)
     }
@@ -211,14 +223,14 @@ function ApiKeyField({
       const data = await res.json() as { working: boolean; error?: string }
       if (data.working) {
         setTestState('ok')
-        onToast({ type: 'success', message: `${label} is working` })
+        onToast({ type: 'success', message: `${label}は利用できます` })
       } else {
         setTestState('fail')
-        setTestError(data.error ?? 'Key test failed')
+        setTestError(data.error ?? 'キーのテストに失敗しました')
       }
     } catch {
       setTestState('fail')
-      setTestError('Connection error')
+      setTestError('接続エラー')
     }
   }
 
@@ -229,7 +241,7 @@ function ApiKeyField({
         <div className="flex items-center gap-2 min-w-0 overflow-hidden">
           {savedMasked && (
             <span className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-lg min-w-0 overflow-hidden">
-              <Check size={11} className="shrink-0" /> <span className="shrink-0">Saved:</span> <span className="font-mono truncate">{savedMasked}</span>
+              <Check size={11} className="shrink-0" /> <span className="shrink-0">保存済み:</span> <span className="font-mono truncate">{savedMasked}</span>
             </span>
           )}
           {savedMasked && (
@@ -237,9 +249,9 @@ function ApiKeyField({
               onClick={() => void handleRemove()}
               disabled={removing}
               className="shrink-0 text-xs text-red-500/70 hover:text-red-400 transition-colors disabled:opacity-50"
-              title="Remove saved key"
+              title="保存済みキーを削除"
             >
-              {removing ? 'Removing…' : 'Remove'}
+              {removing ? '削除中…' : '削除'}
             </button>
           )}
           {testProvider && savedMasked && testState === 'idle' && (
@@ -247,22 +259,22 @@ function ApiKeyField({
               onClick={() => void handleTest()}
               className="shrink-0 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
             >
-              Test
+              テスト
             </button>
           )}
           {testState === 'testing' && (
             <span className="flex items-center gap-1 text-xs text-zinc-400 shrink-0">
-              <Loader2 size={11} className="animate-spin" /> Testing…
+              <Loader2 size={11} className="animate-spin" /> テスト中…
             </span>
           )}
           {testState === 'ok' && (
             <span className="flex items-center gap-1 text-xs text-emerald-400 shrink-0">
-              <Check size={11} /> Working
+              <Check size={11} /> 利用可能
             </span>
           )}
           {testState === 'fail' && (
             <span className="flex items-center gap-1 text-xs text-red-400 shrink-0" title={testError}>
-              <X size={11} /> {testError.slice(0, 30) || 'Failed'}
+              <X size={11} /> {testError.slice(0, 30) || '失敗'}
             </span>
           )}
         </div>
@@ -274,14 +286,14 @@ function ApiKeyField({
             value={key}
             onChange={(e) => setKey(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && void handleSave()}
-            placeholder={savedMasked ? 'Enter new key to replace…' : placeholder}
+            placeholder={savedMasked ? '新しいキーで置き換え…' : placeholder}
             className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all duration-200 pr-10 font-mono"
           />
           <button
             type="button"
             onClick={() => setShowKey((v) => !v)}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
-            aria-label={showKey ? 'Hide key' : 'Show key'}
+            aria-label={showKey ? 'キーを隠す' : 'キーを表示'}
           >
             {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
           </button>
@@ -291,7 +303,7 @@ function ApiKeyField({
           disabled={saving}
           className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors shrink-0"
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? '保存中…' : '保存'}
         </button>
       </div>
       <div className="flex items-center justify-between">
@@ -302,7 +314,7 @@ function ApiKeyField({
           rel="noopener noreferrer"
           className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-400 transition-colors"
         >
-          Get key <ExternalLink size={11} />
+          APIキーを取得 <ExternalLink size={11} />
         </a>
       </div>
     </div>
@@ -313,11 +325,13 @@ function ModelSelector({
   models,
   settingKey,
   defaultValue,
+  label = 'モデル',
   onToast,
 }: {
   models: { value: string; label: string; description: string }[]
-  settingKey: 'anthropicModel' | 'openaiModel' | 'minimaxModel'
+  settingKey: 'anthropicModel' | 'openaiModel' | 'minimaxModel' | 'claudeCliModel' | 'codexCliModel'
   defaultValue: string
+  label?: string
   onToast: (t: Toast) => void
 }) {
   const [value, setValue] = useState(defaultValue)
@@ -351,7 +365,7 @@ function ModelSelector({
   return (
     <>
       <div className="flex items-center gap-2 mt-2.5">
-        <span className="text-xs text-zinc-500 shrink-0">Model:</span>
+        <span className="text-xs text-zinc-500 shrink-0">{label}:</span>
         <div className="relative flex-1">
           <select
             value={value}
@@ -368,7 +382,7 @@ function ModelSelector({
         </div>
         {saved && (
           <span className="flex items-center gap-1 text-xs text-emerald-400 shrink-0">
-            <Check size={12} /> Saved
+            <Check size={12} /> 保存済み
           </span>
         )}
         {!saved && selected && (
@@ -377,10 +391,75 @@ function ModelSelector({
       </div>
       {value === 'claude-opus-4-6' && (
         <p className="text-xs text-amber-500/80 mt-1.5">
-          Opus is slow with 20 parallel workers — consider Sonnet or Haiku for faster bulk categorization.
+          Opusは20並列ワーカーでは時間がかかります。大量分類を速くするならSonnetまたはHaikuがおすすめです。
         </p>
       )}
     </>
+  )
+}
+
+function AuthModeSelector({
+  settingKey,
+  defaultValue,
+  cliLabel,
+  onToast,
+}: {
+  settingKey: 'anthropicAuthMode' | 'openaiAuthMode'
+  defaultValue: 'api' | 'cli'
+  cliLabel: string
+  onToast: (t: Toast) => void
+}) {
+  const [value, setValue] = useState<'api' | 'cli'>(defaultValue)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((d: Record<string, unknown>) => {
+        if (d[settingKey] === 'api' || d[settingKey] === 'cli') setValue(d[settingKey])
+      })
+      .catch(() => {})
+  }, [settingKey])
+
+  async function handleChange(next: 'api' | 'cli') {
+    const previous = value
+    setValue(next)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [settingKey]: next }),
+      })
+      if (!res.ok) throw new Error('Failed')
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch {
+      setValue(previous)
+      onToast({ type: 'error', message: '認証方式の保存に失敗しました' })
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 mt-2.5">
+      <span className="text-xs text-zinc-500 shrink-0">認証方式:</span>
+      <div className="flex gap-1 p-1 rounded-lg bg-zinc-800 border border-zinc-700">
+        <button
+          type="button"
+          onClick={() => void handleChange('api')}
+          className={`px-2.5 py-1 rounded-md text-xs transition-colors ${value === 'api' ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+        >
+          APIキー
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleChange('cli')}
+          className={`px-2.5 py-1 rounded-md text-xs transition-colors ${value === 'cli' ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+        >
+          {cliLabel}
+        </button>
+      </div>
+      {saved && <span className="flex items-center gap-1 text-xs text-emerald-400"><Check size={12} /> 保存済み</span>}
+    </div>
   )
 }
 
@@ -411,10 +490,10 @@ function ClaudeCliStatusBox() {
         <Check size={15} className="text-emerald-400 shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-emerald-300">
-            Claude CLI detected — no API key needed
+            Claude CLIを検出しました（APIキー不要）
           </p>
           <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-            Signed in as <span className="text-zinc-300">{tier}</span> via Claude Code. Siftly will use your subscription automatically. An API key below will take priority if set.
+            Claude Codeの<span className="text-zinc-300">{tier}</span>としてサインイン中です。Siftlyはサブスクリプションを自動利用します。下のAPIキーを設定すると、そちらが優先されます。
           </p>
         </div>
       </div>
@@ -426,9 +505,9 @@ function ClaudeCliStatusBox() {
       <div className="flex gap-3 p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/20 mb-5">
         <AlertCircle size={15} className="text-amber-400 shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-amber-300">Claude CLI session expired</p>
+          <p className="text-sm font-medium text-amber-300">Claude CLIのセッションが期限切れです</p>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Run <span className="font-mono text-zinc-300">claude</span> in your terminal to refresh the session, then reload this page.
+            ターミナルで<span className="font-mono text-zinc-300">claude</span>を実行してセッションを更新し、このページを再読み込みしてください。
           </p>
         </div>
       </div>
@@ -439,9 +518,9 @@ function ClaudeCliStatusBox() {
     <div className="flex gap-3 p-3.5 rounded-xl bg-zinc-800/60 border border-zinc-700 mb-5">
       <Terminal size={15} className="text-zinc-400 shrink-0 mt-0.5" />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-zinc-200">No Claude CLI detected</p>
+        <p className="text-sm font-medium text-zinc-200">Claude CLIを検出できません</p>
         <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-          Install Claude Code and sign in to skip the API key entirely, or paste your API key below.
+          Claude CodeをインストールしてサインインすればAPIキーは不要です。利用しない場合は下にAPIキーを入力してください。
         </p>
       </div>
     </div>
@@ -470,13 +549,13 @@ function CodexCliStatusBox() {
         <Check size={15} className="text-emerald-400 shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-emerald-300">
-            Codex CLI detected{isChatGPT ? ' (ChatGPT login)' : ' — no API key needed'}
+            Codex CLIを検出しました{isChatGPT ? '（ChatGPTログイン）' : '（APIキー不要）'}
           </p>
           <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
             {isChatGPT ? (
-              <>Signed in as <span className="text-zinc-300">{tier}</span> via ChatGPT. AI features will use Codex CLI to proxy requests. An API key below will take priority if set.</>
+              <>ChatGPTの<span className="text-zinc-300">{tier}</span>としてサインイン中です。AI機能はCodex CLI経由で実行されます。下のAPIキーを設定すると、そちらが優先されます。</>
             ) : (
-              <>Signed in as <span className="text-zinc-300">{tier}</span> via Codex CLI. Siftly will use your credentials automatically. An API key below will take priority if set.</>
+              <>Codex CLIの<span className="text-zinc-300">{tier}</span>としてサインイン中です。Siftlyは認証情報を自動利用します。下のAPIキーを設定すると、そちらが優先されます。</>
             )}
           </p>
         </div>
@@ -489,9 +568,9 @@ function CodexCliStatusBox() {
       <div className="flex gap-3 p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/20 mb-5">
         <AlertCircle size={15} className="text-amber-400 shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-amber-300">Codex CLI session expired</p>
+          <p className="text-sm font-medium text-amber-300">Codex CLIのセッションが期限切れです</p>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Run <span className="font-mono text-zinc-300">codex</span> in your terminal to refresh, then reload this page.
+            ターミナルで<span className="font-mono text-zinc-300">codex</span>を実行して更新し、このページを再読み込みしてください。
           </p>
         </div>
       </div>
@@ -503,9 +582,9 @@ function CodexCliStatusBox() {
       <div className="flex gap-3 p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/20 mb-5">
         <AlertCircle size={15} className="text-amber-400 shrink-0 mt-0.5" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-amber-300">Codex credentials found but CLI not available</p>
+          <p className="text-sm font-medium text-amber-300">Codexの認証情報はありますがCLIを利用できません</p>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Found saved credentials but the <span className="font-mono text-zinc-300">codex</span> binary is not responding. Install or reinstall Codex CLI, or paste your OpenAI API key below.
+            保存済みの認証情報はありますが、<span className="font-mono text-zinc-300">codex</span>が応答していません。Codex CLIをインストールまたは再インストールするか、下にOpenAI APIキーを入力してください。
           </p>
         </div>
       </div>
@@ -516,9 +595,9 @@ function CodexCliStatusBox() {
     <div className="flex gap-3 p-3.5 rounded-xl bg-zinc-800/60 border border-zinc-700 mb-5">
       <Terminal size={15} className="text-zinc-400 shrink-0 mt-0.5" />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-zinc-200">No Codex CLI detected</p>
+        <p className="text-sm font-medium text-zinc-200">Codex CLIを検出できません</p>
         <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-          Install Codex CLI and sign in to skip the API key entirely, or paste your OpenAI API key below.
+          Codex CLIをインストールしてサインインすればAPIキーは不要です。利用しない場合は下にOpenAI APIキーを入力してください。
         </p>
       </div>
     </div>
@@ -584,11 +663,11 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: newProvider }),
       })
-      if (!res.ok) throw new Error('Failed to save provider')
-      onToast({ type: 'success', message: `Switched to ${labels[newProvider]}` })
+      if (!res.ok) throw new Error('プロバイダーの保存に失敗しました')
+      onToast({ type: 'success', message: `${labels[newProvider]}に切り替えました` })
     } catch {
       setProvider(prev) // revert on failure
-      onToast({ type: 'error', message: 'Failed to save provider preference' })
+      onToast({ type: 'error', message: 'プロバイダー設定の保存に失敗しました' })
     }
   }
 
@@ -597,11 +676,11 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
     return (
       <Section
         icon={Key}
-        title="AI Provider"
-        description="Choose your AI provider and configure keys. CLI auth means no key needed."
+        title="AIプロバイダー"
+        description="AIプロバイダーを選び、キーを設定します。CLI認証を使う場合はキー不要です。"
       >
         <div className="flex items-center gap-2 text-sm text-zinc-500">
-          <Loader2 size={14} className="animate-spin" /> Loading settings…
+          <Loader2 size={14} className="animate-spin" /> 設定を読み込み中…
         </div>
       </Section>
     )
@@ -610,8 +689,8 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
   return (
     <Section
       icon={Key}
-      title="AI Provider"
-      description="Choose your AI provider and configure keys. CLI auth means no key needed."
+      title="AIプロバイダー"
+      description="AIプロバイダーを選び、キーを設定します。CLI認証を使う場合はキー不要です。"
     >
       <ProviderToggle value={provider} onChange={(v) => void handleProviderChange(v)} />
 
@@ -624,7 +703,7 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
                 label="Anthropic (Claude)"
                 placeholder="sk-ant-api03-..."
                 fieldKey="anthropicApiKey"
-                hint="Used for AI categorization, search, and image analysis."
+                hint="AI分類、検索、画像分析に使用します。"
                 docHref="https://console.anthropic.com"
                 onToast={onToast}
                 testProvider="anthropic"
@@ -633,9 +712,23 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
                 models={ANTHROPIC_MODELS}
                 settingKey="anthropicModel"
                 defaultValue="claude-haiku-4-5-20251001"
+                label="APIモデル"
                 onToast={onToast}
               />
-              <p className="text-xs text-zinc-500 mt-1.5">Applies to all AI operations — API key <strong className="text-zinc-400 font-medium">and Claude CLI</strong></p>
+              <AuthModeSelector
+                settingKey="anthropicAuthMode"
+                defaultValue="cli"
+                cliLabel="Claude CLI"
+                onToast={onToast}
+              />
+              <ModelSelector
+                models={ANTHROPIC_MODELS}
+                settingKey="claudeCliModel"
+                defaultValue="claude-haiku-4-5-20251001"
+                label="CLIモデル"
+                onToast={onToast}
+              />
+              <p className="text-xs text-zinc-500 mt-1.5">選択した認証方式のモデルをAI処理に使用します。利用できない場合はAPIキーへフォールバックします。</p>
             </div>
           </div>
         </>
@@ -648,7 +741,7 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
                 label="OpenAI"
                 placeholder="sk-..."
                 fieldKey="openaiApiKey"
-                hint="Used for AI categorization, search, and image analysis."
+                hint="AI分類、検索、画像分析に使用します。"
                 docHref="https://platform.openai.com/api-keys"
                 onToast={onToast}
                 testProvider="openai"
@@ -657,9 +750,23 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
                 models={OPENAI_MODELS}
                 settingKey="openaiModel"
                 defaultValue="gpt-4.1-mini"
+                label="APIモデル"
                 onToast={onToast}
               />
-              <p className="text-xs text-zinc-500 mt-1.5">Applies to all AI operations — API key <strong className="text-zinc-400 font-medium">and Codex CLI</strong></p>
+              <AuthModeSelector
+                settingKey="openaiAuthMode"
+                defaultValue="cli"
+                cliLabel="Codex CLI"
+                onToast={onToast}
+              />
+              <ModelSelector
+                models={CODEX_MODELS}
+                settingKey="codexCliModel"
+                defaultValue=""
+                label="CLIモデル"
+                onToast={onToast}
+              />
+              <p className="text-xs text-zinc-500 mt-1.5">選択した認証方式のモデルをAI処理に使用します。Codex CLIの既定モデルを使う場合は「CLIの既定モデル」を選択してください。</p>
             </div>
           </div>
         </>
@@ -670,7 +777,7 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
               label="MiniMax"
               placeholder="eyJ..."
               fieldKey="minimaxApiKey"
-              hint="Used for AI categorization, search, and image analysis."
+              hint="AI分類、検索、画像分析に使用します。"
               docHref="https://platform.minimaxi.com/user-center/basic-information/interface-key"
               onToast={onToast}
               testProvider="minimax"
@@ -681,11 +788,11 @@ function ApiKeySection({ onToast }: { onToast: (t: Toast) => void }) {
               defaultValue="MiniMax-M2.7"
               onToast={onToast}
             />
-            <p className="text-xs text-zinc-500 mt-1.5">MiniMax M2.7 supports 1M context window — great for large batch categorization</p>
+            <p className="text-xs text-zinc-500 mt-1.5">MiniMax M2.7は100万トークンのコンテキストに対応し、大量分類に適しています。</p>
           </div>
         </div>
       )}
-      <p className="text-xs text-zinc-600 mt-4">Keys are stored in plaintext in your local SQLite database (<code className="font-mono">prisma/dev.db</code>). Do not expose the database file.</p>
+      <p className="text-xs text-zinc-600 mt-4">キーはローカルSQLiteデータベース（<code className="font-mono">prisma/dev.db</code>）に平文で保存されます。データベースファイルを公開しないでください。</p>
     </Section>
   )
 }
@@ -749,7 +856,7 @@ function FolderBrowser({ onSelect, onClose }: { onSelect: (path: string) => void
     setLoading(false)
   }, [])
 
-  useEffect(() => { browse() }, [browse])
+  useEffect(() => { queueMicrotask(() => { void browse() }) }, [browse])
 
   return (
     <div className="border border-zinc-700 rounded-xl bg-zinc-800/50 overflow-hidden">
@@ -760,7 +867,7 @@ function FolderBrowser({ onSelect, onClose }: { onSelect: (path: string) => void
             onClick={() => onSelect(current)}
             className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition-colors"
           >
-            Select this folder
+            このフォルダーを選択
           </button>
           <button onClick={onClose} className="p-1 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700 transition-colors">
             <X size={14} />
@@ -782,7 +889,7 @@ function FolderBrowser({ onSelect, onClose }: { onSelect: (path: string) => void
             <Loader2 size={16} className="text-zinc-500 animate-spin" />
           </div>
         ) : dirs.length === 0 ? (
-          <p className="text-xs text-zinc-600 text-center py-4">No subdirectories</p>
+          <p className="text-xs text-zinc-600 text-center py-4">サブフォルダーはありません</p>
         ) : (
           dirs.map((dir) => (
             <button
@@ -822,7 +929,7 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
   async function handleSavePath(pathToSave?: string) {
     const finalPath = pathToSave ?? vaultPath
     if (!finalPath.trim()) {
-      onToast({ type: 'error', message: 'Enter a vault path first' })
+      onToast({ type: 'error', message: 'Vaultのパスを入力してください' })
       return
     }
     setSavingPath(true)
@@ -833,12 +940,12 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
         body: JSON.stringify({ obsidianVaultPath: finalPath.trim() }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Failed to save')
+      if (!res.ok) throw new Error(data.error ?? '保存に失敗しました')
       setSavedPath(finalPath.trim())
       setVaultPath(finalPath.trim())
-      onToast({ type: 'success', message: 'Vault path saved' })
+      onToast({ type: 'success', message: 'Vaultのパスを保存しました' })
     } catch (err) {
-      onToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save path' })
+      onToast({ type: 'error', message: err instanceof Error ? err.message : 'パスの保存に失敗しました' })
     } finally {
       setSavingPath(false)
     }
@@ -854,11 +961,11 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
         body: JSON.stringify({ overwrite }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Export failed')
+      if (!res.ok) throw new Error(data.error ?? 'エクスポートに失敗しました')
       setResult(data)
-      onToast({ type: 'success', message: `Exported ${data.written} notes to Obsidian` })
+      onToast({ type: 'success', message: `Obsidianに${data.written}件のノートを書き出しました` })
     } catch (err) {
-      onToast({ type: 'error', message: err instanceof Error ? err.message : 'Export failed' })
+      onToast({ type: 'error', message: err instanceof Error ? err.message : 'エクスポートに失敗しました' })
     } finally {
       setExporting(false)
     }
@@ -873,12 +980,12 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
   return (
     <Section
       icon={BookOpen}
-      title="Obsidian Export"
-      description="Export bookmarks as Markdown notes with YAML frontmatter, wikilinks, and index files."
+      title="Obsidianへの書き出し"
+      description="ブックマークをYAMLフロントマター、wikilink、インデックス付きのMarkdownノートとして書き出します。"
     >
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-zinc-400 mb-1.5">Vault path</label>
+          <label className="block text-sm font-medium text-zinc-400 mb-1.5">Vaultのパス</label>
           <div className="flex gap-2">
             <div className="relative flex-1">
               <FolderOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
@@ -892,7 +999,7 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
             </div>
             <button
               onClick={() => setBrowserOpen(!browserOpen)}
-              title="Browse folders"
+              title="フォルダーを参照"
               className="px-3 py-2.5 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-300 transition-colors"
             >
               <Folder size={16} />
@@ -902,12 +1009,12 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
               disabled={savingPath || !vaultPath.trim()}
               className="px-4 py-2.5 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-sm font-medium text-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {savingPath ? 'Saving...' : 'Save'}
+              {savingPath ? '保存中…' : '保存'}
             </button>
           </div>
           {savedPath && (
             <p className="text-xs text-zinc-500 mt-1.5">
-              Current: <code className="font-mono text-zinc-400">{savedPath}</code>
+              現在の設定: <code className="font-mono text-zinc-400">{savedPath}</code>
             </p>
           )}
         </div>
@@ -927,7 +1034,7 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
               onChange={(e) => setOverwrite(e.target.checked)}
               className="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500/50"
             />
-            Overwrite existing notes
+            既存ノートを上書き
           </label>
         </div>
 
@@ -939,22 +1046,22 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
           {exporting ? (
             <>
               <Loader2 size={14} className="animate-spin" />
-              Exporting...
+              書き出し中…
             </>
           ) : (
             <>
               <Download size={14} />
-              Export to Obsidian
+              Obsidianへ書き出す
             </>
           )}
         </button>
 
         {result && (
           <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-3 text-sm">
-            <p className="text-green-400">{result.written} notes written</p>
-            {result.skipped > 0 && <p className="text-zinc-400">{result.skipped} skipped (already exist)</p>}
-            {result.indexesWritten > 0 && <p className="text-zinc-400">{result.indexesWritten} index files created</p>}
-            {result.errors.length > 0 && <p className="text-red-400">{result.errors.length} errors</p>}
+            <p className="text-green-400">{result.written}件のノートを書き込みました</p>
+            {result.skipped > 0 && <p className="text-zinc-400">{result.skipped}件をスキップ（既存）</p>}
+            {result.indexesWritten > 0 && <p className="text-zinc-400">{result.indexesWritten}件のインデックスを作成しました</p>}
+            {result.errors.length > 0 && <p className="text-red-400">{result.errors.length}件のエラー</p>}
           </div>
         )}
       </div>
@@ -962,23 +1069,40 @@ function ObsidianExportBlock({ onToast }: { onToast: (t: Toast) => void }) {
   )
 }
 
+function ArchiveSettingsBlock({ onToast }: { onToast: (t: Toast) => void }) {
+  const [settings, setSettings] = useState({ archiveEnabled: false, autoAfterImport: false, archiveTemplateDir: '', galleryDlPath: '', cookieBrowser: '', downloadXVideo: false, downloadPdf: false, sourceResolverEnabled: true, archiveRoot: 'Clippings/Siftly' })
+  useEffect(() => { fetch('/api/settings').then((r) => r.json()).then((data) => setSettings({ archiveEnabled: data.archiveEnabled === true, autoAfterImport: data.autoAfterImport === true, archiveTemplateDir: data.archiveTemplateDir ?? '', galleryDlPath: data.galleryDlPath ?? '', cookieBrowser: data.cookieBrowser ?? '', downloadXVideo: data.downloadXVideo === true, downloadPdf: data.downloadPdf === true, sourceResolverEnabled: data.sourceResolverEnabled !== false, archiveRoot: data.archiveRoot ?? 'Clippings/Siftly' })).catch(() => {}) }, [])
+  async function save() {
+    const res = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) })
+    const body = await res.json().catch(() => ({}))
+    onToast({ type: res.ok ? 'success' : 'error', message: res.ok ? 'アーカイブ設定を保存しました' : body.error ?? '保存できませんでした' })
+  }
+  return <Section icon={BookOpen} title="自動アーカイブ" description="新しいXブックマークをObsidian Web Clipperテンプレートで保存します。">
+    <div className="space-y-3 text-sm text-zinc-300">
+      {[['archiveEnabled', 'アーカイブを有効化'], ['autoAfterImport', 'インポート後に自動実行'], ['sourceResolverEnabled', '外部Sourceを解決・clip'], ['downloadXVideo', 'Xネイティブ動画を保存'], ['downloadPdf', 'PDFを保存（既定では無効）']].map(([key, label]) => <label key={key} className="flex items-center gap-2"><input type="checkbox" checked={settings[key as keyof typeof settings] as boolean} onChange={(event) => setSettings({ ...settings, [key]: event.target.checked })} />{label}</label>)}
+      {[['archiveTemplateDir', 'Web Clipper テンプレート'], ['galleryDlPath', 'gallery-dl のパス'], ['cookieBrowser', 'Cookieブラウザー名（任意）'], ['archiveRoot', 'アーカイブ保存先']].map(([key, label]) => <label key={key} className="block"><span className="mb-1 block text-xs text-zinc-500">{label}</span><input value={settings[key as keyof typeof settings] as string} onChange={(event) => setSettings({ ...settings, [key]: event.target.value })} className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 font-mono text-xs" /></label>)}
+      <button onClick={() => void save()} className="rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-500">保存</button>
+    </div>
+  </Section>
+}
+
 function DataSection() {
   return (
     <Section
       icon={Database}
-      title="Data Management"
-      description="Export all your bookmarks and category data for backup or migration."
+      title="データ管理"
+      description="ブックマークとカテゴリのデータをバックアップまたは移行用に書き出します。"
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <ExportButton
-          label="Export as CSV"
+          label="CSVで書き出す"
           href="/api/export?type=csv"
-          description="Spreadsheet-compatible format"
+          description="表計算ソフトで扱える形式"
         />
         <ExportButton
-          label="Export as JSON"
+          label="JSONで書き出す"
           href="/api/export?type=json"
-          description="Full data with all fields"
+          description="すべての項目を含む完全なデータ"
         />
       </div>
     </Section>
@@ -996,15 +1120,15 @@ function DangerZoneSection({ onToast }: { onToast: (t: Toast) => void }) {
       const res = await fetch('/api/bookmarks', { method: 'DELETE' })
       if (!res.ok) {
         const data = await res.json() as { error?: string }
-        throw new Error(data.error ?? 'Failed to clear')
+        throw new Error(data.error ?? '削除に失敗しました')
       }
-      onToast({ type: 'success', message: 'All bookmarks deleted successfully' })
+      onToast({ type: 'success', message: 'すべてのブックマークを削除しました' })
       setConfirming(false)
       setCleared(true)
       setTimeout(() => setCleared(false), 3000)
       window.dispatchEvent(new CustomEvent('siftly:cleared'))
     } catch (err) {
-      onToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to clear bookmarks' })
+      onToast({ type: 'error', message: err instanceof Error ? err.message : 'ブックマークの削除に失敗しました' })
     } finally {
       setClearing(false)
     }
@@ -1013,19 +1137,19 @@ function DangerZoneSection({ onToast }: { onToast: (t: Toast) => void }) {
   return (
     <Section
       icon={Shield}
-      title="Danger Zone"
-      description="Irreversible actions that affect all your data."
+      title="危険な操作"
+      description="すべてのデータに影響する、取り消せない操作です。"
       variant="danger"
     >
       <div className="flex items-center justify-between p-4 rounded-xl bg-red-900/20 border border-red-800/40">
         <div>
-          <p className="text-sm font-medium text-zinc-300">Clear all bookmarks</p>
-          <p className="text-xs text-zinc-500 mt-0.5">Permanently delete all imported bookmarks</p>
+          <p className="text-sm font-medium text-zinc-300">すべてのブックマークを削除</p>
+          <p className="text-xs text-zinc-500 mt-0.5">インポートしたブックマークを完全に削除します</p>
         </div>
         {cleared ? (
           <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
             <Check size={14} />
-            Cleared
+            削除しました
           </div>
         ) : !confirming ? (
           <button
@@ -1033,17 +1157,17 @@ function DangerZoneSection({ onToast }: { onToast: (t: Toast) => void }) {
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-red-400 bg-red-800/30 hover:bg-red-700/40 border border-red-700/50 hover:border-red-600/60 transition-all"
           >
             <Trash2 size={14} />
-            Clear all
+            すべて削除
           </button>
         ) : (
           <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-400 mr-1">Are you sure?</span>
+            <span className="text-xs text-zinc-400 mr-1">本当に削除しますか？</span>
             <button
               onClick={() => setConfirming(false)}
               disabled={clearing}
               className="px-3 py-2 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
             >
-              Cancel
+              キャンセル
             </button>
             <button
               onClick={() => void handleClearAll()}
@@ -1051,7 +1175,7 @@ function DangerZoneSection({ onToast }: { onToast: (t: Toast) => void }) {
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-white bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <Trash2 size={12} />
-              {clearing ? 'Deleting…' : 'Yes, delete all'}
+              {clearing ? '削除中…' : 'はい、すべて削除'}
             </button>
           </div>
         )}
@@ -1081,12 +1205,11 @@ function AboutSection() {
   }
 
   return (
-    <Section icon={Info} title="About Siftly" description="Self-hosted Twitter bookmark manager">
+    <Section icon={Info} title="Siftlyについて" description="自分の環境で動かすXブックマーク管理ツール">
       <p className="text-sm text-zinc-400 leading-relaxed mb-5">
-        <strong className="text-zinc-100 font-semibold">Siftly</strong> is a self-hosted app for
-        organizing your Twitter/X bookmarks. Use the built-in bookmarklet or console script to import,
-        then run the 4-stage AI pipeline to analyze images, extract entities, generate semantic tags, and
-        auto-categorize — then explore connections through the interactive mindmap.
+        <strong className="text-zinc-100 font-semibold">Siftly</strong>は、X/Twitterのブックマークを整理するためのローカルアプリです。
+        付属のブックマークレットまたはコンソールスクリプトでインポートし、4段階のAIパイプラインで画像分析、エンティティ抽出、意味タグ生成、自動分類を行えます。
+        インタラクティブなマインドマップで関連を探索することもできます。
       </p>
 
       {/* Builder + support row */}
@@ -1101,7 +1224,7 @@ function AboutSection() {
           <span className="text-base leading-none">𝕏</span>
           <div className="min-w-0">
             <p className="text-xs font-semibold text-zinc-200 group-hover:text-white transition-colors">@viperr</p>
-            <p className="text-[11px] text-zinc-600">Built &amp; open-sourced by</p>
+            <p className="text-[11px] text-zinc-600">開発・オープンソース化</p>
           </div>
           <ExternalLink size={12} className="text-zinc-600 group-hover:text-zinc-400 transition-colors ml-auto shrink-0" />
         </a>
@@ -1110,10 +1233,10 @@ function AboutSection() {
         <div className="flex-1 px-4 py-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
           <div className="flex items-center gap-2 mb-2">
             <Coffee size={13} className="text-amber-400 shrink-0" />
-            <span className="text-xs font-semibold text-amber-300">Support development</span>
+            <span className="text-xs font-semibold text-amber-300">開発を支援する</span>
           </div>
           <p className="text-[11px] text-zinc-500 mb-2.5 leading-relaxed">
-            If Siftly saves you time, consider leaving a tip
+            Siftlyが役に立ったら、開発者へのチップをご検討ください。
           </p>
           <button
             onClick={copyAddress}
@@ -1128,7 +1251,7 @@ function AboutSection() {
             }
           </button>
           {copied && (
-            <p className="text-[10px] text-emerald-400 mt-1.5 text-center">Address copied!</p>
+            <p className="text-[10px] text-emerald-400 mt-1.5 text-center">アドレスをコピーしました</p>
           )}
         </div>
       </div>
@@ -1155,7 +1278,7 @@ function XOAuthSection({ onToast }: { onToast: (t: Toast) => void }) {
 
   async function handleSave() {
     if (!clientId.trim()) {
-      onToast({ type: 'error', message: 'Client ID is required' })
+      onToast({ type: 'error', message: 'Client IDを入力してください' })
       return
     }
     setSaving(true)
@@ -1169,15 +1292,15 @@ function XOAuthSection({ onToast }: { onToast: (t: Toast) => void }) {
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(data.error ?? 'Failed to save')
+        throw new Error(data.error ?? '保存に失敗しました')
       }
       setSavedId(clientId.trim().slice(0, 6) + '••••' + clientId.trim().slice(-4))
       if (clientSecret.trim()) setSavedSecret(clientSecret.trim().slice(0, 4) + '••••')
       setClientId('')
       setClientSecret('')
-      onToast({ type: 'success', message: 'X OAuth credentials saved' })
+      onToast({ type: 'success', message: 'X OAuthの認証情報を保存しました' })
     } catch (err) {
-      onToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save' })
+      onToast({ type: 'error', message: err instanceof Error ? err.message : '保存に失敗しました' })
     } finally {
       setSaving(false)
     }
@@ -1197,9 +1320,9 @@ function XOAuthSection({ onToast }: { onToast: (t: Toast) => void }) {
       })
       setSavedId(null)
       setSavedSecret(null)
-      onToast({ type: 'success', message: 'X OAuth credentials removed' })
+      onToast({ type: 'success', message: 'X OAuthの認証情報を削除しました' })
     } catch (err) {
-      onToast({ type: 'error', message: err instanceof Error ? err.message : 'Failed to remove' })
+      onToast({ type: 'error', message: err instanceof Error ? err.message : '削除に失敗しました' })
     }
   }
 
@@ -1210,8 +1333,8 @@ function XOAuthSection({ onToast }: { onToast: (t: Toast) => void }) {
   return (
     <Section
       icon={Shield}
-      title="X (Twitter) OAuth 2.0"
-      description="Connect your X account to import bookmarks using the official API."
+      title="X（Twitter）OAuth 2.0"
+      description="公式APIを使ってXアカウントからブックマークをインポートします。"
     >
       <div className="space-y-4">
         {savedId ? (
@@ -1234,7 +1357,7 @@ function XOAuthSection({ onToast }: { onToast: (t: Toast) => void }) {
               <button
                 onClick={handleRemove}
                 className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                title="Remove X OAuth credentials"
+                title="X OAuthの認証情報を削除"
               >
                 <Trash2 size={14} />
               </button>
@@ -1252,7 +1375,7 @@ function XOAuthSection({ onToast }: { onToast: (t: Toast) => void }) {
               />
               <input
                 type="password"
-                placeholder="Client Secret (optional for public clients)"
+                placeholder="Client Secret（公開クライアントでは任意）"
                 value={clientSecret}
                 onChange={(e) => setClientSecret(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500/50 font-mono"
@@ -1264,20 +1387,20 @@ function XOAuthSection({ onToast }: { onToast: (t: Toast) => void }) {
               className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors flex items-center justify-center gap-2"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
-              {saving ? 'Saving...' : 'Save X OAuth Credentials'}
+              {saving ? '保存中…' : 'X OAuth認証情報を保存'}
             </button>
           </div>
         )}
 
         <div className="text-xs text-zinc-600 space-y-1">
           <p>
-            Get credentials from the{' '}
+            認証情報は{' '}
             <a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">
               X Developer Portal
             </a>
           </p>
           <p>
-            Callback URL: <code className="bg-zinc-800 px-1.5 py-0.5 rounded font-mono text-zinc-400">{callbackUrl}</code>
+            コールバックURL: <code className="bg-zinc-800 px-1.5 py-0.5 rounded font-mono text-zinc-400">{callbackUrl}</code>
           </p>
         </div>
       </div>
@@ -1286,6 +1409,7 @@ function XOAuthSection({ onToast }: { onToast: (t: Toast) => void }) {
 }
 
 export default function SettingsPage() {
+  const { language } = useLanguage()
   const [toast, setToast] = useState<Toast | null>(null)
 
   function showToast(t: Toast) {
@@ -1298,9 +1422,9 @@ export default function SettingsPage() {
 
       {/* Page Header */}
       <div className="mb-8">
-        <p className="text-xs text-zinc-500 uppercase tracking-widest font-medium mb-1">Configuration</p>
-        <h1 className="text-2xl font-bold text-zinc-100">Settings</h1>
-        <p className="text-zinc-400 mt-1 text-sm">Configure your Siftly instance</p>
+        <p className="text-xs text-zinc-500 uppercase tracking-widest font-medium mb-1">{uiText(language, '設定', 'Configuration')}</p>
+        <h1 className="text-2xl font-bold text-zinc-100">{uiText(language, '設定', 'Settings')}</h1>
+        <p className="text-zinc-400 mt-1 text-sm">{uiText(language, 'Siftlyの環境を設定します', 'Configure your Siftly instance')}</p>
       </div>
 
       {/* Toast */}
@@ -1315,6 +1439,7 @@ export default function SettingsPage() {
         <XOAuthSection onToast={showToast} />
         <DataSection />
         <ObsidianExportBlock onToast={showToast} />
+        <ArchiveSettingsBlock onToast={showToast} />
         <DangerZoneSection onToast={showToast} />
         <AboutSection />
       </div>

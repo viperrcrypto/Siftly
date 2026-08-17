@@ -38,13 +38,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const categorySlug = searchParams.get('category')?.trim() ?? ''
   const mediaType = searchParams.get('mediaType')?.trim() ?? ''
   const uncategorized = searchParams.get('uncategorized') === 'true'
+  const trash = searchParams.get('trash') === 'true'
   const sortParam = searchParams.get('sort')?.trim() ?? 'newest'
   const page = parseIntParam(searchParams.get('page'), DEFAULT_PAGE)
   const limit = Math.min(parseIntParam(searchParams.get('limit'), DEFAULT_LIMIT), MAX_LIMIT)
   const skip = (page - 1) * limit
   const orderDir = sortParam === 'oldest' ? 'asc' : 'desc'
 
-  const where: Record<string, unknown> = {}
+  const where: Record<string, unknown> = { deletedAt: trash ? { not: null } : null }
 
   if (source === 'bookmark' || source === 'like') {
     where.source = source
@@ -76,9 +77,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         where,
         skip,
         take: limit,
-        orderBy: [{ tweetCreatedAt: orderDir }, { importedAt: orderDir }],
+        orderBy: trash
+          ? [{ deletedAt: orderDir }, { importedAt: orderDir }]
+          : [{ tweetCreatedAt: orderDir }, { importedAt: orderDir }],
         include: {
           mediaItems: true,
+          archive: { select: { status: true, attemptCount: true, lastError: true, resultJson: true, updatedAt: true } },
           categories: {
             include: {
               category: {
@@ -91,6 +95,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               },
             },
           },
+          categoryFeedback: { select: { categoryId: true, action: true } },
         },
       }),
       prisma.bookmark.count({ where }),
@@ -105,6 +110,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       source: bookmark.source,
       tweetCreatedAt: bookmark.tweetCreatedAt?.toISOString() ?? null,
       importedAt: bookmark.importedAt.toISOString(),
+      deletedAt: bookmark.deletedAt?.toISOString() ?? null,
       mediaItems: bookmark.mediaItems.map((m) => ({
         id: m.id,
         type: m.type,
@@ -117,7 +123,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         slug: bc.category.slug,
         color: bc.category.color,
         confidence: bc.confidence,
+        manual: bookmark.categoryFeedback.some((feedback) => feedback.categoryId === bc.category.id && feedback.action === 'include'),
       })),
+      hasCategoryFeedback: bookmark.categoryFeedback.length > 0,
+      archive: bookmark.archive ? {
+        status: bookmark.archive.status, attemptCount: bookmark.archive.attemptCount, lastError: bookmark.archive.lastError,
+        updatedAt: bookmark.archive.updatedAt.toISOString(),
+        result: (() => { try { return JSON.parse(bookmark.archive!.resultJson) } catch { return {} } })(),
+      } : null,
     }))
 
     return NextResponse.json({

@@ -12,6 +12,7 @@ export interface BookmarkCategory {
   slug: string
   color: string
   confidence: number | null
+  manual?: boolean
 }
 
 export interface BookmarkWithMedia {
@@ -22,8 +23,11 @@ export interface BookmarkWithMedia {
   authorName: string
   tweetCreatedAt: string | null
   importedAt?: string
+  deletedAt?: string | null
   mediaItems: MediaItem[]
   categories: BookmarkCategory[]
+  hasCategoryFeedback?: boolean
+  archive?: { status: string; attemptCount: number; lastError: string | null; updatedAt: string; result: Record<string, unknown> } | null
 }
 
 export interface Category {
@@ -35,6 +39,7 @@ export interface Category {
   isAiGenerated: boolean
   createdAt: string
   bookmarkCount: number
+  canDelete?: boolean
 }
 
 export interface StatsResponse {

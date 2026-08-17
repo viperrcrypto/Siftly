@@ -3,16 +3,14 @@
 import React, { useRef, useEffect, useState } from 'react'
 import { ExternalLink, Download, FileText, Play, Pencil, X, Check, ImageOff, Bookmark, Globe } from 'lucide-react'
 import type { BookmarkWithMedia, Category } from '@/lib/types'
+import { useLanguage } from '@/components/language-provider'
+import { uiLocale, uiText, type UiLanguage } from '@/lib/i18n'
+import { extractLinkPreviewUrls } from '@/lib/link-preview-url'
 
 // ── URL helpers ────────────────────────────────────────────────────────────────
 
-const URL_REGEX = /https?:\/\/[^\s]+/g
 // Twitter always shortens links to t.co — strip these from display text
 const TCO_REGEX = /https?:\/\/t\.co\/[^\s]+/g
-
-function extractUrls(text: string): string[] {
-  return text.match(URL_REGEX) ?? []
-}
 
 /** Always strip t.co shortlinks — Twitter appends them to every tweet with a link or media */
 function stripTcoUrls(text: string): string {
@@ -30,16 +28,20 @@ interface LinkPreviewData {
   url: string
 }
 
-// Module-level cache: url → preview data (or null on error)
-const previewCache = new Map<string, LinkPreviewData | null>()
+// Module-level cache: successful URL → preview data. Failed requests are retried on remount.
+const previewCache = new Map<string, LinkPreviewData>()
+
+function initialPreviewState(cacheKey: string): LinkPreviewData | null | 'loading' {
+  return previewCache.has(cacheKey) ? previewCache.get(cacheKey) ?? null : 'loading'
+}
 
 function LinkPreview({ url, tweetUrl, tweetId, prominent = false }: { url: string; tweetUrl: string; tweetId?: string; prominent?: boolean }) {
-  const [data, setData] = useState<LinkPreviewData | null | 'loading'>('loading')
+  const { language } = useLanguage()
+  const cacheKey = tweetId ? `${url}:${tweetId}` : url
+  const [data, setData] = useState<LinkPreviewData | null | 'loading'>(() => initialPreviewState(cacheKey))
 
   useEffect(() => {
-    const cacheKey = tweetId ? `${url}:${tweetId}` : url
     if (previewCache.has(cacheKey)) {
-      setData(previewCache.get(cacheKey) ?? null)
       return
     }
     let cancelled = false
@@ -48,14 +50,14 @@ function LinkPreview({ url, tweetUrl, tweetId, prominent = false }: { url: strin
       .then((d: LinkPreviewData & { error?: string }) => {
         if (cancelled) return
         const result = d.error || !d.title ? null : d
-        previewCache.set(cacheKey, result)
+        if (result) previewCache.set(cacheKey, result)
         setData(result)
       })
       .catch(() => {
-        if (!cancelled) { previewCache.set(cacheKey, null); setData(null) }
+        if (!cancelled) setData(null)
       })
     return () => { cancelled = true }
-  }, [url, tweetId])
+  }, [cacheKey, url, tweetId])
 
   if (data === 'loading') {
     return (
@@ -102,7 +104,7 @@ function LinkPreview({ url, tweetUrl, tweetId, prominent = false }: { url: strin
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-zinc-200 group-hover/link:text-white transition-colors">
-            {data.title?.includes('Article') ? 'View Article on X' : data.title || 'View on X'}
+            {data.title?.includes('Article') ? uiText(language, 'Xで記事を見る', 'View article on X') : data.title || uiText(language, 'Xで見る', 'View on X')}
           </p>
           <p className="text-xs text-zinc-500 truncate">{data.domain}{data.url ? new URL(data.url).pathname : ''}</p>
         </div>
@@ -234,9 +236,9 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-function formatDate(dateStr: string | null): string {
+function formatDate(dateStr: string | null, language: UiLanguage): string {
   if (!dateStr) return ''
-  return new Date(dateStr).toLocaleDateString('en-US', {
+  return new Date(dateStr).toLocaleDateString(uiLocale(language), {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -310,11 +312,12 @@ interface TopMediaSlotProps {
 
 /** Consistent overlay shown on top of a thumbnail — used for both video and X-link cases */
 function MediaOverlay({ label, icon }: { label?: string; icon?: React.ReactNode }) {
+  const { language } = useLanguage()
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-black/40 hover:bg-black/50 transition-colors">
       {icon ?? (
         <span className="px-3 py-1.5 rounded-full bg-black/60 text-white text-xs font-semibold backdrop-blur-sm">
-          {label ?? 'Watch on X ↗'}
+          {label ?? uiText(language, 'Xで見る ↗', 'View on X ↗')}
         </span>
       )}
     </div>
@@ -349,6 +352,7 @@ function MediaPlaceholder({ onClick, label, isVideo }: { onClick?: (e: React.Mou
 }
 
 function TopMediaSlot({ item, tweetUrl }: TopMediaSlotProps) {
+  const { language } = useLanguage()
   const [imgError, setImgError] = useState(false)
 
   // ── Photo: show inline ─────────────────────────────────────────────────────
@@ -359,7 +363,7 @@ function TopMediaSlot({ item, tweetUrl }: TopMediaSlotProps) {
           <div className="h-48 flex flex-col items-center justify-center gap-2 bg-zinc-800/50 hover:bg-zinc-800/70 transition-colors">
             <ImageOff size={18} className="text-zinc-600" />
             <span className="px-3 py-1.5 rounded-full bg-zinc-700 text-zinc-400 text-xs font-semibold">
-              View on X ↗
+              {uiText(language, 'Xで見る ↗', 'View on X ↗')}
             </span>
           </div>
         </a>
@@ -369,7 +373,7 @@ function TopMediaSlot({ item, tweetUrl }: TopMediaSlotProps) {
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={proxyUrl(item.url)}
-        alt="Bookmark media"
+        alt={uiText(language, 'ブックマークのメディア', 'Bookmark media')}
         className="w-full h-48 object-cover"
         loading="lazy"
         onError={() => setImgError(true)}
@@ -398,7 +402,7 @@ function TopMediaSlot({ item, tweetUrl }: TopMediaSlotProps) {
           <MediaOverlay />
         </div>
       ) : (
-        <MediaPlaceholder label="Watch on X ↗" isVideo={item.type === 'video'} />
+        <MediaPlaceholder label={uiText(language, 'Xで見る ↗', 'Watch on X ↗')} isVideo={item.type === 'video'} />
       )}
     </a>
   )
@@ -413,6 +417,7 @@ function CategoryChip({
   category: BookmarkWithMedia['categories'][number]
   onRemove?: (id: string) => void
 }) {
+  const { language } = useLanguage()
   return (
     <span
       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
@@ -428,6 +433,11 @@ function CategoryChip({
         style={{ color: category.color, fill: category.color }}
       />
       {category.name}
+      {category.manual && (
+        <span className="text-[10px] opacity-70" title={uiText(language, '手動で固定', 'Manually fixed')}>
+          {uiText(language, '手動', 'Manual')}
+        </span>
+      )}
       {onRemove && (
         <button
           onClick={(e) => {
@@ -435,7 +445,7 @@ function CategoryChip({
             onRemove(category.id)
           }}
           className="ml-0.5 opacity-50 hover:opacity-100 transition-opacity"
-          aria-label={`Remove ${category.name}`}
+          aria-label={uiText(language, `${category.name}を削除`, `Remove ${category.name}`)}
         >
           <X size={10} />
         </button>
@@ -446,17 +456,58 @@ function CategoryChip({
 
 // ── Inline category editor ─────────────────────────────────────────────────────
 
+export async function runSingleFlight(
+  gate: { current: boolean },
+  action: () => Promise<void>,
+): Promise<boolean> {
+  if (gate.current) return false
+  gate.current = true
+  try {
+    await action()
+    return true
+  } finally {
+    gate.current = false
+  }
+}
+
+export async function deleteBookmark(
+  id: string,
+  language: UiLanguage,
+  onDeleted?: (id: string) => void,
+): Promise<string | null> {
+  if (!window.confirm(uiText(
+    language,
+    'このブックマークをゴミ箱へ移動しますか？\n関連データは保持され、ゴミ箱から復元できます。',
+    'Move this bookmark to trash?\nIts related data is kept and it can be restored from trash.',
+  ))) return null
+
+  try {
+    const response = await fetch(`/api/bookmarks/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    const data = await response.json().catch(() => ({})) as { error?: string }
+    if (!response.ok) return data.error ?? uiText(language, 'ゴミ箱への移動に失敗しました', 'Failed to move bookmark to trash')
+    if (onDeleted) onDeleted(id)
+    else window.location.reload()
+    return null
+  } catch {
+    return uiText(language, 'ゴミ箱への移動に失敗しました', 'Failed to move bookmark to trash')
+  }
+}
+
 interface CategoryEditorProps {
-  bookmarkId: string
   currentCategoryIds: Set<string>
-  onSave: (newIds: string[]) => void
+  hasCategoryFeedback: boolean
+  pending: boolean
+  deleteError: string | null
+  onSave: (newIds: string[]) => Promise<boolean>
+  onReset: () => Promise<boolean>
+  onTrash: () => Promise<void>
   onClose: () => void
 }
 
-function CategoryEditor({ bookmarkId, currentCategoryIds, onSave, onClose }: CategoryEditorProps) {
+function CategoryEditor({ currentCategoryIds, hasCategoryFeedback, pending, deleteError, onSave, onReset, onTrash, onClose }: CategoryEditorProps) {
+  const { language } = useLanguage()
   const [allCategories, setAllCategories] = useState<Category[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set(currentCategoryIds))
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const editorRef = useRef<HTMLDivElement>(null)
@@ -469,24 +520,25 @@ function CategoryEditor({ bookmarkId, currentCategoryIds, onSave, onClose }: Cat
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load categories')
+          setError(err instanceof Error ? err.message : uiText(language, 'カテゴリの読み込みに失敗しました', 'Failed to load categories'))
           setLoading(false)
         }
       })
     return () => { cancelled = true }
-  }, [])
+  }, [language])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (editorRef.current && !editorRef.current.contains(event.target as Node)) {
+      if (!pending && editorRef.current && !editorRef.current.contains(event.target as Node)) {
         onClose()
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [onClose])
+  }, [onClose, pending])
 
   function toggleCategory(id: string) {
+    if (pending) return
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -496,24 +548,21 @@ function CategoryEditor({ bookmarkId, currentCategoryIds, onSave, onClose }: Cat
   }
 
   async function handleSave() {
-    setSaving(true)
     setError(null)
     const ids = Array.from(selected)
     try {
-      const res = await fetch(`/api/bookmarks/${bookmarkId}/categories`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ categoryIds: ids }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`)
-      }
-      onSave(ids)
+      await onSave(ids)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
-    } finally {
-      setSaving(false)
+      setError(err instanceof Error ? err.message : uiText(language, '保存に失敗しました', 'Failed to save'))
+    }
+  }
+
+  async function handleReset() {
+    setError(null)
+    try {
+      await onReset()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : uiText(language, 'リセットに失敗しました', 'Reset failed'))
     }
   }
 
@@ -523,12 +572,12 @@ function CategoryEditor({ bookmarkId, currentCategoryIds, onSave, onClose }: Cat
       className="absolute left-0 right-0 bottom-full mb-2 z-50 bg-zinc-900 border border-zinc-700 rounded-xl p-3 shadow-2xl shadow-black/50"
       onClick={(e) => e.stopPropagation()}
     >
-      <p className="text-xs font-semibold text-zinc-500 mb-2 uppercase tracking-wide">Edit categories</p>
+      <p className="text-xs font-semibold text-zinc-500 mb-2 uppercase tracking-wide">{uiText(language, 'カテゴリを編集', 'Edit categories')}</p>
 
-      {loading && <p className="text-xs text-zinc-600 py-2">Loading…</p>}
+      {loading && <p className="text-xs text-zinc-600 py-2">{uiText(language, '読み込み中…', 'Loading…')}</p>}
 
       {!loading && allCategories.length === 0 && (
-        <p className="text-xs text-zinc-600 py-2">No categories found.</p>
+        <p className="text-xs text-zinc-600 py-2">{uiText(language, 'カテゴリがありません。', 'No categories available.')}</p>
       )}
 
       {!loading && allCategories.length > 0 && (
@@ -539,6 +588,7 @@ function CategoryEditor({ bookmarkId, currentCategoryIds, onSave, onClose }: Cat
               <button
                 key={cat.id}
                 onClick={() => toggleCategory(cat.id)}
+                disabled={pending}
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-all"
                 style={
                   isSelected
@@ -558,17 +608,34 @@ function CategoryEditor({ bookmarkId, currentCategoryIds, onSave, onClose }: Cat
       )}
 
       {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+      {deleteError && <p role="alert" className="text-xs text-red-400 mt-2">{deleteError}</p>}
 
       <div className="flex items-center justify-end gap-2 mt-3 pt-2 border-t border-zinc-800">
-        <button onClick={onClose} className="px-2.5 py-1 text-xs rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
-          Cancel
+        <button
+          onClick={() => void onTrash()}
+          disabled={pending}
+          className="mr-auto px-2.5 py-1 text-xs rounded-lg text-red-400 hover:text-red-300 hover:bg-red-500/10 disabled:opacity-50 transition-colors"
+        >
+          {uiText(language, 'ゴミ箱へ移動', 'Move to trash')}
+        </button>
+        {hasCategoryFeedback && (
+          <button
+            onClick={() => void handleReset()}
+            disabled={pending}
+            className="px-2.5 py-1 text-xs rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+          >
+            {uiText(language, 'AI判断に戻す', 'Return to AI judgment')}
+          </button>
+        )}
+        <button onClick={onClose} disabled={pending} className="px-2.5 py-1 text-xs rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 disabled:opacity-50 transition-colors">
+          {uiText(language, 'キャンセル', 'Cancel')}
         </button>
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={pending}
           className="px-3 py-1 text-xs rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium transition-colors"
         >
-          {saving ? 'Saving…' : 'Save'}
+          {pending ? uiText(language, '保存中…', 'Saving…') : uiText(language, '保存', 'Save')}
         </button>
       </div>
     </div>
@@ -579,26 +646,33 @@ function CategoryEditor({ bookmarkId, currentCategoryIds, onSave, onClose }: Cat
 
 interface BookmarkCardProps {
   bookmark: BookmarkWithMedia
+  onDeleted?: (id: string) => void
 }
 
-export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
+export default function BookmarkCard({ bookmark, onDeleted }: BookmarkCardProps) {
+  const { language } = useLanguage()
   const [categories, setCategories] = useState(bookmark.categories)
   const [expanded, setExpanded] = useState(false)
   const [editingCategories, setEditingCategories] = useState(false)
+  const [hasCategoryFeedback, setHasCategoryFeedback] = useState(bookmark.hasCategoryFeedback ?? false)
+  const categoryWriteGate = useRef(false)
+  const [categoryWritePending, setCategoryWritePending] = useState(false)
+  const deleteGate = useRef(false)
+  const [deletePending, setDeletePending] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const tweetUrl = (bookmark.authorHandle && bookmark.authorHandle !== 'unknown')
     ? `https://twitter.com/${bookmark.authorHandle}/status/${bookmark.tweetId}`
     : `https://twitter.com/i/web/status/${bookmark.tweetId}`
   const firstMedia = bookmark.mediaItems[0] ?? null
   const hasMedia = bookmark.mediaItems.length > 0
-  const dateStr = formatDate(bookmark.tweetCreatedAt ?? bookmark.importedAt ?? null)
+  const dateStr = formatDate(bookmark.tweetCreatedAt ?? bookmark.importedAt ?? null, language)
   const isKnownAuthor = bookmark.authorHandle !== 'unknown'
 
   // Always strip t.co shortlinks from display text — Twitter appends them to every tweet
-  const tcoUrls = bookmark.text.match(TCO_REGEX) ?? []
   const cleanText = stripTcoUrls(bookmark.text)
-  // Show link preview only when there's no real media attached
-  const previewUrl = !hasMedia && tcoUrls.length > 0 ? tcoUrls[tcoUrls.length - 1] : null
+  // Show external link previews only when there's no real media attached.
+  const previewUrls = !hasMedia ? extractLinkPreviewUrls(bookmark.text) : []
 
   const TEXT_LIMIT = 280
   const isLong = cleanText.length > TEXT_LIMIT
@@ -606,27 +680,98 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
 
   const currentCategoryIds = new Set(categories.map((c) => c.id))
 
-  function handleRemoveCategory(categoryId: string) {
-    const newIds = categories.filter((c) => c.id !== categoryId).map((c) => c.id)
-    setCategories((prev) => prev.filter((c) => c.id !== categoryId))
-    fetch(`/api/bookmarks/${bookmark.id}/categories`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categoryIds: newIds }),
-    }).catch(() => { setCategories(bookmark.categories) })
+  function applyManualCategories(manualCategoryIds: string[]) {
+    const manualIds = new Set(manualCategoryIds)
+    setCategories((prev) => prev.map((category) => ({ ...category, manual: manualIds.has(category.id) })))
   }
 
-  function handleSaveCategories(newIds: string[]) {
-    const allCats = cachedCategories ?? []
-    const newCategories = newIds
-      .map((id) => {
-        const found = allCats.find((c) => c.id === id)
-        if (!found) return null
-        return { id: found.id, name: found.name, slug: found.slug, color: found.color, confidence: 1.0 }
+  async function runCategoryWrite(action: () => Promise<void>): Promise<boolean> {
+    return runSingleFlight(categoryWriteGate, async () => {
+      setCategoryWritePending(true)
+      try {
+        await action()
+      } finally {
+        setCategoryWritePending(false)
+      }
+    })
+  }
+
+  function handleRemoveCategory(categoryId: string) {
+    if (deletePending) return
+    const previousCategories = categories
+    const previousHasCategoryFeedback = hasCategoryFeedback
+    const newIds = categories.filter((c) => c.id !== categoryId).map((c) => c.id)
+    void runCategoryWrite(async () => {
+      setCategories((prev) => prev.filter((c) => c.id !== categoryId))
+      try {
+        const res = await fetch(`/api/bookmarks/${bookmark.id}/categories`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ categoryIds: newIds }),
+        })
+        if (!res.ok) throw new Error('Failed to update categories')
+        const data = await res.json() as { manualCategoryIds?: string[]; hasCategoryFeedback?: boolean }
+        applyManualCategories(data.manualCategoryIds ?? [])
+        setHasCategoryFeedback(data.hasCategoryFeedback ?? false)
+      } catch {
+        setCategories(previousCategories)
+        setHasCategoryFeedback(previousHasCategoryFeedback)
+      }
+    })
+  }
+
+  async function handleSaveCategories(newIds: string[]): Promise<boolean> {
+    if (deletePending) return false
+    return runCategoryWrite(async () => {
+      const res = await fetch(`/api/bookmarks/${bookmark.id}/categories`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categoryIds: newIds }),
       })
-      .filter((c): c is NonNullable<typeof c> => c !== null)
-    setCategories(newCategories)
-    setEditingCategories(false)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`)
+      }
+      const data = await res.json() as { manualCategoryIds?: string[]; hasCategoryFeedback?: boolean }
+      const allCats = cachedCategories ?? []
+      const manualIds = new Set(data.manualCategoryIds ?? [])
+      const existingCategories = new Map(categories.map((category) => [category.id, category]))
+      const newCategories = newIds
+        .map((id) => {
+          const found = allCats.find((c) => c.id === id)
+          if (!found) return null
+          return {
+            id: found.id,
+            name: found.name,
+            slug: found.slug,
+            color: found.color,
+            confidence: existingCategories.get(found.id)?.confidence ?? 0.8,
+            manual: manualIds.has(found.id),
+          }
+        })
+        .filter((c): c is NonNullable<typeof c> => c !== null)
+      setCategories(newCategories)
+      setHasCategoryFeedback(data.hasCategoryFeedback ?? false)
+      setEditingCategories(false)
+    })
+  }
+
+  async function handleResetCategoryFeedback(): Promise<boolean> {
+    if (deletePending) return false
+    return runCategoryWrite(async () => {
+      const res = await fetch(`/api/bookmarks/${bookmark.id}/categories`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`)
+      }
+      const data = await res.json() as { removedCategoryIds?: string[] }
+      const removedIds = new Set(data.removedCategoryIds ?? [])
+      setCategories((prev) => prev
+        .filter((category) => !removedIds.has(category.id))
+        .map((category) => ({ ...category, manual: false })))
+      setHasCategoryFeedback(false)
+      setEditingCategories(false)
+    })
   }
 
   function handleDownload() {
@@ -693,6 +838,17 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
     URL.revokeObjectURL(url)
   }
 
+  async function handleDelete() {
+    if (deletePending || categoryWritePending) return
+    setDeleteError(null)
+    await runSingleFlight(deleteGate, async () => {
+      setDeletePending(true)
+      const error = await deleteBookmark(bookmark.id, language, onDeleted)
+      if (error) setDeleteError(error)
+      setDeletePending(false)
+    })
+  }
+
   // Only show download if media is a photo or a real video (not a thumbnail JPEG stored as video)
   const isDownloadable = firstMedia !== null &&
     (firstMedia.type === 'photo' || isVideoUrl(firstMedia.url))
@@ -733,7 +889,7 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
             <button
               onClick={handleDownloadMarkdown}
               className="p-1.5 rounded-lg text-zinc-600 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
-              title="Download as Markdown"
+              title={uiText(language, 'Markdownでダウンロード', 'Download Markdown')}
             >
               <FileText size={13} />
             </button>
@@ -741,7 +897,7 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
               <button
                 onClick={handleDownload}
                 className="p-1.5 rounded-lg text-zinc-600 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
-                title="Download media"
+                title={uiText(language, 'メディアをダウンロード', 'Download media')}
               >
                 <Download size={13} />
               </button>
@@ -751,7 +907,7 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
               target="_blank"
               rel="noopener noreferrer"
               className="p-1.5 rounded-lg text-zinc-600 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
-              title="Open on X"
+              title={uiText(language, 'Xで開く', 'Open on X')}
             >
               <ExternalLink size={13} />
             </a>
@@ -759,7 +915,7 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
         </div>
 
         {/* Tweet text */}
-        <div className={`flex-1 ${previewUrl && !displayText ? '' : 'min-h-[4.5rem]'}`}>
+        <div className={`flex-1 ${previewUrls.length > 0 && !displayText ? '' : 'min-h-[4.5rem]'}`}>
           {displayText.length > 0 && (
             <p className="text-sm text-zinc-200 leading-relaxed">
               {displayText}
@@ -770,7 +926,7 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
                     onClick={() => setExpanded(true)}
                     className="text-indigo-400 hover:text-indigo-300 transition-colors"
                   >
-                    more
+                    {uiText(language, '続きを読む', 'Read more')}
                   </button>
                 </span>
               )}
@@ -781,29 +937,30 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
                     onClick={() => setExpanded(false)}
                     className="text-zinc-500 hover:text-zinc-400 transition-colors text-xs"
                   >
-                    less
+                    {uiText(language, '折りたたむ', 'Collapse')}
                   </button>
                 </span>
               )}
             </p>
           )}
-          {!displayText && !firstMedia && !previewUrl && (
-            <p className="text-xs text-zinc-700 italic">No text content</p>
+          {!displayText && !firstMedia && previewUrls.length === 0 && (
+            <p className="text-xs text-zinc-700 italic">{uiText(language, '本文なし', 'No text')}</p>
           )}
-          {previewUrl && (
-            <LinkPreview url={previewUrl} tweetUrl={tweetUrl} tweetId={bookmark.tweetId} prominent={!displayText} />
-          )}
+          {previewUrls.map((url) => (
+            <LinkPreview key={url} url={url} tweetUrl={tweetUrl} tweetId={bookmark.tweetId} prominent={!displayText && previewUrls.length === 1} />
+          ))}
         </div>
 
         {/* Footer: categories + meta — fixed two-row structure keeps all cards aligned */}
         <div className="relative mt-auto pt-3 border-t border-zinc-800/50">
+          {deleteError && <p role="alert" className="mb-2 text-xs text-red-400">{deleteError}</p>}
           {/* Row 1: chips + date — consistent height across all cards */}
           <div className="flex items-center gap-1.5 flex-wrap min-h-[1.5rem]">
             {categories.map((cat) => (
-              <CategoryChip key={cat.id} category={cat} onRemove={handleRemoveCategory} />
+              <CategoryChip key={cat.id} category={cat} onRemove={!editingCategories && !categoryWritePending && !deletePending ? handleRemoveCategory : undefined} />
             ))}
             {categories.length === 0 && (
-              <span className="text-xs text-zinc-700 italic">Uncategorized</span>
+              <span className="text-xs text-zinc-700 italic">{uiText(language, '未分類', 'Uncategorized')}</span>
             )}
             {isKnownAuthor && dateStr && (
               <span className="ml-auto text-xs text-zinc-600 flex-shrink-0">
@@ -816,19 +973,24 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
           <div className="mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={() => setEditingCategories((v) => !v)}
+              disabled={categoryWritePending || deletePending}
               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs text-zinc-700 hover:text-zinc-300 hover:bg-zinc-800 border border-transparent hover:border-zinc-700 transition-all"
-              title="Edit categories"
+              title={uiText(language, 'カテゴリを編集', 'Edit categories')}
             >
               <Pencil size={10} />
-              edit
+              {uiText(language, '編集', 'Edit')}
             </button>
           </div>
 
           {editingCategories && (
             <CategoryEditor
-              bookmarkId={bookmark.id}
               currentCategoryIds={currentCategoryIds}
+              hasCategoryFeedback={hasCategoryFeedback}
+              pending={categoryWritePending || deletePending}
+              deleteError={deleteError}
               onSave={handleSaveCategories}
+              onReset={handleResetCategoryFeedback}
+              onTrash={handleDelete}
               onClose={() => setEditingCategories(false)}
             />
           )}

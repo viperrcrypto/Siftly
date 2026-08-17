@@ -21,13 +21,34 @@ model Bookmark {
   enrichedAt      DateTime? // when AI enrichment last ran — drives incremental processing
   enrichmentMeta  String?   // JSON: {sentiment, people[], companies[]} from batch enrichment
   source          String    @default("bookmark")  // "bookmark" | "like"
+  deletedAt       DateTime?
   mediaItems    MediaItem[]
   categories    BookmarkCategory[]
+  categoryFeedback CategoryFeedback[]
+  archive       ArchiveRecord?
 
   @@index([authorHandle])
   @@index([tweetCreatedAt])
   @@index([enrichedAt])
   @@index([source])
+  @@index([deletedAt])
+}
+
+model ArchiveRecord {
+  id              String   @id @default(cuid())
+  bookmarkId      String   @unique
+  status          String   @default("pending") // pending | processing | success | partial | failed
+  attemptCount    Int      @default(0)
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  lastError       String?
+  pipelineVersion String   @default("1")
+  resultJson      String   @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  bookmark        Bookmark @relation(fields: [bookmarkId], references: [id], onDelete: Cascade)
+
+  @@index([status])
 }
 
 model Category {
@@ -39,6 +60,7 @@ model Category {
   isAiGenerated Boolean @default(false)
   createdAt   DateTime @default(now())
   bookmarks   BookmarkCategory[]
+  feedback    CategoryFeedback[]
 }
 
 model BookmarkCategory {
@@ -51,6 +73,18 @@ model BookmarkCategory {
   @@id([bookmarkId, categoryId])
 }
 
+model CategoryFeedback {
+  bookmarkId String
+  categoryId String
+  action     String   // include | exclude
+  updatedAt  DateTime @updatedAt
+  bookmark   Bookmark @relation(fields: [bookmarkId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([bookmarkId, categoryId])
+  @@index([updatedAt])
+}
+
 model MediaItem {
   id           String   @id @default(cuid())
   bookmarkId   String
@@ -59,10 +93,23 @@ model MediaItem {
   thumbnailUrl String?
   localPath    String?
   imageTags    String?  // AI-generated structured JSON visual description
+  mediaKey     String?
+  sourceTweetId String?
+  sourceTweetUrl String?
+  sourceMediaIndex Int?
+  sourceAuthorId String?
+  sourceAuthorHandle String?
+  downloadStatus String @default("pending")
+  downloadError String?
+  downloadedAt DateTime?
+  fileSize     Int?
+  contentHash  String?
   bookmark     Bookmark @relation(fields: [bookmarkId], references: [id], onDelete: Cascade)
 
   @@index([bookmarkId])
   @@index([url])
+  @@unique([bookmarkId, url])
+  @@unique([bookmarkId, sourceTweetId, sourceMediaIndex])
 }
 
 model ImportJob {

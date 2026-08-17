@@ -22,7 +22,7 @@ cp ../.env.example .env
 docker compose up --build
 ```
 
-App is available at **http://localhost:3000**
+App is available at **http://localhost:15000**
 
 On subsequent starts (no code changes):
 
@@ -44,6 +44,10 @@ The `docker/.env` file is loaded automatically by Compose and is gitignored — 
 | `ANTHROPIC_BASE_URL` | No | Override to point at a local proxy |
 
 *AI features won't work without at least one of `ANTHROPIC_CLI_KEY` or `ANTHROPIC_API_KEY`.
+
+## Obsidian 自動アーカイブ
+
+コンテナからVaultを使う場合は、Vaultを書き込み可能なホストボリュームとして明示的にマウントし、そのコンテナ内パスをSettingsに設定してください。`gallery-dl` はイメージに含まれないため、Xスレッド復元を使う場合はカスタムイメージで導入し、Settingsのbinary pathへ設定します。外部動画は保存しません。
 
 **Which key should I use?**
 

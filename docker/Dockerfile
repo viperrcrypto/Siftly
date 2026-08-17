@@ -45,7 +45,7 @@ RUN chmod +x ./docker-entrypoint.sh
 RUN mkdir -p /data && chown -R appuser:appgroup /app /data
 USER appuser
 
-EXPOSE 3000
+EXPOSE 15000
 
 # /data is the volume mount point for the SQLite database
 VOLUME ["/data"]

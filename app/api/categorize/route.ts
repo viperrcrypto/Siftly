@@ -17,10 +17,13 @@ import {
 } from '@/lib/vision-analyzer'
 import { backfillEntities } from '@/lib/rawjson-extractor'
 import { rebuildFts } from '@/lib/fts'
+import { normalizeUiLanguage, UI_LANGUAGE_COOKIE } from '@/lib/i18n'
+import { threadContextFromArchive } from '@/lib/thread-context'
 
 type Stage = 'vision' | 'entities' | 'enrichment' | 'categorize' | 'parallel'
 
 interface CategorizationState {
+  runId: string | null
   status: 'idle' | 'running' | 'stopping'
   stage: Stage | null
   done: number
@@ -39,10 +42,12 @@ interface CategorizationState {
 const globalState = globalThis as unknown as {
   categorizationState: CategorizationState
   categorizationAbort: boolean
+  categorizationRunSequence: number
 }
 
 if (!globalState.categorizationState) {
   globalState.categorizationState = {
+    runId: null,
     status: 'idle',
     stage: null,
     done: 0,
@@ -55,6 +60,7 @@ if (!globalState.categorizationState) {
 if (globalState.categorizationAbort === undefined) {
   globalState.categorizationAbort = false
 }
+if (globalState.categorizationRunSequence === undefined) globalState.categorizationRunSequence = 0
 
 function shouldAbort(): boolean {
   return globalState.categorizationAbort
@@ -72,6 +78,7 @@ export async function GET(): Promise<NextResponse> {
   const state = getState()
   return NextResponse.json({
     status: state.status,
+    runId: state.runId,
     stage: state.stage,
     done: state.done,
     total: state.total,
@@ -94,20 +101,111 @@ export async function DELETE(): Promise<NextResponse> {
 const PIPELINE_WORKERS = 5
 const CAT_BATCH_SIZE = 25
 
+function nextRunId(): string {
+  globalState.categorizationRunSequence++
+  return `${Date.now().toString(36)}-${globalState.categorizationRunSequence}`
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   if (getState().status === 'running' || getState().status === 'stopping') {
     return NextResponse.json({ error: 'Categorization is already running' }, { status: 409 })
   }
 
-  let body: { bookmarkIds?: string[]; apiKey?: string; force?: boolean } = {}
+  let body: Record<string, unknown> = {}
   try {
     const text = await request.text()
-    if (text.trim()) body = JSON.parse(text)
+    if (text.trim()) {
+      const parsed: unknown = JSON.parse(text)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return NextResponse.json({ error: 'JSON body must be an object' }, { status: 400 })
+      }
+      body = parsed as Record<string, unknown>
+    }
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const { bookmarkIds = [], apiKey, force = false } = body
+  const { bookmarkIds = [], apiKey, force = false, categoryOnly = false } = body
+  if (typeof force !== 'boolean' || typeof categoryOnly !== 'boolean' || (apiKey !== undefined && typeof apiKey !== 'string')) {
+    return NextResponse.json({ error: 'force and categoryOnly must be booleans; apiKey must be a string' }, { status: 400 })
+  }
+  if (bookmarkIds !== undefined && (!Array.isArray(bookmarkIds) || bookmarkIds.some((id) => typeof id !== 'string'))) {
+    return NextResponse.json({ error: 'bookmarkIds must be an array of bookmark IDs' }, { status: 400 })
+  }
+  const language = normalizeUiLanguage(body.language ?? request.cookies?.get(UI_LANGUAGE_COOKIE)?.value)
+
+  if (categoryOnly === true) {
+    if (force === true || apiKey !== undefined) {
+      return NextResponse.json({ error: 'categoryOnly cannot be combined with force or apiKey' }, { status: 400 })
+    }
+    if (!Array.isArray(bookmarkIds) || bookmarkIds.length === 0 || bookmarkIds.some((id) => typeof id !== 'string' || !id.trim())) {
+      return NextResponse.json({ error: 'bookmarkIds must be a non-empty array of bookmark IDs' }, { status: 400 })
+    }
+    const selectedIds = [...new Set(bookmarkIds.map((id) => id.trim()))]
+    if (selectedIds.length > 500) return NextResponse.json({ error: 'bookmarkIds must contain at most 500 IDs' }, { status: 400 })
+    const selected = await prisma.bookmark.findMany({
+      where: { id: { in: selectedIds }, deletedAt: null },
+      select: BOOKMARK_SELECT,
+    })
+    if (selected.length !== selectedIds.length) return NextResponse.json({ error: 'One or more bookmarks were not found' }, { status: 404 })
+
+    const runId = nextRunId()
+    globalState.categorizationAbort = false
+    setState({
+      runId, status: 'running', stage: 'categorize', done: 0, total: selectedIds.length,
+      stageCounts: { visionTagged: 0, entitiesExtracted: 0, enriched: 0, categorized: 0 }, lastError: null, error: null,
+    })
+    void (async () => {
+      const counts = { visionTagged: 0, entitiesExtracted: 0, enriched: 0, categorized: 0 }
+      try {
+        const provider = await getProvider()
+        const keyName = provider === 'openai' ? 'openaiApiKey' : 'anthropicApiKey'
+        const dbApiKey = (await prisma.setting.findUnique({ where: { key: keyName } }))?.value?.trim() || ''
+        let client: AIClient | null = null
+        try { client = await resolveAIClient({ dbKey: dbApiKey }) } catch { /* CLI may be available */ }
+        const categories = await prisma.category.findMany({ select: { slug: true, name: true, description: true } })
+        const descriptions = Object.fromEntries(categories.map((category) => [category.slug, category.description?.trim() || category.name]))
+        const slugs = categories.map((category) => category.slug)
+        let done = 0
+        for (let index = 0; index < selected.length && !shouldAbort(); index += CAT_BATCH_SIZE) {
+          const rows = selected.slice(index, index + CAT_BATCH_SIZE)
+          const batch = rows.map(mapBookmarkForCategorization)
+          try {
+            const results = await categorizeBatch(batch, client, descriptions, slugs, language)
+            const expectedTweetIds = new Set(batch.map((bookmark) => bookmark.tweetId))
+            const actualTweetIds = results.map((result) => result.tweetId)
+            const valid = results.length === batch.length
+              && actualTweetIds.every((tweetId) => expectedTweetIds.has(tweetId))
+              && new Set(actualTweetIds).size === actualTweetIds.length
+              && results.every((result) => result.assignments.length > 0)
+            if (!valid) throw new Error('AI response did not contain one non-empty result for every selected bookmark')
+            await writeCategoryResults(results, {
+              bookmarkByTweetId: new Map(rows.map((bookmark) => [bookmark.tweetId, bookmark.id])),
+              replaceAiCategories: true,
+              updateEnrichedAt: false,
+            })
+            counts.categorized += rows.length
+          } catch (error) {
+            setState({ lastError: error instanceof Error ? error.message.slice(0, 200) : String(error) })
+          }
+          done += rows.length
+          setState({ done, stageCounts: { ...counts } })
+        }
+      } catch (error) {
+        setState({ lastError: error instanceof Error ? error.message.slice(0, 200) : String(error) })
+      }
+    })().then(() => {
+      const wasStopped = globalState.categorizationAbort
+      globalState.categorizationAbort = false
+      setState({
+        status: 'idle', stage: null, done: wasStopped ? getState().done : selectedIds.length, total: selectedIds.length,
+        error: wasStopped ? 'Stopped by user' : getState().lastError,
+      })
+    })
+    return NextResponse.json({ status: 'started', total: selectedIds.length, runId })
+  }
+
+  if (!Array.isArray(bookmarkIds)) return NextResponse.json({ error: 'bookmarkIds must be an array' }, { status: 400 })
 
   if (apiKey && typeof apiKey === 'string' && apiKey.trim() !== '') {
     const currentProvider = await getProvider()
@@ -119,22 +217,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     })
   }
 
+  const runId = nextRunId()
   globalState.categorizationAbort = false
 
   let total = 0
   try {
     if (bookmarkIds.length > 0) {
-      total = bookmarkIds.length
+      total = await prisma.bookmark.count({ where: { id: { in: bookmarkIds }, deletedAt: null } })
     } else if (force) {
-      total = await prisma.bookmark.count()
+      total = await prisma.bookmark.count({ where: { deletedAt: null } })
     } else {
-      total = await prisma.bookmark.count({ where: { enrichedAt: null } })
+      total = await prisma.bookmark.count({ where: { enrichedAt: null, deletedAt: null } })
     }
   } catch {
     total = 0
   }
 
   setState({
+    runId,
     status: 'running',
     stage: 'entities',
     done: 0,
@@ -164,8 +264,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await seedDefaultCategories()
 
         if (force) {
-          await prisma.mediaItem.updateMany({ where: { imageTags: '{}' }, data: { imageTags: null } })
-          await prisma.bookmark.updateMany({ where: { semanticTags: '[]' }, data: { semanticTags: null } })
+          await prisma.mediaItem.updateMany({ where: { imageTags: '{}', bookmark: { deletedAt: null } }, data: { imageTags: null } })
+          await prisma.bookmark.updateMany({ where: { semanticTags: '[]', deletedAt: null }, data: { semanticTags: null } })
         }
 
         // Stage 1: Entity extraction (free, fast — no API calls)
@@ -186,13 +286,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           // Fetch all bookmark IDs to process
           let bookmarkIdsToProcess: string[]
           if (bookmarkIds.length > 0) {
-            bookmarkIdsToProcess = bookmarkIds
+            const selected = await prisma.bookmark.findMany({ where: { id: { in: bookmarkIds }, deletedAt: null }, select: { id: true } })
+            bookmarkIdsToProcess = selected.map((bookmark) => bookmark.id)
           } else if (force) {
-            const all = await prisma.bookmark.findMany({ select: { id: true }, orderBy: { id: 'asc' } })
+            const all = await prisma.bookmark.findMany({ where: { deletedAt: null }, select: { id: true }, orderBy: { id: 'asc' } })
             bookmarkIdsToProcess = all.map((b) => b.id)
           } else {
             const unprocessed = await prisma.bookmark.findMany({
-              where: { enrichedAt: null },
+              where: { enrichedAt: null, deletedAt: null },
               select: { id: true },
               orderBy: { id: 'asc' },
             })
@@ -233,12 +334,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 const ids = catPending.splice(0, CAT_BATCH_SIZE)
                 if (ids.length === 0) break
                 const rows = await prisma.bookmark.findMany({
-                  where: { id: { in: ids } },
+                  where: { id: { in: ids }, deletedAt: null },
                   select: BOOKMARK_SELECT,
                 })
                 const batch = rows.map(mapBookmarkForCategorization)
                 try {
-                  const results = await categorizeBatch(batch, client, categoryDescriptions, allSlugs)
+                  const results = await categorizeBatch(batch, client, categoryDescriptions, allSlugs, language)
                   await writeCategoryResults(results)
                   counts.categorized += ids.length
                   setState({ stageCounts: { ...counts } })
@@ -256,8 +357,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           async function processBookmark(bookmarkId: string): Promise<void> {
             if (shouldAbort()) return
 
-            const bm = await prisma.bookmark.findUnique({
-              where: { id: bookmarkId },
+            const bm = await prisma.bookmark.findFirst({
+              where: { id: bookmarkId, deletedAt: null },
               select: {
                 id: true,
                 text: true,
@@ -267,9 +368,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                   where: { type: { in: ['photo', 'gif', 'video'] } },
                   select: { id: true, url: true, thumbnailUrl: true, type: true, imageTags: true },
                 },
+                archive: { select: { resultJson: true } },
               },
             })
             if (!bm) return
+            const classificationText = threadContextFromArchive(bm.archive?.resultJson, bm.text)
 
             // Vision: analyze any untagged media items (SDK or CLI)
             let anyVisionRan = false
@@ -306,7 +409,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     .map((m) => m.imageTags)
                     .filter((t): t is string => t !== null && t !== '' && t !== '{}')
 
-              if (imageTags.length === 0 && bm.text.length < 20) {
+              if (imageTags.length === 0 && classificationText.length < 20) {
                 // Trivial bookmark — skip enrichment
                 await prisma.bookmark.update({ where: { id: bm.id }, data: { semanticTags: '[]' } })
               } else {
@@ -318,7 +421,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 }
                 try {
                   const results = await enrichBatchSemanticTags(
-                    [{ id: bm.id, text: bm.text, imageTags, entities }],
+                    [{ id: bm.id, text: classificationText, imageTags, entities }],
                     client,
                   )
                   const result = results[0]
@@ -389,5 +492,5 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       })
     })
 
-  return NextResponse.json({ status: 'started', total })
+  return NextResponse.json({ status: 'started', total, runId })
 }

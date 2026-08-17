@@ -2,7 +2,7 @@ import prisma from '@/lib/db'
 import { buildImageContext } from '@/lib/image-context'
 import { getCliAvailability, claudePrompt, modelNameToCliAlias } from '@/lib/claude-cli-auth'
 import { getCodexCliAvailability, codexPrompt } from '@/lib/codex-cli'
-import { getActiveModel, getProvider } from '@/lib/settings'
+import { getActiveAuthMode, getActiveCliModel, getActiveModel, getProvider } from '@/lib/settings'
 import { AIClient } from '@/lib/ai-client'
 
 export { getActiveModel } from '@/lib/settings'
@@ -76,28 +76,30 @@ const CONCURRENCY = 12
  */
 async function analyzeImageViaCli(imageUrl: string): Promise<string> {
   const provider = await getProvider()
+  const authMode = await getActiveAuthMode()
+  const cliModel = await getActiveCliModel()
   // Sanitize URL: strip control characters and newlines to prevent prompt injection
   const safeUrl = imageUrl.replace(/[\r\n\t]/g, '').trim()
   if (!safeUrl.startsWith('http://') && !safeUrl.startsWith('https://')) return ''
   const urlPrompt = `Look at this image URL and analyze it: ${safeUrl}\n\n${ANALYSIS_PROMPT}`
 
-  if (provider === 'openai') {
+  if (provider === 'openai' && authMode === 'cli') {
     if (!(await getCodexCliAvailability())) return ''
-    const result = await codexPrompt(urlPrompt, { timeoutMs: 60_000 })
+    const result = await codexPrompt(urlPrompt, { model: cliModel || undefined, timeoutMs: 60_000 })
     if (!result.success || !result.data) return ''
     const jsonMatch = result.data.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return ''
     try { JSON.parse(jsonMatch[0]); return jsonMatch[0] } catch { return '' }
-  } else {
+  } else if (provider === 'anthropic' && authMode === 'cli') {
     if (!(await getCliAvailability())) return ''
-    const model = await getActiveModel()
-    const cliModel = modelNameToCliAlias(model)
-    const result = await claudePrompt(urlPrompt, { model: cliModel, timeoutMs: 60_000 })
+    const result = await claudePrompt(urlPrompt, { model: modelNameToCliAlias(cliModel), timeoutMs: 60_000 })
     if (!result.success || !result.data) return ''
     const jsonMatch = result.data.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return ''
     try { JSON.parse(jsonMatch[0]); return jsonMatch[0] } catch { return '' }
   }
+
+  return ''
 }
 
 async function analyzeImageWithRetry(
@@ -379,6 +381,8 @@ export async function enrichBatchSemanticTags(
 
   const prompt = buildEnrichmentPrompt(bookmarks)
   const provider = await getProvider()
+  const authMode = await getActiveAuthMode()
+  const cliModel = await getActiveCliModel()
 
   // Helper to parse enrichment response
   const parseResponse = (text: string): EnrichmentResult[] => {
@@ -396,20 +400,17 @@ export async function enrichBatchSemanticTags(
   }
 
   // Prefer CLI over SDK
-  if (provider === 'openai') {
+  if (provider === 'openai' && authMode === 'cli') {
     if (await getCodexCliAvailability()) {
-      const result = await codexPrompt(prompt, { timeoutMs: 90_000 })
+      const result = await codexPrompt(prompt, { model: cliModel || undefined, timeoutMs: 90_000 })
       if (result.success && result.data) {
         try { return parseResponse(result.data) }
         catch { console.warn('[enrich] Codex CLI response parse failed, falling back to SDK') }
       }
     }
-  } else {
+  } else if (provider === 'anthropic' && authMode === 'cli') {
     if (await getCliAvailability()) {
-      const model = await getActiveModel()
-      const cliModel = modelNameToCliAlias(model)
-
-      const result = await claudePrompt(prompt, { model: cliModel, timeoutMs: 90_000 })
+      const result = await claudePrompt(prompt, { model: modelNameToCliAlias(cliModel), timeoutMs: 90_000 })
       if (result.success && result.data) {
         try { return parseResponse(result.data) }
         catch { console.warn('[enrich] CLI response parse failed, falling back to SDK') }
@@ -467,6 +468,7 @@ export async function enrichAllBookmarks(
     const rows = await prisma.bookmark.findMany({
       where: {
         semanticTags: null,
+        deletedAt: null,
         ...(cursor ? { id: { gt: cursor } } : {}),
       },
       orderBy: { id: 'asc' },
@@ -507,7 +509,7 @@ export async function enrichAllBookmarks(
     // Mark trivial bookmarks in one batch
     if (trivialIds.length > 0) {
       await prisma.bookmark.updateMany({
-        where: { id: { in: trivialIds } },
+        where: { id: { in: trivialIds }, deletedAt: null },
         data: { semanticTags: '[]' },
       })
     }

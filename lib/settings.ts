@@ -13,7 +13,21 @@ let _openAIModelCacheExpiry = 0
 let _cachedMiniMaxModel: string | null = null
 let _miniMaxModelCacheExpiry = 0
 
+let _cachedOpenAIAuthMode: AiAuthMode | null = null
+let _openAIAuthModeCacheExpiry = 0
+
+let _cachedAnthropicAuthMode: AiAuthMode | null = null
+let _anthropicAuthModeCacheExpiry = 0
+
+let _cachedCodexCliModel: string | null = null
+let _codexCliModelCacheExpiry = 0
+
+let _cachedClaudeCliModel: string | null = null
+let _claudeCliModelCacheExpiry = 0
+
 const CACHE_TTL = 5 * 60 * 1000
+
+export type AiAuthMode = 'api' | 'cli'
 
 /**
  * Get the configured Anthropic model from settings (cached for 5 minutes).
@@ -60,6 +74,57 @@ export async function getMiniMaxModel(): Promise<string> {
   return _cachedMiniMaxModel
 }
 
+async function getAuthMode(key: 'openaiAuthMode' | 'anthropicAuthMode'): Promise<AiAuthMode> {
+  const setting = await prisma.setting.findUnique({ where: { key } })
+  // CLI is the backwards-compatible default for providers that already
+  // supported CLI authentication before this setting was introduced.
+  return setting?.value === 'api' ? 'api' : 'cli'
+}
+
+export async function getOpenAIAuthMode(): Promise<AiAuthMode> {
+  if (_cachedOpenAIAuthMode && Date.now() < _openAIAuthModeCacheExpiry) return _cachedOpenAIAuthMode
+  _cachedOpenAIAuthMode = await getAuthMode('openaiAuthMode')
+  _openAIAuthModeCacheExpiry = Date.now() + CACHE_TTL
+  return _cachedOpenAIAuthMode
+}
+
+export async function getAnthropicAuthMode(): Promise<AiAuthMode> {
+  if (_cachedAnthropicAuthMode && Date.now() < _anthropicAuthModeCacheExpiry) return _cachedAnthropicAuthMode
+  _cachedAnthropicAuthMode = await getAuthMode('anthropicAuthMode')
+  _anthropicAuthModeCacheExpiry = Date.now() + CACHE_TTL
+  return _cachedAnthropicAuthMode
+}
+
+export async function getCodexCliModel(): Promise<string> {
+  if (_cachedCodexCliModel !== null && Date.now() < _codexCliModelCacheExpiry) return _cachedCodexCliModel
+  const setting = await prisma.setting.findUnique({ where: { key: 'codexCliModel' } })
+  _cachedCodexCliModel = setting?.value ?? ''
+  _codexCliModelCacheExpiry = Date.now() + CACHE_TTL
+  return _cachedCodexCliModel
+}
+
+export async function getClaudeCliModel(): Promise<string> {
+  if (_cachedClaudeCliModel && Date.now() < _claudeCliModelCacheExpiry) return _cachedClaudeCliModel
+  const setting = await prisma.setting.findUnique({ where: { key: 'claudeCliModel' } })
+  _cachedClaudeCliModel = setting?.value ?? 'claude-haiku-4-5-20251001'
+  _claudeCliModelCacheExpiry = Date.now() + CACHE_TTL
+  return _cachedClaudeCliModel
+}
+
+export async function getActiveAuthMode(): Promise<AiAuthMode> {
+  const provider = await getProvider()
+  if (provider === 'openai') return getOpenAIAuthMode()
+  if (provider === 'anthropic') return getAnthropicAuthMode()
+  return 'api'
+}
+
+export async function getActiveCliModel(): Promise<string> {
+  const provider = await getProvider()
+  if (provider === 'openai') return getCodexCliModel()
+  if (provider === 'anthropic') return getClaudeCliModel()
+  return ''
+}
+
 /**
  * Get the model for the currently active provider.
  */
@@ -81,4 +146,12 @@ export function invalidateSettingsCache(): void {
   _openAIModelCacheExpiry = 0
   _cachedMiniMaxModel = null
   _miniMaxModelCacheExpiry = 0
+  _cachedOpenAIAuthMode = null
+  _openAIAuthModeCacheExpiry = 0
+  _cachedAnthropicAuthMode = null
+  _anthropicAuthModeCacheExpiry = 0
+  _cachedCodexCliModel = null
+  _codexCliModelCacheExpiry = 0
+  _cachedClaudeCliModel = null
+  _claudeCliModelCacheExpiry = 0
 }

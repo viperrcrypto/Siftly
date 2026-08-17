@@ -5,6 +5,9 @@ import { useParams, useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Download, ArrowLeft } from 'lucide-react'
 import BookmarkCard from '@/components/bookmark-card'
 import type { BookmarkWithMedia, Category } from '@/lib/types'
+import { getKeyboardPageChange, isKeyboardPageNavigationTarget } from '@/lib/keyboard-page-navigation'
+import { useLanguage } from '@/components/language-provider'
+import { uiText } from '@/lib/i18n'
 
 const PAGE_SIZE = 24
 
@@ -20,6 +23,7 @@ function Pagination({ page, total, limit, onChange }: {
   limit: number
   onChange: (p: number) => void
 }) {
+  const { language } = useLanguage()
   const totalPages = Math.ceil(total / limit)
   if (totalPages <= 1) return null
 
@@ -31,17 +35,17 @@ function Pagination({ page, total, limit, onChange }: {
         className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         <ChevronLeft size={16} />
-        Previous
+        {uiText(language, '前へ', 'Previous')}
       </button>
       <span className="text-sm text-zinc-500">
-        Page {page} of {totalPages}
+        {uiText(language, `${page} / ${totalPages}ページ`, `Page ${page} of ${totalPages}`)}
       </span>
       <button
         onClick={() => onChange(page + 1)}
         disabled={page >= totalPages}
         className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
-        Next
+        {uiText(language, '次へ', 'Next')}
         <ChevronRight size={16} />
       </button>
     </div>
@@ -49,6 +53,7 @@ function Pagination({ page, total, limit, onChange }: {
 }
 
 export default function CategoryPage() {
+  const { language } = useLanguage()
   const { slug } = useParams<{ slug: string }>()
   const router = useRouter()
   const [data, setData] = useState<CategoryPageData | null>(null)
@@ -56,7 +61,6 @@ export default function CategoryPage() {
   const [loading, setLoading] = useState(true)
 
   const fetchData = useCallback(async (p: number) => {
-    setLoading(true)
     try {
       const [catRes, bookmarksRes] = await Promise.all([
         fetch(`/api/categories/${slug}`),
@@ -65,27 +69,52 @@ export default function CategoryPage() {
 
       if (!catRes.ok) {
         router.push('/categories')
-        return
+        return null
       }
 
       const catData = await catRes.json()
       const bmData = await bookmarksRes.json()
 
-      setData({
+      return {
         category: catData.category,
         bookmarks: bmData.bookmarks ?? [],
         total: bmData.total ?? 0,
-      })
+      }
     } catch (err) {
       console.error(err)
-    } finally {
-      setLoading(false)
+      return null
     }
   }, [slug, router])
 
   useEffect(() => {
-    fetchData(page)
+    let cancelled = false
+    void fetchData(page).then((nextData) => {
+      if (cancelled) return
+      if (nextData) setData(nextData)
+      setLoading(false)
+    })
+    return () => { cancelled = true }
   }, [fetchData, page])
+
+  function handlePageChange(nextPage: number) {
+    setLoading(true)
+    setPage(nextPage)
+  }
+
+  const totalPages = Math.ceil((data?.total ?? 0) / PAGE_SIZE)
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || isKeyboardPageNavigationTarget(event.target)) return
+      const nextPage = getKeyboardPageChange(event.key, page, totalPages, event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
+      if (nextPage === null) return
+      setLoading(true)
+      setPage(nextPage)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [page, totalPages])
 
   function handleExport() {
     window.location.href = `/api/export?type=zip&category=${slug}`
@@ -115,7 +144,7 @@ export default function CategoryPage() {
         className="flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors mb-6"
       >
         <ArrowLeft size={14} />
-        All Categories
+        {uiText(language, 'すべてのカテゴリ', 'All categories')}
       </button>
 
       {category && (
@@ -130,7 +159,7 @@ export default function CategoryPage() {
               {category.description && (
                 <p className="text-zinc-400 text-sm mt-0.5">{category.description}</p>
               )}
-              <p className="text-zinc-500 text-sm mt-1">{total.toLocaleString()} bookmark{total !== 1 ? 's' : ''}</p>
+              <p className="text-zinc-500 text-sm mt-1">{uiText(language, `${total.toLocaleString()}件のブックマーク`, `${total.toLocaleString()} bookmarks`)}</p>
             </div>
           </div>
           <button
@@ -138,7 +167,7 @@ export default function CategoryPage() {
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium transition-colors shrink-0"
           >
             <Download size={15} />
-            Export ZIP
+            {uiText(language, 'ZIPでエクスポート', 'Export ZIP')}
           </button>
         </div>
       )}
@@ -153,7 +182,7 @@ export default function CategoryPage() {
 
       {!loading && bookmarks.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <p className="text-xl font-semibold text-zinc-400">No bookmarks in this category</p>
+          <p className="text-xl font-semibold text-zinc-400">{uiText(language, 'このカテゴリにブックマークはありません', 'No bookmarks in this category')}</p>
         </div>
       )}
 
@@ -165,7 +194,7 @@ export default function CategoryPage() {
         </div>
       )}
 
-      <Pagination page={page} total={total} limit={PAGE_SIZE} onChange={setPage} />
+      <Pagination page={page} total={total} limit={PAGE_SIZE} onChange={handlePageChange} />
     </div>
   )
 }

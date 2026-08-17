@@ -2,6 +2,7 @@ export interface ParsedMedia {
   type: 'photo' | 'video' | 'gif'
   url: string
   thumbnailUrl?: string
+  mediaKey?: string
 }
 
 export interface ParsedBookmark {
@@ -26,6 +27,8 @@ interface TwitterMediaEntity {
   type?: string
   media_url_https?: string
   media_url?: string
+  media_key?: string
+  id_str?: string
   video_info?: {
     variants?: TwitterMediaVariant[]
   }
@@ -134,12 +137,12 @@ function extractMedia(tweet: RawTweet): ParsedMedia[] {
         const variants = m.video_info?.variants ?? []
         const url = pickHighestBitrateVariant(variants) ?? thumbnailUrl ?? ''
         if (!url) return null
-        return { type: mediaType, url, thumbnailUrl }
+        return { type: mediaType, url, thumbnailUrl, mediaKey: m.media_key ?? m.id_str }
       }
 
       const url = thumbnailUrl ?? ''
       if (!url) return null
-      return { type: 'photo', url, thumbnailUrl }
+      return { type: 'photo', url, thumbnailUrl, mediaKey: m.media_key ?? m.id_str }
     })
     .filter((m): m is ParsedMedia => m !== null)
 }
