@@ -32,6 +32,7 @@ export async function rebuildFts(): Promise<void> {
   await prisma.$executeRawUnsafe(`DELETE FROM ${FTS_TABLE}`)
 
   const bookmarks = await prisma.bookmark.findMany({
+    where: { deletedAt: null },
     select: {
       id: true,
       text: true,

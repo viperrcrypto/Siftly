@@ -54,6 +54,15 @@ describe('外部リンクプレビュー', () => {
     })
   })
 
+  it('本文から直接渡されたYouTube URLもoEmbedで解決する', async () => {
+    mocks.safeFetch
+      .mockResolvedValueOnce({ status: 200, url: 'https://www.youtube.com/watch?v=abcdefghijk', headers: {}, body: Buffer.from('<html><title>YouTube</title></html>') })
+      .mockResolvedValueOnce({ status: 200, url: 'https://www.youtube.com/oembed', headers: {}, body: Buffer.from(JSON.stringify({ title: '直接動画', thumbnail_url: 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg' })) })
+
+    const response = await GET(request('https://www.youtube.com/watch?v=abcdefghijk'))
+    await expect(response.json()).resolves.toMatchObject({ title: '直接動画', image: 'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg' })
+  })
+
   it('YouTubeでもOG画像があればoEmbedより優先する', async () => {
     mocks.safeFetch.mockResolvedValue({
       status: 200,
@@ -94,6 +103,15 @@ describe('外部リンクプレビュー', () => {
     const response = await GET(request('https://example.com/article', true))
     expect(response.status).toBe(502)
     await expect(response.json()).resolves.toEqual({ error: 'Chrome unavailable' })
+  })
+
+  it('一時的な取得失敗をキャッシュしない', async () => {
+    mocks.safeFetch.mockRejectedValue(new Error('network unavailable'))
+
+    const response = await GET(request('https://example.com/article'))
+
+    expect(response.status).toBe(502)
+    expect(response.headers.get('cache-control')).toBe('no-store')
   })
 
   it('ローカルネットワークURLは撮影しない', async () => {

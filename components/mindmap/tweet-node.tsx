@@ -177,7 +177,7 @@ export default function TweetNode({ data }: NodeProps) {
           opacity: 0.65,
           lineHeight: 1,
         }}
-        title="Open tweet"
+        title="投稿を開く"
       >
         <ExternalLink size={9} />
       </a>

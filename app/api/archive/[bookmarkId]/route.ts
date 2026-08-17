@@ -4,6 +4,8 @@ import { enqueueArchive, ensureArchiveRecord, runArchive } from '@/lib/archive/p
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ bookmarkId: string }> }) {
   const { bookmarkId } = await params
+  const bookmark = await prisma.bookmark.findUnique({ where: { id: bookmarkId }, select: { id: true, deletedAt: true } })
+  if (!bookmark || bookmark.deletedAt) return NextResponse.json({ error: 'Bookmark not found' }, { status: 404 })
   const archive = await prisma.archiveRecord.findUnique({ where: { bookmarkId } })
   if (!archive) return NextResponse.json({ error: 'Archive not found' }, { status: 404 })
   return NextResponse.json({ ...archive, result: (() => { try { return JSON.parse(archive.resultJson) } catch { return {} } })() })
@@ -11,8 +13,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ bookmarkId: string }> }) {
   const { bookmarkId } = await params
-  const bookmark = await prisma.bookmark.findUnique({ where: { id: bookmarkId }, select: { id: true } })
-  if (!bookmark) return NextResponse.json({ error: 'Bookmark not found' }, { status: 404 })
+  const bookmark = await prisma.bookmark.findUnique({ where: { id: bookmarkId }, select: { id: true, deletedAt: true } })
+  if (!bookmark || bookmark.deletedAt) return NextResponse.json({ error: 'Bookmark not found' }, { status: 404 })
   const body = await request.json().catch(() => ({})) as { background?: boolean }
   if (body.background) {
     await ensureArchiveRecord(bookmarkId)

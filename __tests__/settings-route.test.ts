@@ -41,4 +41,33 @@ describe('Settings POST', () => {
     expect(mocks.transaction).toHaveBeenCalledOnce()
     expect(mocks.upsert).toHaveBeenCalledTimes(2)
   })
+
+  it('認証方式とCLIモデルをAPIモデルから分離して保存する', async () => {
+    const response = await POST(new Request('http://localhost/api/settings', {
+      method: 'POST',
+      body: JSON.stringify({ openaiAuthMode: 'cli', codexCliModel: '' }),
+    }) as never)
+
+    await expect(response.json()).resolves.toEqual({ saved: true })
+    expect(mocks.upsert).toHaveBeenCalledWith({
+      where: { key: 'openaiAuthMode' },
+      update: { value: 'cli' },
+      create: { key: 'openaiAuthMode', value: 'cli' },
+    })
+    expect(mocks.upsert).toHaveBeenCalledWith({
+      where: { key: 'codexCliModel' },
+      update: { value: '' },
+      create: { key: 'codexCliModel', value: '' },
+    })
+  })
+
+  it('未知の認証方式を拒否する', async () => {
+    const response = await POST(new Request('http://localhost/api/settings', {
+      method: 'POST',
+      body: JSON.stringify({ openaiAuthMode: 'auto' }),
+    }) as never)
+
+    await expect(response.json()).resolves.toEqual({ error: 'Invalid openaiAuthMode' })
+    expect(mocks.transaction).not.toHaveBeenCalled()
+  })
 })

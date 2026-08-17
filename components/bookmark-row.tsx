@@ -1,8 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { Image, Play } from 'lucide-react'
+import { Image as ImageIcon, Play } from 'lucide-react'
 import type { BookmarkWithMedia } from '@/lib/types'
+import { useLanguage } from '@/components/language-provider'
+import { uiLocale, uiText, type UiLanguage } from '@/lib/i18n'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -16,15 +18,15 @@ function isVideoUrl(url: string): boolean {
   return url.includes('video.twimg.com') || url.includes('.mp4')
 }
 
-function formatDate(dateStr: string | null): string {
+function formatDate(dateStr: string | null, language: UiLanguage): string {
   if (!dateStr) return ''
   const d = new Date(dateStr)
   const now = new Date()
   const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000)
-  if (diffDays === 0) return 'Today'
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays < 7) return `${diffDays}d ago`
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
+  if (diffDays === 0) return uiText(language, '今日', 'Today')
+  if (diffDays === 1) return uiText(language, '昨日', 'Yesterday')
+  if (diffDays < 7) return uiText(language, `${diffDays}日前`, `${diffDays} days ago`)
+  return d.toLocaleDateString(uiLocale(language), { month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
 }
 
 const COLOR_PALETTE = [
@@ -113,7 +115,7 @@ function MediaIndicator({ item }: { item: BookmarkWithMedia['mediaItems'][number
     <div className="shrink-0 w-8 h-8 rounded flex items-center justify-center border border-zinc-700/50 bg-zinc-800/60">
       {isVideo
         ? <Play size={10} className="text-zinc-500" />
-        : <Image size={10} className="text-zinc-500" />
+        : <ImageIcon size={10} className="text-zinc-500" />
       }
     </div>
   )
@@ -127,9 +129,10 @@ interface BookmarkRowProps {
 }
 
 export default function BookmarkRow({ bookmark, onClick }: BookmarkRowProps) {
+  const { language } = useLanguage()
   const isKnownAuthor = bookmark.authorHandle !== 'unknown'
   const cleanText = stripTcoUrls(bookmark.text)
-  const dateStr = formatDate(bookmark.tweetCreatedAt ?? bookmark.importedAt ?? null)
+  const dateStr = formatDate(bookmark.tweetCreatedAt ?? bookmark.importedAt ?? null, language)
   const firstMedia = bookmark.mediaItems[0] ?? null
 
   return (
@@ -159,13 +162,13 @@ export default function BookmarkRow({ bookmark, onClick }: BookmarkRowProps) {
             </p>
           </>
         ) : (
-          <p className="text-xs text-zinc-500 truncate">Unknown</p>
+          <p className="text-xs text-zinc-500 truncate">{uiText(language, '不明', 'Unknown')}</p>
         )}
       </div>
 
       {/* Tweet text snippet — flex-1 */}
       <p className="flex-1 min-w-0 text-xs text-zinc-300 truncate">
-        {cleanText || <span className="text-zinc-600 italic">No text</span>}
+        {cleanText || <span className="text-zinc-600 italic">{uiText(language, '本文なし', 'No text')}</span>}
       </p>
 
       {/* Category dots */}

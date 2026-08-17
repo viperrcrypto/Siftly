@@ -81,10 +81,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
       const existing = await prisma.bookmark.findUnique({
         where: { tweetId: bookmark.tweetId },
-        select: { id: true },
+        select: { id: true, deletedAt: true },
       })
 
       if (existing) {
+        if (existing.deletedAt) await prisma.bookmark.update({ where: { id: existing.id }, data: { deletedAt: null } })
         await ensureArchiveRecord(existing.id)
         archiveIds.push(existing.id)
         skippedCount++

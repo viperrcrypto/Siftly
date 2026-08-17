@@ -18,12 +18,18 @@ const ALLOWED_ANTHROPIC_MODELS = [
 ] as const
 
 const ALLOWED_OPENAI_MODELS = [
+  'gpt-4o-mini',
+  'gpt-4o',
   'gpt-4.1-mini',
   'gpt-4.1',
   'gpt-4.1-nano',
   'o4-mini',
   'o3',
 ] as const
+
+// Codex accepts the same model identifiers as the OpenAI backend. An empty
+// value deliberately means “use the CLI's configured default model”.
+const ALLOWED_CODEX_MODELS = ['', ...ALLOWED_OPENAI_MODELS] as const
 
 const ALLOWED_MINIMAX_MODELS = [
   'MiniMax-M2.7',
@@ -33,14 +39,18 @@ const ALLOWED_MINIMAX_MODELS = [
 
 export async function GET(): Promise<NextResponse> {
   try {
-    const [anthropic, anthropicModel, provider, openai, openaiModel, minimax, minimaxModel, xClientId, xClientSecret, obsidianVault, archiveEnabled, autoAfterImport, archiveTemplateDir, galleryDlPath, cookieBrowser, downloadXVideo, downloadPdf, sourceResolverEnabled, archiveRoot] = await Promise.all([
+    const [anthropic, anthropicModel, anthropicAuthMode, provider, openai, openaiModel, openaiAuthMode, codexCliModel, minimax, minimaxModel, claudeCliModel, xClientId, xClientSecret, obsidianVault, archiveEnabled, autoAfterImport, archiveTemplateDir, galleryDlPath, cookieBrowser, downloadXVideo, downloadPdf, sourceResolverEnabled, archiveRoot] = await Promise.all([
       prisma.setting.findUnique({ where: { key: 'anthropicApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'anthropicModel' } }),
+      prisma.setting.findUnique({ where: { key: 'anthropicAuthMode' } }),
       prisma.setting.findUnique({ where: { key: 'aiProvider' } }),
       prisma.setting.findUnique({ where: { key: 'openaiApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'openaiModel' } }),
+      prisma.setting.findUnique({ where: { key: 'openaiAuthMode' } }),
+      prisma.setting.findUnique({ where: { key: 'codexCliModel' } }),
       prisma.setting.findUnique({ where: { key: 'minimaxApiKey' } }),
       prisma.setting.findUnique({ where: { key: 'minimaxModel' } }),
+      prisma.setting.findUnique({ where: { key: 'claudeCliModel' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_id' } }),
       prisma.setting.findUnique({ where: { key: 'x_oauth_client_secret' } }),
       prisma.setting.findUnique({ where: { key: 'obsidianVaultPath' } }),
@@ -60,9 +70,13 @@ export async function GET(): Promise<NextResponse> {
       anthropicApiKey: maskKey(anthropic?.value ?? null),
       hasAnthropicKey: anthropic !== null,
       anthropicModel: anthropicModel?.value ?? 'claude-haiku-4-5-20251001',
+      anthropicAuthMode: anthropicAuthMode?.value === 'api' ? 'api' : 'cli',
+      claudeCliModel: claudeCliModel?.value ?? 'claude-haiku-4-5-20251001',
       openaiApiKey: maskKey(openai?.value ?? null),
       hasOpenaiKey: openai !== null,
       openaiModel: openaiModel?.value ?? 'gpt-4.1-mini',
+      openaiAuthMode: openaiAuthMode?.value === 'api' ? 'api' : 'cli',
+      codexCliModel: codexCliModel?.value ?? '',
       minimaxApiKey: maskKey(minimax?.value ?? null),
       hasMinimaxKey: minimax !== null,
       minimaxModel: minimaxModel?.value ?? 'MiniMax-M2.7',
@@ -88,9 +102,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let body: {
     anthropicApiKey?: string
     anthropicModel?: string
+    anthropicAuthMode?: string
+    claudeCliModel?: string
     provider?: string
     openaiApiKey?: string
     openaiModel?: string
+    openaiAuthMode?: string
+    codexCliModel?: string
     minimaxApiKey?: string
     minimaxModel?: string
     xOAuthClientId?: string
@@ -134,11 +152,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const models = [
     ['anthropicModel', body.anthropicModel, ALLOWED_ANTHROPIC_MODELS, 'Invalid Anthropic model'],
     ['openaiModel', body.openaiModel, ALLOWED_OPENAI_MODELS, 'Invalid OpenAI model'],
+    ['claudeCliModel', body.claudeCliModel, ALLOWED_ANTHROPIC_MODELS, 'Invalid Claude CLI model'],
+    ['codexCliModel', body.codexCliModel, ALLOWED_CODEX_MODELS, 'Invalid Codex CLI model'],
     ['minimaxModel', body.minimaxModel, ALLOWED_MINIMAX_MODELS, 'Invalid MiniMax model'],
   ] as const
   for (const [key, value, allowed, error] of models) {
     if (value === undefined) continue
     if (!(allowed as readonly string[]).includes(value)) return NextResponse.json({ error }, { status: 400 })
+    set(key, value)
+  }
+
+  for (const [key, value] of [['anthropicAuthMode', body.anthropicAuthMode], ['openaiAuthMode', body.openaiAuthMode]] as const) {
+    if (value === undefined) continue
+    if (value !== 'api' && value !== 'cli') return NextResponse.json({ error: `Invalid ${key}` }, { status: 400 })
     set(key, value)
   }
 

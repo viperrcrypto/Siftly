@@ -138,13 +138,13 @@ export default function MindmapCanvas({ initialNodes, initialEdges }: MindmapCan
             onClick={resetToCategories}
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-900/90 border border-zinc-700 text-zinc-300 text-sm hover:bg-zinc-800 hover:text-zinc-100 transition-colors backdrop-blur-sm"
           >
-            ← All categories
+            ← すべてのカテゴリ
           </button>
         )}
         {viewMode === 'focused' && (
           <button
             onClick={() => setShowLabels((v) => !v)}
-            title={showLabels ? 'Hide labels' : 'Show labels'}
+            title={showLabels ? 'ラベルを隠す' : 'ラベルを表示'}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm transition-colors backdrop-blur-sm ${
               showLabels
                 ? 'bg-indigo-600/80 border-indigo-500 text-white'
@@ -152,7 +152,7 @@ export default function MindmapCanvas({ initialNodes, initialEdges }: MindmapCan
             }`}
           >
             <Type size={13} />
-            Labels
+            ラベル
           </button>
         )}
       </div>
@@ -185,7 +185,7 @@ export default function MindmapCanvas({ initialNodes, initialEdges }: MindmapCan
 
       {/* Hint */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800 text-xs text-zinc-500 pointer-events-none whitespace-nowrap">
-        {viewMode === 'categories' ? 'Click a category to explore its bookmarks' : 'Drag any bubble · Click ← to go back'}
+        {viewMode === 'categories' ? 'カテゴリをクリックしてブックマークを見る' : 'バブルをドラッグ · ←で戻る'}
       </div>
     </div>
     </MindmapContext.Provider>

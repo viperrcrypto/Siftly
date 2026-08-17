@@ -4,10 +4,13 @@ import { useEffect, useCallback, useRef, useState } from 'react'
 import { X, RotateCw } from 'lucide-react'
 import BookmarkCard from '@/components/bookmark-card'
 import type { BookmarkWithMedia } from '@/lib/types'
+import { useLanguage } from '@/components/language-provider'
+import { uiText, type UiLanguage } from '@/lib/i18n'
 
 interface BookmarkDetailModalProps {
   bookmark: BookmarkWithMedia
   onClose: () => void
+  onDeleted?: (id: string) => void
 }
 
 type ArchiveState = NonNullable<BookmarkWithMedia['archive']>
@@ -61,7 +64,7 @@ function stage(result: JsonRecord, key: string): JsonRecord | undefined {
   return isRecord(value) ? value : undefined
 }
 
-function archiveSummary(result: JsonRecord): Array<{ label: string; value: string }> {
+function archiveSummary(result: JsonRecord, language: UiLanguage): Array<{ label: string; value: string }> {
   const thread = stage(result, 'thread')
   const sources = stage(result, 'sources')
   const clips = stage(result, 'clips')
@@ -69,18 +72,25 @@ function archiveSummary(result: JsonRecord): Array<{ label: string; value: strin
   const media = stage(result, 'media')
   const sourceItems = recordItems(sources?.items)
   const mediaItems = recordItems(media?.items)
-  const mediaState = mediaItems.length === 0 ? 'なし' : mediaItems.some((item) => item.status === 'failed') ? '失敗' : mediaItems.some((item) => item.status === 'success') ? 'ダウンロード済み' : 'なし'
+  const mediaState = mediaItems.length === 0
+    ? uiText(language, 'なし', 'None')
+    : mediaItems.some((item) => item.status === 'failed')
+      ? uiText(language, '失敗', 'Failed')
+      : mediaItems.some((item) => item.status === 'success')
+        ? uiText(language, 'ダウンロード済み', 'Downloaded')
+        : uiText(language, 'なし', 'None')
   return [
-    { label: 'Thread', value: `${thread?.status === 'success' ? '解決済み' : '未解決'}（${recordItems(thread?.tweets).length}件）` },
-    { label: 'Sources', value: `${sourceItems.length}件` },
-    { label: 'Clipped', value: `${recordItems(clips?.items).filter((item) => item.status === 'success').length}件成功` },
-    { label: 'Obsidian thread note', value: !threadNote ? '未実行' : threadNote.status === 'success' ? '保存済み' : '失敗' },
-    { label: 'X native media', value: mediaState },
-    { label: 'External video', value: `${sourceItems.filter((item) => item.sourceType === 'external_video').length}件` },
+    { label: uiText(language, 'スレッド', 'Thread'), value: uiText(language, `${thread?.status === 'success' ? '解決済み' : '未解決'}（${recordItems(thread?.tweets).length}件）`, `${thread?.status === 'success' ? 'Resolved' : 'Unresolved'} (${recordItems(thread?.tweets).length})`) },
+    { label: uiText(language, 'ソース', 'Sources'), value: uiText(language, `${sourceItems.length}件`, `${sourceItems.length}`) },
+    { label: uiText(language, 'クリップ', 'Clips'), value: uiText(language, `${recordItems(clips?.items).filter((item) => item.status === 'success').length}件成功`, `${recordItems(clips?.items).filter((item) => item.status === 'success').length} succeeded`) },
+    { label: uiText(language, 'Obsidianスレッドノート', 'Obsidian thread note'), value: !threadNote ? uiText(language, '未実行', 'Not run') : threadNote.status === 'success' ? uiText(language, '保存済み', 'Saved') : uiText(language, '失敗', 'Failed') },
+    { label: uiText(language, 'Xメディア', 'X media'), value: mediaState },
+    { label: uiText(language, '外部動画', 'External videos'), value: uiText(language, `${sourceItems.filter((item) => item.sourceType === 'external_video').length}件`, `${sourceItems.filter((item) => item.sourceType === 'external_video').length}`) },
   ]
 }
 
-export default function BookmarkDetailModal({ bookmark, onClose }: BookmarkDetailModalProps) {
+export default function BookmarkDetailModal({ bookmark, onClose, onDeleted }: BookmarkDetailModalProps) {
+  const { language } = useLanguage()
   const [archiving, setArchiving] = useState(false)
   const [archive, setArchive] = useState<ArchiveState | null>(bookmark.archive ?? null)
   const [archiveError, setArchiveError] = useState<string | null>(null)
@@ -117,19 +127,19 @@ export default function BookmarkDetailModal({ bookmark, onClose }: BookmarkDetai
     try {
       const response = await fetch(`/api/archive/${bookmark.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ background: true }), signal: controller.signal })
       const body: unknown = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(errorMessage(body, 'アーカイブを開始できませんでした'))
+      if (!response.ok) throw new Error(errorMessage(body, uiText(language, 'アーカイブを開始できませんでした', 'Failed to start archive')))
       let next = archiveState(body, archive)
       if (mounted.current) setArchive(next)
       while (mounted.current && !controller.signal.aborted && (next.status === 'pending' || next.status === 'processing')) {
         await pauseForPoll(controller.signal)
         const state = await fetch(`/api/archive/${bookmark.id}`, { signal: controller.signal })
         const stateBody: unknown = await state.json().catch(() => ({}))
-        if (!state.ok) throw new Error(errorMessage(stateBody, 'アーカイブ状態を取得できませんでした'))
+        if (!state.ok) throw new Error(errorMessage(stateBody, uiText(language, 'アーカイブ状態を取得できませんでした', 'Failed to fetch archive status')))
         next = archiveState(stateBody, next)
         if (mounted.current) setArchive(next)
       }
     } catch (error) {
-      if (mounted.current && !controller.signal.aborted) setArchiveError(error instanceof Error ? error.message : 'アーカイブに失敗しました')
+      if (mounted.current && !controller.signal.aborted) setArchiveError(error instanceof Error ? error.message : uiText(language, 'アーカイブに失敗しました', 'Archive failed'))
     } finally {
       if (activeArchive.current === controller) activeArchive.current = null
       if (mounted.current) setArchiving(false)
@@ -138,6 +148,8 @@ export default function BookmarkDetailModal({ bookmark, onClose }: BookmarkDetai
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 backdrop-blur-sm overflow-y-auto"
       onClick={onClose}
     >
@@ -148,21 +160,21 @@ export default function BookmarkDetailModal({ bookmark, onClose }: BookmarkDetai
         <button
           onClick={onClose}
           className="absolute -top-10 right-4 p-2 rounded-full text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
-          aria-label="Close"
+          aria-label={uiText(language, '閉じる', 'Close')}
         >
           <X size={18} />
         </button>
-        <BookmarkCard bookmark={bookmark} />
+        <BookmarkCard bookmark={bookmark} onDeleted={onDeleted} />
         <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900 p-3 text-sm text-zinc-400" aria-live="polite">
           <div className="flex items-center justify-between gap-3">
-            <span>アーカイブ: <strong className="text-zinc-200">{archive?.status ?? '未実行'}</strong></span>
-            <button onClick={() => void retryArchive()} disabled={archiving} className="inline-flex items-center gap-1 rounded-lg bg-zinc-800 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-700 disabled:opacity-50" aria-label="アーカイブを再実行">
-              <RotateCw size={12} className={archiving ? 'animate-spin' : ''} /> {archiving ? '実行中' : '再実行'}
+            <span>{uiText(language, 'アーカイブ', 'Archive')}: <strong className="text-zinc-200">{archive?.status ?? uiText(language, '未実行', 'Not run')}</strong></span>
+            <button onClick={() => void retryArchive()} disabled={archiving} className="inline-flex items-center gap-1 rounded-lg bg-zinc-800 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-700 disabled:opacity-50" aria-label={uiText(language, 'アーカイブを再実行', 'Run archive again')}>
+              <RotateCw size={12} className={archiving ? 'animate-spin' : ''} /> {archiving ? uiText(language, '実行中', 'Running') : uiText(language, '再実行', 'Run again')}
             </button>
           </div>
           {(archiveError ?? archive?.lastError) && <p className="mt-2 text-xs text-amber-400 break-words">{archiveError ?? archive?.lastError}</p>}
           {archive?.result && <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-zinc-500">
-            {archiveSummary(archive.result).map((item) => <div key={item.label} className="contents"><dt>{item.label}</dt><dd className="text-zinc-300">{item.value}</dd></div>)}
+            {archiveSummary(archive.result, language).map((item) => <div key={item.label} className="contents"><dt>{item.label}</dt><dd className="text-zinc-300">{item.value}</dd></div>)}
           </dl>}
         </div>
       </div>

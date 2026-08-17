@@ -21,7 +21,7 @@ export async function GET(): Promise<NextResponse> {
       orderBy: { name: 'asc' },
       include: {
         _count: {
-          select: { bookmarks: true },
+          select: { bookmarks: { where: { bookmark: { deletedAt: null } } } },
         },
       },
     })

@@ -226,9 +226,10 @@ export async function exportToObsidian(options: ObsidianExportOptions): Promise<
   await fs.mkdir(notesDir, { recursive: true })
   await fs.mkdir(indexDir, { recursive: true })
 
-  const where = categoryFilter
-    ? { categories: { some: { category: { slug: categoryFilter } } } }
-    : {}
+  const where = {
+    deletedAt: null,
+    ...(categoryFilter ? { categories: { some: { category: { slug: categoryFilter } } } } : {}),
+  }
 
   const bookmarks = await prisma.bookmark.findMany({
     where,

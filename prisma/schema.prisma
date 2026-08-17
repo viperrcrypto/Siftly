@@ -21,14 +21,17 @@ model Bookmark {
   enrichedAt      DateTime? // when AI enrichment last ran — drives incremental processing
   enrichmentMeta  String?   // JSON: {sentiment, people[], companies[]} from batch enrichment
   source          String    @default("bookmark")  // "bookmark" | "like"
+  deletedAt       DateTime?
   mediaItems    MediaItem[]
   categories    BookmarkCategory[]
+  categoryFeedback CategoryFeedback[]
   archive       ArchiveRecord?
 
   @@index([authorHandle])
   @@index([tweetCreatedAt])
   @@index([enrichedAt])
   @@index([source])
+  @@index([deletedAt])
 }
 
 model ArchiveRecord {
@@ -57,6 +60,7 @@ model Category {
   isAiGenerated Boolean @default(false)
   createdAt   DateTime @default(now())
   bookmarks   BookmarkCategory[]
+  feedback    CategoryFeedback[]
 }
 
 model BookmarkCategory {
@@ -67,6 +71,18 @@ model BookmarkCategory {
   category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@id([bookmarkId, categoryId])
+}
+
+model CategoryFeedback {
+  bookmarkId String
+  categoryId String
+  action     String   // include | exclude
+  updatedAt  DateTime @updatedAt
+  bookmark   Bookmark @relation(fields: [bookmarkId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([bookmarkId, categoryId])
+  @@index([updatedAt])
 }
 
 model MediaItem {

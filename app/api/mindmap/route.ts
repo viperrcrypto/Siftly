@@ -57,12 +57,11 @@ function tweetPosition(
 
 async function getBaseGraph(): Promise<MindMapResponse> {
   const [totalBookmarks, categories] = await Promise.all([
-    prisma.bookmark.count(),
+    prisma.bookmark.count({ where: { deletedAt: null } }),
     prisma.category.findMany({
       include: {
-        _count: { select: { bookmarks: true } },
+        _count: { select: { bookmarks: { where: { bookmark: { deletedAt: null } } } } },
       },
-      orderBy: { bookmarks: { _count: 'desc' } },
     }),
   ])
 
@@ -104,9 +103,7 @@ async function getBaseGraph(): Promise<MindMapResponse> {
 async function getCategoryTweetNodes(categorySlug: string): Promise<MindMapResponse> {
   const category = await prisma.category.findUnique({
     where: { slug: categorySlug },
-    include: {
-      _count: { select: { bookmarks: true } },
-    },
+    include: { _count: { select: { bookmarks: { where: { bookmark: { deletedAt: null } } } } } },
   })
 
   if (!category) {
@@ -114,7 +111,7 @@ async function getCategoryTweetNodes(categorySlug: string): Promise<MindMapRespo
   }
 
   const bookmarkCategories = await prisma.bookmarkCategory.findMany({
-    where: { category: { slug: categorySlug } },
+    where: { category: { slug: categorySlug }, bookmark: { deletedAt: null } },
     select: {
       confidence: true,
       bookmark: {

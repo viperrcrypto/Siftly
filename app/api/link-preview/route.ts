@@ -5,6 +5,7 @@ import { createLinkPreviewScreenshot } from '@/lib/link-preview-screenshot'
 const CACHE_HEADERS = {
   'Cache-Control': 'public, max-age=86400', // cache 24h
 }
+const ERROR_CACHE_HEADERS = { 'Cache-Control': 'no-store' }
 
 const BROWSER_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
@@ -281,6 +282,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'preview failed'
-    return NextResponse.json({ error: msg }, { status: 502, headers: CACHE_HEADERS })
+    return NextResponse.json({ error: msg }, { status: 502, headers: ERROR_CACHE_HEADERS })
   }
 }

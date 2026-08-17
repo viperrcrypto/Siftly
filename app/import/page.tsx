@@ -2,8 +2,10 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import Link from 'next/link'
-import { Upload, CheckCircle, ChevronRight, Loader2, Copy, Check, ExternalLink, Sparkles, Eye, Tag, Brain, Layers, StopCircle, RefreshCw, Clock, KeyRound, Trash2, AlertCircle, User, LogOut } from 'lucide-react'
+import { Upload, CheckCircle, ChevronRight, Loader2, Copy, Check, ExternalLink, Sparkles, Eye, Tag, Brain, Layers, StopCircle, RefreshCw, AlertCircle, User, LogOut } from 'lucide-react'
 import * as Progress from '@radix-ui/react-progress'
+import { useLanguage } from '@/components/language-provider'
+import { uiText } from '@/lib/i18n'
 
 type Step = 1 | 2 | 3
 type Method = 'bookmarklet' | 'console' | 'live'
@@ -36,29 +38,29 @@ interface CategorizeStatus {
 
 const STAGE_INFO: Record<NonNullable<Stage>, { label: string; icon: React.ReactNode; desc: string }> = {
   vision: {
-    label: 'Analyzing images',
+    label: '画像を分析中',
     icon: <Eye size={14} />,
-    desc: 'Extracting text, objects, and context from photos, GIFs, and videos',
+    desc: '写真、GIF、動画からテキスト・物体・文脈を抽出します',
   },
   entities: {
-    label: 'Extracting entities',
+    label: 'エンティティを抽出中',
     icon: <Tag size={14} />,
-    desc: 'Mining hashtags, URLs, and tool mentions from tweet data',
+    desc: '投稿データからハッシュタグ、URL、ツール名を抽出します',
   },
   enrichment: {
-    label: 'Generating semantic tags',
+    label: '意味タグを生成中',
     icon: <Brain size={14} />,
-    desc: 'Creating 30-50 searchable tags per bookmark for AI search',
+    desc: 'AI検索用にブックマークごとに30〜50個の検索タグを作成します',
   },
   categorize: {
-    label: 'Categorizing',
+    label: 'カテゴリ分類中',
     icon: <Layers size={14} />,
-    desc: 'Assigning each bookmark to the most relevant categories',
+    desc: '各ブックマークを最も関連するカテゴリに割り当てます',
   },
   parallel: {
-    label: 'Processing all stages in parallel',
+    label: '全ステージを並列処理中',
     icon: <Sparkles size={14} />,
-    desc: 'Vision, enrichment, and categorization running concurrently across 20 workers',
+    desc: '画像分析・情報付加・カテゴリ分類を20ワーカーで並列実行します',
   },
 }
 
@@ -66,11 +68,11 @@ const STAGE_INFO: Record<NonNullable<Stage>, { label: string; icon: React.ReactN
 
 const BOOKMARKLET_SCRIPT = `(async function(){
   if(!location.hostname.includes('twitter.com')&&!location.hostname.includes('x.com')){
-    showToast('\u274c Please navigate to x.com/i/bookmarks or x.com/username/likes first','#ef4444');return;
+    showToast('\u274c 先にx.com/i/bookmarksまたはx.com/username/likesを開いてください','#ef4444');return;
   }
   var isLikes=location.pathname.includes('/likes');
   var source=isLikes?'like':'bookmark';
-  var label=isLikes?'likes':'bookmarks';
+  var label=isLikes?'いいね':'ブックマーク';
   function showToast(msg,bg){
     var t=document.createElement('div');t.textContent=msg;
     Object.assign(t.style,{position:'fixed',bottom:'24px',left:'50%',transform:'translateX(-50%)',
@@ -83,7 +85,7 @@ const BOOKMARKLET_SCRIPT = `(async function(){
   }
   var all=[],seen=new Set();
   var btn=document.createElement('button');
-  btn.textContent='Scroll, then Export 0 '+label+' \u2192';
+  btn.textContent='スクロールして'+label+'を0件書き出す \u2192';
   Object.assign(btn.style,{position:'fixed',top:'12px',right:'12px',zIndex:'2147483647',
     padding:'10px 18px',background:'#4f46e5',color:'#fff',border:'none',borderRadius:'8px',
     cursor:'pointer',fontSize:'14px',fontWeight:'700',
@@ -106,12 +108,12 @@ const BOOKMARKLET_SCRIPT = `(async function(){
       }
       return thumb?{type:'photo',url:thumb}:null;
     }).filter(Boolean);
-    all.push({id:t.rest_id,author:usr.name||'Unknown',handle:'@'+(usr.screen_name||'unknown'),
+    all.push({id:t.rest_id,author:usr.name||'不明',handle:'@'+(usr.screen_name||'unknown'),
       avatar:usr.profile_image_url_https||'',timestamp:leg.created_at||'',
       text:leg.full_text||leg.text||'',media:media,
       hashtags:(leg.entities&&leg.entities.hashtags||[]).map(function(h){return h.text;}),
       urls:(leg.entities&&leg.entities.urls||[]).map(function(u){return u.expanded_url;}).filter(Boolean)});
-    btn.textContent='Export '+all.length+' '+label+' \u2192';
+    btn.textContent=label+all.length+'件を書き出す \u2192';
   }
   function isTweetObj(o){return o&&typeof o==='object'&&typeof o.rest_id==='string'&&o.rest_id.length>5&&(o.legacy||o.core);}
   function unwrapTweet(t){
@@ -132,16 +134,16 @@ const BOOKMARKLET_SCRIPT = `(async function(){
     window.fetch=origFetch;
     XMLHttpRequest.prototype.open=origOpen;
     XMLHttpRequest.prototype.send=origSend;
-    if(!all.length){showToast('\u26a0\ufe0f No '+label+' captured \u2014 scroll or use Auto-scroll first!','#92400e');return;}
+    if(!all.length){showToast('\u26a0\ufe0f '+label+'がありません。先にスクロールまたは自動スクロールを実行してください','#92400e');return;}
     [btn,autoBtn].forEach(function(el){try{document.body.removeChild(el);}catch(e){}});
     var blob=new Blob([JSON.stringify({bookmarks:all,source:source},null,2)],{type:'application/json'});
     var url=URL.createObjectURL(blob);
     var a=document.createElement('a');a.href=url;a.download=source+'s.json';a.click();
     setTimeout(function(){URL.revokeObjectURL(url);},1000);
-    showToast('\u2705 Downloaded '+all.length+' '+label+'! Upload to Siftly.','#14532d');
+    showToast('\u2705 '+all.length+'件をダウンロードしました。Siftlyにアップロードしてください。','#14532d');
   }
   btn.onclick=doExport;
-  autoBtn.textContent='\u25b6 Auto-scroll';
+  autoBtn.textContent='\u25b6 自動スクロール';
   Object.assign(autoBtn.style,{position:'fixed',top:'58px',right:'12px',zIndex:'2147483647',
     padding:'8px 14px',background:'#18181b',color:'#a1a1aa',
     border:'1px solid #3f3f46',borderRadius:'8px',
@@ -163,22 +165,22 @@ const BOOKMARKLET_SCRIPT = `(async function(){
           await sleep(2000);
           if(all.length===lastCount){
             autoScrolling=false;
-            autoBtn.textContent='\u2705 Done \u2014 '+all.length+' captured';
+            autoBtn.textContent='\u2705 完了 — '+all.length+'件取得';
             autoBtn.style.background='#14532d';autoBtn.style.color='#86efac';autoBtn.style.border='1px solid #166534';
-            showToast('\u2705 Auto-scroll complete! '+all.length+' '+label+' ready. Click Export.','#14532d');
+            showToast('\u2705 自動スクロール完了。'+all.length+'件の'+label+'を取得しました。書き出しをクリックしてください。','#14532d');
             return;
           }
           stagnant=0;
         }
       }
     }
-    autoBtn.textContent='\u25b6 Auto-scroll';
+    autoBtn.textContent='\u25b6 自動スクロール';
     autoBtn.style.background='#18181b';autoBtn.style.color='#a1a1aa';autoBtn.style.border='1px solid #3f3f46';
   }
   autoBtn.onclick=function(){
     if(autoScrolling){autoScrolling=false;return;}
     autoScrolling=true;
-    autoBtn.textContent='\u23f8 Stop';
+    autoBtn.textContent='\u23f8 停止';
     autoBtn.style.background='#4f46e5';autoBtn.style.color='#fff';autoBtn.style.border='none';
     runAutoScroll();
   };
@@ -201,18 +203,18 @@ const BOOKMARKLET_SCRIPT = `(async function(){
     if(isApiUrl(u)){xhr.addEventListener('load',function(){try{processData(JSON.parse(xhr.responseText));}catch(ex){}});}
     return origSend.apply(this,arguments);
   };
-  showToast('\u2705 Active! Scroll your '+label+' \u2014 counter updates above.','#1e1b4b');
+  showToast('\u2705 起動しました。'+label+'をスクロールすると上の件数が更新されます。','#1e1b4b');
 })();`
 
 const BOOKMARKLET_HREF = `javascript:${encodeURIComponent(BOOKMARKLET_SCRIPT)}`
 
 const CONSOLE_SCRIPT = `(async function() {
   if (!location.hostname.includes('twitter.com') && !location.hostname.includes('x.com')) {
-    alert('Run this on x.com/i/bookmarks or x.com/username/likes'); return;
+    alert('x.com/i/bookmarksまたはx.com/username/likesで実行してください'); return;
   }
   const isLikes = location.pathname.includes('/likes');
   const source = isLikes ? 'like' : 'bookmark';
-  const label = isLikes ? 'likes' : 'bookmarks';
+  const label = isLikes ? 'いいね' : 'ブックマーク';
   const all = [], seen = new Set();
   function addTweet(t) {
     if (!t?.rest_id || seen.has(t.rest_id)) return;
@@ -230,12 +232,12 @@ const CONSOLE_SCRIPT = `(async function() {
       return thumb ? { type: 'photo', url: thumb } : null;
     }).filter(Boolean);
     all.push({
-      id: t.rest_id, author: usr.name ?? 'Unknown', handle: '@' + (usr.screen_name ?? 'unknown'),
+      id: t.rest_id, author: usr.name ?? '不明', handle: '@' + (usr.screen_name ?? 'unknown'),
       timestamp: leg.created_at ?? '', text: leg.full_text ?? leg.text ?? '', media,
       hashtags: (leg.entities?.hashtags ?? []).map(h => h.text),
       urls: (leg.entities?.urls ?? []).map(u => u.expanded_url).filter(Boolean)
     });
-    btn.textContent = \`Export \${all.length} \${label} →\`;
+    btn.textContent = \`\${label}\${all.length}件を書き出す →\`;
   }
   function isTweetObj(o) { return o && typeof o === 'object' && typeof o.rest_id === 'string' && o.rest_id.length > 5 && (o.legacy || o.core); }
   function unwrapTweet(t) {
@@ -252,7 +254,7 @@ const CONSOLE_SCRIPT = `(async function() {
   }
   function processData(d) { deepFindTweets(d, 0); }
   const btn = document.createElement('button');
-  btn.textContent = 'Scroll then click to Export →';
+  btn.textContent = 'スクロールして書き出しをクリック →';
   Object.assign(btn.style, {
     position: 'fixed', top: '12px', right: '12px', zIndex: '2147483647',
     padding: '10px 18px', background: '#4f46e5', color: '#fff',
@@ -266,17 +268,17 @@ const CONSOLE_SCRIPT = `(async function() {
     XMLHttpRequest.prototype.open = origOpen;
     XMLHttpRequest.prototype.send = origSend;
     [btn, autoBtn].forEach(el => { try { document.body.removeChild(el); } catch(e) {} });
-    if (!all.length) { alert(\`No \${label} captured. Use Auto-scroll or scroll manually first.\`); return; }
+    if (!all.length) { alert(\`\${label}がありません。自動スクロールまたは手動スクロールを先に実行してください。\`); return; }
     const blob = new Blob([JSON.stringify({ bookmarks: all, source }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = \`\${source}s.json\`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    console.log(\`✅ Downloaded \${all.length} \${label}!\`);
+    console.log(\`✅ \${all.length}件の\${label}をダウンロードしました。\`);
   }
   btn.onclick = doExport;
   const autoBtn = document.createElement('button');
-  autoBtn.textContent = '▶ Auto-scroll';
+  autoBtn.textContent = '▶ 自動スクロール';
   Object.assign(autoBtn.style, {
     position: 'fixed', top: '58px', right: '12px', zIndex: '2147483647',
     padding: '8px 14px', background: '#18181b', color: '#a1a1aa',
@@ -300,22 +302,22 @@ const CONSOLE_SCRIPT = `(async function() {
           await sleep(2000);
           if (all.length === lastCount) {
             autoScrolling = false;
-            autoBtn.textContent = \`✅ Done — \${all.length} captured\`;
+            autoBtn.textContent = \`✅ 完了 — \${all.length}件取得\`;
             autoBtn.style.cssText += ';background:#14532d;color:#86efac;border:1px solid #166534';
-            console.log(\`✅ Auto-scroll complete! \${all.length} \${label} ready. Click Export.\`);
+            console.log(\`✅ 自動スクロール完了。\${all.length}件の\${label}を取得しました。書き出しをクリックしてください。\`);
             return;
           }
           stagnant = 0;
         }
       }
     }
-    autoBtn.textContent = '▶ Auto-scroll';
+    autoBtn.textContent = '▶ 自動スクロール';
     autoBtn.style.background = '#18181b'; autoBtn.style.color = '#a1a1aa'; autoBtn.style.border = '1px solid #3f3f46';
   }
   autoBtn.onclick = function() {
     if (autoScrolling) { autoScrolling = false; return; }
     autoScrolling = true;
-    autoBtn.textContent = '⏸ Stop';
+    autoBtn.textContent = '⏸ 停止';
     autoBtn.style.background = '#4f46e5'; autoBtn.style.color = '#fff'; autoBtn.style.border = 'none';
     runAutoScroll();
   };
@@ -347,7 +349,7 @@ const CONSOLE_SCRIPT = `(async function() {
     }
     return origSend.apply(this, args);
   };
-  console.log(\`✅ Script active. Scroll through your \${label}, then click the purple button.\`);
+  console.log(\`✅ スクリプトを起動しました。\${label}をスクロールして紫色のボタンをクリックしてください。\`);
 })();`
 
 // ── Draggable bookmarklet link ────────────────────────────────────────────────
@@ -369,9 +371,9 @@ function DraggableBookmarklet() {
       draggable
       onClick={(e) => e.preventDefault()}
       className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-grab active:cursor-grabbing select-none transition-colors"
-      title="Drag this to your bookmarks bar — do not click"
+      title="ブックマークバーへドラッグしてください（クリックしないでください）"
     >
-      📥 Export X Bookmarks
+      📥 Xブックマークを書き出す
     </a>
   )
 }
@@ -379,7 +381,7 @@ function DraggableBookmarklet() {
 // ── Components ────────────────────────────────────────────────────────────────
 
 function StepIndicator({ current }: { current: Step }) {
-  const steps = ['Upload', 'Importing', 'Categorize']
+  const steps = ['アップロード', 'インポート中', '分類']
   return (
     <div className="flex items-center gap-2 mb-8">
       {steps.map((label, i) => {
@@ -448,8 +450,8 @@ function UploadZone({ onFile }: { onFile: (file: File) => void }) {
       }`}
     >
       <Upload size={28} className="mx-auto mb-3 text-zinc-500" />
-      <p className="text-zinc-300 font-medium text-sm">Drop your JSON file here</p>
-      <p className="text-zinc-600 text-xs mt-1">or click to browse</p>
+      <p className="text-zinc-300 font-medium text-sm">JSONファイルをここにドロップ</p>
+      <p className="text-zinc-600 text-xs mt-1">またはクリックして選択</p>
       <input ref={inputRef} type="file" accept=".json" className="hidden" onChange={handleFileChange} />
     </div>
   )
@@ -462,17 +464,17 @@ function BookmarkletTab({ onFile, importSource }: { onFile: (file: File) => void
   const steps = [
     {
       num: 1,
-      title: 'Add the bookmarklet to your bookmark bar',
+      title: 'ブックマークレットをブックマークバーに追加',
       content: (
         <div className="mt-2 space-y-3">
           <p className="text-xs text-zinc-500">
-            Show your bookmark bar first: <strong className="text-zinc-300">View → Show Bookmarks Bar</strong>
+            まずブックマークバーを表示します: <strong className="text-zinc-300">表示 → ブックマークバーを表示</strong>
           </p>
           {/* Option A: Drag */}
           <div className="flex items-center gap-3 p-3 rounded-xl bg-zinc-800/60 border border-zinc-700/50">
             <div className="shrink-0 w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-bold">A</div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-zinc-300 mb-1.5">Drag to bookmark bar</p>
+              <p className="text-xs font-medium text-zinc-300 mb-1.5">ブックマークバーへドラッグ</p>
               <DraggableBookmarklet />
             </div>
           </div>
@@ -480,11 +482,11 @@ function BookmarkletTab({ onFile, importSource }: { onFile: (file: File) => void
           <div className="flex items-start gap-3 p-3 rounded-xl bg-zinc-800/60 border border-zinc-700/50">
             <div className="shrink-0 w-6 h-6 rounded-full bg-zinc-600/40 text-zinc-400 flex items-center justify-center text-xs font-bold mt-0.5">B</div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-zinc-300 mb-1.5">Manual (works in all browsers)</p>
+              <p className="text-xs font-medium text-zinc-300 mb-1.5">手動（すべてのブラウザーで利用可能）</p>
               <ol className="text-xs text-zinc-500 space-y-0.5 mb-2">
-                <li>1. Copy the URL below</li>
-                <li>2. Right-click bookmark bar → <strong className="text-zinc-400">Add bookmark / New bookmark</strong></li>
-                <li>3. Name it <em className="text-zinc-400">Export X Bookmarks</em> and paste the URL</li>
+                <li>1. 下のURLをコピー</li>
+                <li>2. ブックマークバーを右クリック → <strong className="text-zinc-400">ブックマークを追加 / 新しいブックマーク</strong></li>
+                <li>3. 名前を<em className="text-zinc-400">Xブックマークを書き出す</em>にしてURLを貼り付け</li>
               </ol>
               <CopyButton text={BOOKMARKLET_HREF} />
             </div>
@@ -496,7 +498,7 @@ function BookmarkletTab({ onFile, importSource }: { onFile: (file: File) => void
       num: 2,
       title: (
         <span>
-          Go to{' '}
+          ログインした状態で{' '}
           <a
             href={targetUrl}
             target="_blank"
@@ -505,35 +507,34 @@ function BookmarkletTab({ onFile, importSource }: { onFile: (file: File) => void
           >
             {targetLabel} <ExternalLink size={11} />
           </a>{' '}
-          while logged in
+          に移動
         </span>
       ),
     },
     {
       num: 3,
-      title: `Click "Export X Bookmarks" in your bookmark bar`,
+      title: 'ブックマークバーの「Xブックマークを書き出す」をクリック',
       content: (
         <p className="text-xs text-zinc-500 mt-1">
-          A purple Export button will appear on the page
+          ページに紫色の書き出しボタンが表示されます
         </p>
       ),
     },
     {
       num: 4,
-      title: 'Click "▶ Auto-scroll" to capture all bookmarks automatically',
+      title: '「▶ 自動スクロール」をクリックしてすべてのブックマークを自動取得',
       content: (
         <p className="text-xs text-zinc-500 mt-1">
-          A second button appears below the export button. Click it and it will scroll through all your bookmarks automatically — stopping when done. Or scroll manually if you prefer.
+          書き出しボタンの下に2つ目のボタンが表示されます。クリックすると自動で全ブックマークをスクロールし、完了時に停止します。手動スクロールも可能です。
         </p>
       ),
     },
     {
       num: 5,
-      title: `Click the purple "Export N ${sourceLabel}" button`,
+      title: `紫色の「${sourceLabel === 'likes' ? 'いいね' : 'ブックマーク'}を書き出す」ボタンをクリック`,
       content: (
         <p className="text-xs text-zinc-500 mt-1">
-          A <code className="text-xs bg-zinc-800 px-1 py-0.5 rounded">{sourceLabel}.json</code> file will download automatically.
-          Upload it below.
+          <code className="text-xs bg-zinc-800 px-1 py-0.5 rounded">{sourceLabel}.json</code>ファイルが自動でダウンロードされます。下からアップロードしてください。
         </p>
       ),
     },
@@ -556,7 +557,7 @@ function BookmarkletTab({ onFile, importSource }: { onFile: (file: File) => void
       </ol>
 
       <div className="border-t border-zinc-800 pt-5">
-        <p className="text-xs text-zinc-500 mb-3 uppercase tracking-wider font-medium">Upload the downloaded file</p>
+        <p className="text-xs text-zinc-500 mb-3 uppercase tracking-wider font-medium">ダウンロードしたファイルをアップロード</p>
         <UploadZone onFile={onFile} />
       </div>
     </div>
@@ -587,23 +588,23 @@ function ConsoleTab({ onFile, importSource }: { onFile: (file: File) => void; im
     },
     {
       num: 2,
-      title: 'Open browser DevTools and go to the Console tab',
+      title: 'ブラウザーの開発者ツールを開きConsoleタブへ移動',
       content: (
         <p className="text-xs text-zinc-500 mt-1">
-          Press <kbd className="text-xs bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded font-mono">F12</kbd> on Windows/Linux or{' '}
-          <kbd className="text-xs bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded font-mono">⌘⌥J</kbd> on Mac,
-          then click the <strong className="text-zinc-300">Console</strong> tab
+          Windows/Linuxでは<kbd className="text-xs bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded font-mono">F12</kbd>、Macでは{' '}
+          <kbd className="text-xs bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded font-mono">⌘⌥J</kbd>（Mac）
+          を押し、<strong className="text-zinc-300">Console</strong>タブをクリックします
         </p>
       ),
     },
     {
       num: 3,
-      title: 'Paste and run the script below',
+      title: '下のスクリプトを貼り付けて実行',
       content: (
         <div className="mt-2">
           <div className="relative rounded-xl overflow-hidden border border-zinc-700 bg-zinc-950">
             <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
-              <span className="text-xs text-zinc-600 font-mono">console script</span>
+              <span className="text-xs text-zinc-600 font-mono">コンソールスクリプト</span>
               <CopyButton text={CONSOLE_SCRIPT} />
             </div>
             <pre className="text-xs text-zinc-400 p-3 overflow-auto max-h-40 font-mono leading-relaxed">
@@ -615,10 +616,10 @@ function ConsoleTab({ onFile, importSource }: { onFile: (file: File) => void; im
     },
     {
       num: 4,
-      title: `Press Enter, then scroll through all your ${sourceLabel}`,
+      title: `Enterを押して${sourceLabel === 'likes' ? 'いいね' : 'ブックマーク'}をすべてスクロール`,
       content: (
         <p className="text-xs text-zinc-500 mt-1">
-          A purple button will appear. Scroll slowly to capture all {sourceLabel}, then click the button to download.
+          紫色のボタンが表示されます。ゆっくりスクロールしてすべて取得し、ボタンをクリックしてダウンロードします。
         </p>
       ),
     },
@@ -641,7 +642,7 @@ function ConsoleTab({ onFile, importSource }: { onFile: (file: File) => void; im
       </ol>
 
       <div className="border-t border-zinc-800 pt-5">
-        <p className="text-xs text-zinc-500 mb-3 uppercase tracking-wider font-medium">Upload the downloaded file</p>
+        <p className="text-xs text-zinc-500 mb-3 uppercase tracking-wider font-medium">ダウンロードしたファイルをアップロード</p>
         <UploadZone onFile={onFile} />
       </div>
     </div>
@@ -659,6 +660,7 @@ interface OAuthStatus {
 }
 
 function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void }) {
+  const { language } = useLanguage()
   const [status, setStatus] = useState<OAuthStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [connecting, setConnecting] = useState(false)
@@ -666,6 +668,9 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
   const [disconnecting, setDisconnecting] = useState(false)
   const [error, setError] = useState('')
   const [continuationToken, setContinuationToken] = useState<string | null>(null)
+  const [includeThreads, setIncludeThreads] = useState(true)
+  const [repairingArticles, setRepairingArticles] = useState(false)
+  const [repairResult, setRepairResult] = useState<string | null>(null)
 
   // Check for OAuth callback params in URL
   useEffect(() => {
@@ -684,11 +689,11 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
   useEffect(() => {
     fetch('/api/import/x-oauth/status')
       .then(async (r) => {
-        if (!r.ok) throw new Error('Failed to check status')
+        if (!r.ok) throw new Error('状態の確認に失敗しました')
         const data: OAuthStatus = await r.json()
         setStatus(data)
       })
-      .catch(() => setError('Could not connect to the server'))
+      .catch(() => setError('サーバーに接続できませんでした'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -698,10 +703,10 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
     try {
       const res = await fetch('/api/import/x-oauth/authorize')
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Failed to start OAuth')
+      if (!res.ok) throw new Error(data.error ?? 'OAuthの開始に失敗しました')
       window.location.href = data.authUrl
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect')
+      setError(err instanceof Error ? err.message : '接続に失敗しました')
       setConnecting(false)
     }
   }
@@ -711,10 +716,10 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
     setDisconnecting(true)
     try {
       const res = await fetch('/api/import/x-oauth/disconnect', { method: 'POST' })
-      if (!res.ok) throw new Error('Failed to disconnect')
+      if (!res.ok) throw new Error('接続解除に失敗しました')
       setStatus({ configured: true, connected: false })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to disconnect')
+      setError(err instanceof Error ? err.message : '接続解除に失敗しました')
     } finally {
       setDisconnecting(false)
     }
@@ -726,18 +731,39 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
     try {
       const res = await fetch('/api/import/x-oauth/fetch', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ maxPages: 10, ...(nextToken ? { nextToken } : {}) }),
+        body: JSON.stringify({ maxPages: 10, includeThreads, ...(nextToken ? { nextToken } : {}) }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Fetch failed')
+      if (!res.ok) throw new Error(data.error ?? '取得に失敗しました')
       setContinuationToken(data.truncated && data.nextToken ? data.nextToken : null)
       onSynced({
         imported: data.imported ?? 0, skipped: data.skipped ?? 0, total: data.total ?? 0, parsed: data.total ?? 0,
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Fetch failed')
+      setError(err instanceof Error ? err.message : '取得に失敗しました')
     } finally {
       setSyncing(false)
+    }
+  }
+
+  async function handleRepairArticles() {
+    if (repairingArticles) return
+    setError('')
+    setRepairResult(null)
+    setRepairingArticles(true)
+    try {
+      const response = await fetch('/api/import/x-oauth/fetch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repairArticles: true }),
+      })
+      const data = await response.json() as { total?: number; repaired?: number; failed?: number; error?: string }
+      if (!response.ok) throw new Error(data.error ?? 'Failed to repair X Articles')
+      setRepairResult(data.failed
+        ? uiText(language, `${data.repaired ?? 0}件を修復、${data.failed}件は再試行できます`, `Repaired ${data.repaired ?? 0}; ${data.failed} can be retried`)
+        : uiText(language, `${data.repaired ?? 0}件を修復しました`, `Repaired ${data.repaired ?? 0} articles`))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : uiText(language, 'X Articlesの修復に失敗しました', 'Failed to repair X Articles'))
+    } finally {
+      setRepairingArticles(false)
     }
   }
 
@@ -755,22 +781,29 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
       <div className="text-xs text-zinc-500 space-y-1.5 bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4">
         <p className="text-zinc-300 font-medium text-sm mb-2 flex items-center gap-2">
           <ExternalLink size={14} className="text-indigo-400" />
-          X OAuth 2.0 (Recommended)
+          X OAuth 2.0（おすすめ）
         </p>
-        <p>Connect your X account using the official OAuth 2.0 flow. This is the X-approved method — no cookies or session tokens needed.</p>
-        <p className="text-zinc-600 mt-1">Requires X OAuth Client ID in Settings. Scopes: bookmark.read, tweet.read, users.read</p>
-        <p className="text-amber-400/80 mt-2 font-medium">Note: The X API requires a paid Basic tier ($200/mo) or higher for bookmark.read scope access. The free tier does not support fetching bookmarks.</p>
+        <p>公式OAuth 2.0フローでXアカウントを接続します。Xが承認した方法で、Cookieやセッショントークンは不要です。</p>
+        <p className="text-zinc-600 mt-1">設定でX OAuth Client IDが必要です。スコープ: bookmark.read、tweet.read、users.read</p>
+        <p className="text-amber-400/80 mt-2 font-medium">注意: X APIでbookmark.readを使うには有料のBasicプラン（月額200ドル）以上が必要です。無料プランではブックマークを取得できません。</p>
       </div>
+
+      <label className="flex items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3.5 text-sm text-zinc-300">
+        <input type="checkbox" checked={includeThreads} onChange={(event) => setIncludeThreads(event.target.checked)} className="mt-0.5 accent-indigo-500" />
+        <span>
+          <span className="block font-medium">自己スレッドも取得</span>
+          <span className="mt-0.5 block text-xs text-zinc-500">ブックマークした投稿から、自分の返信をまとめて保存して分類に利用します。Xの最近の投稿検索対象外は後でアーカイブ設定から補完します。</span>
+        </span>
+      </label>
 
       {/* Not configured */}
       {!status?.configured && (
         <div className="flex items-center gap-3 p-3.5 rounded-xl bg-amber-500/8 border border-amber-500/20">
           <AlertCircle size={15} className="text-amber-400 shrink-0" />
           <div>
-            <p className="text-sm text-amber-300">X OAuth not configured</p>
+            <p className="text-sm text-amber-300">X OAuthが未設定です</p>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Add your X OAuth Client ID (and optionally Client Secret) in{' '}
-              <Link href="/settings" className="text-indigo-400 hover:underline">Settings</Link>
+              <Link href="/settings" className="text-indigo-400 hover:underline">設定</Link>でX OAuth Client ID（任意でClient Secret）を追加してください
             </p>
           </div>
         </div>
@@ -786,12 +819,12 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
           {connecting ? (
             <>
               <Loader2 size={16} className="animate-spin" />
-              Redirecting to X...
+              Xへ移動中…
             </>
           ) : (
             <>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-              Connect X Account
+              Xアカウントを接続
             </>
           )}
         </button>
@@ -804,7 +837,7 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
             <div className="flex items-center gap-2.5">
               <CheckCircle size={15} className="text-emerald-400 shrink-0" />
               <div>
-                <span className="text-sm text-emerald-300">Connected to X</span>
+                <span className="text-sm text-emerald-300">Xに接続済み</span>
                 {status.user?.username && (
                   <span className="text-xs text-zinc-500 ml-2">
                     <User size={11} className="inline -mt-0.5 mr-0.5" />
@@ -817,7 +850,7 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
               onClick={handleDisconnect}
               disabled={disconnecting}
               className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-              title="Disconnect X account"
+              title="Xアカウントの接続を解除"
             >
               {disconnecting ? <Loader2 size={14} className="animate-spin" /> : <LogOut size={14} />}
             </button>
@@ -826,7 +859,7 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
           {status.tokenExpired && (
             <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
               <AlertCircle size={14} className="text-amber-400 shrink-0" />
-              <p className="text-xs text-amber-300">Token expired. Siftly will try to auto-refresh, or you can reconnect.</p>
+              <p className="text-xs text-amber-300">トークンの有効期限が切れました。Siftlyは自動更新を試みますが、再接続もできます。</p>
             </div>
           )}
 
@@ -838,20 +871,28 @@ function LiveImportTab({ onSynced }: { onSynced: (result: ImportResult) => void 
             {syncing ? (
               <>
                 <Loader2 size={16} className="animate-spin" />
-                Fetching bookmarks...
+                ブックマークを取得中…
               </>
             ) : (
               <>
                 <RefreshCw size={16} />
-                Fetch Bookmarks from X
+                Xからブックマークを取得
               </>
             )}
           </button>
+          <button
+            onClick={handleRepairArticles}
+            disabled={syncing || repairingArticles}
+            className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-60 text-sm text-white transition-colors flex items-center justify-center gap-2"
+          >
+            {repairingArticles ? <><Loader2 size={15} className="animate-spin" />{uiText(language, 'X Articlesを修復中…', 'Repairing X Articles…')}</> : <><RefreshCw size={15} />{uiText(language, '未補完のX Articlesを修復', 'Repair incomplete X Articles')}</>}
+          </button>
           {continuationToken && (
             <button onClick={() => handleFetchBookmarks(continuationToken)} disabled={syncing} className="w-full py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-60 text-sm text-white transition-colors">
-              Continue next 10 pages
+              次の10ページを続けて取得
             </button>
           )}
+          {repairResult && <p className="text-sm text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">{repairResult}</p>}
         </>
       )}
 
@@ -880,8 +921,8 @@ function InstructionsStep({ onFile, importSource, onLiveSynced }: { onFile: (fil
           }`}
         >
           <RefreshCw size={13} className="inline -mt-0.5 mr-1" />
-          Live Import
-          <span className="ml-1.5 text-xs text-indigo-400 font-normal">Recommended</span>
+          ライブインポート
+          <span className="ml-1.5 text-xs text-indigo-400 font-normal">おすすめ</span>
         </button>
         <button
           onClick={() => setMethod('bookmarklet')}
@@ -891,7 +932,7 @@ function InstructionsStep({ onFile, importSource, onLiveSynced }: { onFile: (fil
               : 'text-zinc-500 hover:text-zinc-300'
           }`}
         >
-          Bookmarklet
+          ブックマークレット
         </button>
         <button
           onClick={() => setMethod('console')}
@@ -901,7 +942,7 @@ function InstructionsStep({ onFile, importSource, onLiveSynced }: { onFile: (fil
               : 'text-zinc-500 hover:text-zinc-300'
           }`}
         >
-          {'</>'} Console
+          {'</>'} コンソール
         </button>
       </div>
 
@@ -923,8 +964,8 @@ function ImportingStep({ result }: {
     return (
       <div className="flex flex-col items-center gap-4 py-10">
         <Loader2 size={40} className="text-indigo-400 animate-spin" />
-        <p className="text-zinc-300 text-lg font-medium">Importing bookmarks...</p>
-        <p className="text-zinc-500 text-sm">This may take a moment</p>
+        <p className="text-zinc-300 text-lg font-medium">ブックマークをインポート中…</p>
+        <p className="text-zinc-500 text-sm">しばらくお待ちください</p>
       </div>
     )
   }
@@ -935,15 +976,15 @@ function ImportingStep({ result }: {
         <CheckCircle size={32} className="text-emerald-400" />
       </div>
       <div className="text-center">
-        <p className="text-xl font-bold text-zinc-100">Import Complete</p>
+        <p className="text-xl font-bold text-zinc-100">インポート完了</p>
         <p className="text-zinc-400 mt-1">
-          <span className="text-emerald-400 font-semibold">{result.imported}</span> imported,{' '}
-          <span className="text-zinc-500">{result.skipped} skipped</span> as duplicates
+          <span className="text-emerald-400 font-semibold">{result.imported}</span>件を追加、{' '}
+          <span className="text-zinc-500">{result.skipped}件をスキップ</span>（重複）
         </p>
       </div>
       <div className="flex items-center gap-2 text-indigo-400 text-sm">
         <Loader2 size={14} className="animate-spin" />
-        Starting AI categorization…
+        AI分類を開始中…
       </div>
     </div>
   )
@@ -998,7 +1039,7 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
       if (!res.ok) throw new Error('Server returned ' + res.status)
     } catch {
       setStopping(false)
-      setError('Failed to stop pipeline — try again')
+      setError('パイプラインの停止に失敗しました。もう一度お試しください')
     }
   }
 
@@ -1015,11 +1056,11 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
       })
       if (!res.ok && res.status !== 409) {
         const data = await res.json() as { error?: string }
-        throw new Error(data.error ?? 'Failed to start categorization')
+        throw new Error(data.error ?? 'カテゴリ分類の開始に失敗しました')
       }
       pollStatus()
     } catch (err) {
-      setError(`Failed to start: ${err instanceof Error ? err.message : String(err)}`)
+      setError(`開始に失敗しました: ${err instanceof Error ? err.message : String(err)}`)
       setRunning(false)
     }
   }
@@ -1047,7 +1088,7 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
           if (pollRef.current) clearInterval(pollRef.current)
           pollRef.current = null
           setRunning(false)
-          setError('Lost connection to the server. The pipeline may still be running — refresh to check.')
+          setError('サーバーとの接続が切れました。パイプラインは実行中の可能性があります。再読み込みして確認してください')
         }
       }
     }, 1000)
@@ -1065,7 +1106,7 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
             onClick={() => void startCategorization()}
             className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
           >
-            Retry Categorization
+            分類を再試行
           </button>
         </div>
       )}
@@ -1088,10 +1129,10 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
           {status?.stageCounts && (
             <div className="space-y-1.5">
               {([
-                { key: 'visionTagged', label: 'images analyzed', icon: <Eye size={13} />, active: status.stage === 'vision' || status.stage === 'parallel' },
-                { key: 'entitiesExtracted', label: 'entities extracted', icon: <Tag size={13} />, active: status.stage === 'entities' },
-                { key: 'enriched', label: 'bookmarks enriched', icon: <Brain size={13} />, active: status.stage === 'enrichment' || status.stage === 'parallel' },
-                { key: 'categorized', label: 'categorized', icon: <Layers size={13} />, active: status.stage === 'categorize' || status.stage === 'parallel' },
+                { key: 'visionTagged', label: '画像分析済み', icon: <Eye size={13} />, active: status.stage === 'vision' || status.stage === 'parallel' },
+                { key: 'entitiesExtracted', label: 'エンティティ抽出済み', icon: <Tag size={13} />, active: status.stage === 'entities' },
+                { key: 'enriched', label: '情報付加済み', icon: <Brain size={13} />, active: status.stage === 'enrichment' || status.stage === 'parallel' },
+                { key: 'categorized', label: '分類済み', icon: <Layers size={13} />, active: status.stage === 'categorize' || status.stage === 'parallel' },
               ] as { key: keyof StageCounts; label: string; icon: React.ReactNode; active: boolean }[]).map(({ key, label, icon, active }) => {
                 const count = status.stageCounts[key]
                 const total = key === 'categorized' ? status.total : null
@@ -1103,7 +1144,7 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
                     </span>
                     <span className="text-zinc-500 text-sm">
                       {label}
-                      {total != null && total > 0 ? <span className="text-zinc-600"> — {total - count} remaining</span> : null}
+                      {total != null && total > 0 ? <span className="text-zinc-600"> — 残り{total - count}件</span> : null}
                     </span>
                     {active && <Loader2 size={12} className="text-indigo-400 animate-spin ml-auto shrink-0" />}
                     {!active && count > 0 && <CheckCircle size={12} className="text-emerald-500 ml-auto shrink-0" />}
@@ -1120,7 +1161,7 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed text-red-400 text-sm font-medium transition-colors border border-red-500/20"
           >
             <StopCircle size={15} />
-            {stopping ? 'Stopping…' : 'Stop pipeline'}
+            {stopping ? '停止中…' : 'パイプラインを停止'}
           </button>
 
           {status?.lastError && (
@@ -1133,7 +1174,7 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
           {(status?.stage === 'categorize' || status?.stage === 'parallel') && (
             <div className="space-y-2">
               <div className="flex justify-between text-xs text-zinc-500">
-                <span>{status.done} / {status.total} bookmarks</span>
+                <span>{status.done} / {status.total}件</span>
                 <span>{progress}%</span>
               </div>
               <Progress.Root className="relative h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
@@ -1153,12 +1194,12 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
             <CheckCircle size={32} className="text-emerald-400" />
           </div>
           <div className="text-center">
-            <p className="text-xl font-bold text-zinc-100">Categorization Complete!</p>
+            <p className="text-xl font-bold text-zinc-100">カテゴリ分類完了</p>
             {status?.stageCounts && (
               <p className="text-zinc-500 text-sm mt-1">
-                {status.stageCounts.visionTagged} images analyzed ·{' '}
-                {status.stageCounts.enriched} bookmarks enriched ·{' '}
-                {status.stageCounts.categorized} categorized
+                画像分析 {status.stageCounts.visionTagged}件 ·{' '}
+                情報付加 {status.stageCounts.enriched}件 ·{' '}
+                分類 {status.stageCounts.categorized}件
               </p>
             )}
           </div>
@@ -1167,7 +1208,7 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
               href="/bookmarks"
               className="flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
             >
-              View your bookmarks
+              ブックマークを見る
               <ChevronRight size={16} />
             </Link>
             <button
@@ -1175,7 +1216,7 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
               className="flex items-center gap-2 px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium transition-colors border border-zinc-700"
             >
               <RefreshCw size={14} />
-              Reprocess all
+              すべて再処理
             </button>
           </div>
         </div>
@@ -1188,15 +1229,15 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
             <CheckCircle size={32} className="text-zinc-500" />
           </div>
           <div className="text-center">
-            <p className="text-xl font-bold text-zinc-100">Already up to date</p>
-            <p className="text-zinc-500 text-sm mt-1">All bookmarks in this file were already imported</p>
+            <p className="text-xl font-bold text-zinc-100">最新の状態です</p>
+            <p className="text-zinc-500 text-sm mt-1">このファイルのブックマークはすべてインポート済みです</p>
           </div>
           <div className="flex items-center gap-3">
             <Link
               href="/bookmarks"
               className="flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
             >
-              View your bookmarks
+              ブックマークを見る
               <ChevronRight size={16} />
             </Link>
             <button
@@ -1204,7 +1245,7 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
               className="flex items-center gap-2 px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium transition-colors border border-zinc-700"
             >
               <RefreshCw size={14} />
-              Reprocess all
+              すべて再処理
             </button>
           </div>
         </div>
@@ -1220,7 +1261,7 @@ function UncategorizedBanner({ onCategorize, onReprocess }: { onCategorize: () =
   useEffect(() => {
     fetch('/api/stats')
       .then((r) => {
-        if (!r.ok) throw new Error('Stats fetch failed')
+        if (!r.ok) throw new Error('統計情報の取得に失敗しました')
         return r.json()
       })
       .then((d: { totalBookmarks?: number; uncategorizedCount?: number }) => {
@@ -1241,7 +1282,7 @@ function UncategorizedBanner({ onCategorize, onReprocess }: { onCategorize: () =
           <div className="flex items-center gap-2.5 min-w-0">
             <Sparkles size={15} className="text-indigo-400 shrink-0" />
             <p className="text-sm text-indigo-300">
-              <span className="font-semibold">{uncategorized.toLocaleString()}</span> bookmarks not yet processed
+              <span className="font-semibold">{uncategorized.toLocaleString()}</span>件のブックマークが未処理です
             </p>
           </div>
           <button
@@ -1249,7 +1290,7 @@ function UncategorizedBanner({ onCategorize, onReprocess }: { onCategorize: () =
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors shrink-0"
           >
             <Sparkles size={12} />
-            Process
+            処理を開始
           </button>
         </div>
       )}
@@ -1257,7 +1298,7 @@ function UncategorizedBanner({ onCategorize, onReprocess }: { onCategorize: () =
         <div className="flex items-center gap-2.5 min-w-0">
           <RefreshCw size={15} className="text-zinc-400 shrink-0" />
           <p className="text-sm text-zinc-400">
-            Re-analyze all <span className="font-semibold text-zinc-300">{totalBookmarks.toLocaleString()}</span> bookmarks from scratch
+            <span className="font-semibold text-zinc-300">{totalBookmarks.toLocaleString()}</span>件のブックマークを最初から再分析
           </p>
         </div>
         <button
@@ -1265,7 +1306,7 @@ function UncategorizedBanner({ onCategorize, onReprocess }: { onCategorize: () =
           className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs font-semibold transition-colors shrink-0"
         >
           <RefreshCw size={12} />
-          Reprocess all
+          すべて再処理
         </button>
       </div>
     </div>
@@ -1273,6 +1314,7 @@ function UncategorizedBanner({ onCategorize, onReprocess }: { onCategorize: () =
 }
 
 export default function ImportPage() {
+  const { language } = useLanguage()
   const [step, setStep] = useState<Step>(1)
   const importSource = 'bookmark' as const
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
@@ -1309,7 +1351,7 @@ export default function ImportPage() {
       const res = await fetch('/api/import', { method: 'POST', body: formData })
       const data = await res.json()
 
-      if (!res.ok) throw new Error(data.error ?? 'Import failed')
+      if (!res.ok) throw new Error(data.error ?? uiText(language, 'インポートに失敗しました', 'Import failed'))
 
       const imported = data.imported ?? 0
       const skipped = data.skipped ?? 0
@@ -1324,14 +1366,14 @@ export default function ImportPage() {
 
       if (parsed === 0) {
         // Parser couldn't extract any bookmarks — likely wrong format
-        throw new Error('Could not parse any bookmarks from this file. Make sure you\'re uploading a Twitter/X bookmarks JSON export.')
+        throw new Error(uiText(language, 'このファイルからブックマークを読み取れませんでした。Twitter/XのブックマークJSONを書き出したファイルか確認してください。', 'No bookmarks could be read from this file. Check that it is a Twitter/X bookmark JSON export.'))
       }
 
       // Auto-advance to categorization after a brief moment to show the result
       setTimeout(() => setStep(3), 1500)
     } catch (err) {
       console.error('Import error:', err)
-      setImportError(err instanceof Error ? err.message : 'Import failed')
+      setImportError(err instanceof Error ? err.message : uiText(language, 'インポートに失敗しました', 'Import failed'))
       setStep(1)
     } finally {
       setImporting(false)
@@ -1341,15 +1383,15 @@ export default function ImportPage() {
   return (
     <div className="p-8 max-w-2xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-zinc-100">Import Bookmarks</h1>
-        <p className="text-zinc-400 mt-1">Export your X/Twitter bookmarks as JSON, then upload below.</p>
+        <h1 className="text-2xl font-bold text-zinc-100">{uiText(language, 'ブックマークをインポート', 'Import bookmarks')}</h1>
+        <p className="text-zinc-400 mt-1">{uiText(language, 'X/TwitterのブックマークをJSONで書き出し、ここからアップロードします。', 'Export your X/Twitter bookmarks as JSON and upload them here.')}</p>
       </div>
 
       {step === 1 && <UncategorizedBanner onCategorize={() => setStep(3)} onReprocess={() => { setForceReprocess(true); setStep(3) }} />}
 
       {importError && (
         <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mb-4">
-          Import failed: {importError}
+          {uiText(language, 'インポートに失敗しました', 'Import failed')}: {importError}
         </p>
       )}
 

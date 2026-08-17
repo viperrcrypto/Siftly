@@ -34,7 +34,7 @@ function Legend({ categories }: { categories: CategoryLegendItem[] }) {
 
   return (
     <div className="absolute top-4 left-4 z-10 bg-zinc-900/90 backdrop-blur-sm border border-zinc-800 rounded-xl p-4 max-w-52">
-      <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Categories</p>
+      <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">カテゴリ</p>
       <div className="space-y-2">
         {categories.map((cat) => (
           <div key={cat.slug} className="flex items-center gap-2">
@@ -43,7 +43,7 @@ function Legend({ categories }: { categories: CategoryLegendItem[] }) {
           </div>
         ))}
       </div>
-      <p className="text-xs text-zinc-600 mt-3">Click a category to expand</p>
+      <p className="text-xs text-zinc-600 mt-3">カテゴリをクリックして展開</p>
     </div>
   )
 }
@@ -67,11 +67,11 @@ interface CategorizeStatus {
 }
 
 const STAGE_LABELS: Record<NonNullable<CategorizeStage>, string> = {
-  entities: 'Extracting entities…',
-  vision: 'Analyzing images…',
-  enrichment: 'Generating semantic tags…',
-  categorize: 'Categorizing bookmarks…',
-  parallel: 'Processing bookmarks in parallel…',
+  entities: 'エンティティを抽出中…',
+  vision: '画像を分析中…',
+  enrichment: '意味タグを生成中…',
+  categorize: 'ブックマークを分類中…',
+  parallel: 'ブックマークを並列処理中…',
 }
 
 function UncategorizedState({ totalBookmarks }: { totalBookmarks: number }) {
@@ -79,37 +79,6 @@ function UncategorizedState({ totalBookmarks }: { totalBookmarks: number }) {
   const [done, setDone] = useState(false)
   const [status, setStatus] = useState<CategorizeStatus | null>(null)
   const [error, setError] = useState('')
-
-  // Auto-attach if pipeline is already running (e.g. started from import screen)
-  useEffect(() => {
-    fetch('/api/categorize')
-      .then((r) => r.json())
-      .then((d: CategorizeStatus) => {
-        if (d.status === 'running' || d.status === 'stopping') {
-          setStatus(d)
-          setRunning(true)
-          pollStatus()
-        }
-      })
-      .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function startCategorization() {
-    setError('')
-    setRunning(true)
-    try {
-      const res = await fetch('/api/categorize', { method: 'POST' })
-      if (!res.ok) {
-        const d = await res.json() as { error?: string }
-        throw new Error(d.error ?? 'Failed to start')
-      }
-      pollStatus()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start')
-      setRunning(false)
-    }
-  }
 
   function pollStatus() {
     const interval = setInterval(async () => {
@@ -131,18 +100,48 @@ function UncategorizedState({ totalBookmarks }: { totalBookmarks: number }) {
     }, 1500)
   }
 
+  // Auto-attach if pipeline is already running (e.g. started from import screen)
+  useEffect(() => {
+    fetch('/api/categorize')
+      .then((r) => r.json())
+      .then((d: CategorizeStatus) => {
+        if (d.status === 'running' || d.status === 'stopping') {
+          setStatus(d)
+          setRunning(true)
+          pollStatus()
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  async function startCategorization() {
+    setError('')
+    setRunning(true)
+    try {
+      const res = await fetch('/api/categorize', { method: 'POST' })
+      if (!res.ok) {
+        const d = await res.json() as { error?: string }
+        throw new Error(d.error ?? 'Failed to start')
+      }
+      pollStatus()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start')
+      setRunning(false)
+    }
+  }
+
   const progress = status?.stage === 'categorize' && status.total > 0
     ? Math.round((status.done / status.total) * 100)
     : null
 
-  const stageLabel = status?.stage ? STAGE_LABELS[status.stage] : 'Starting…'
+  const stageLabel = status?.stage ? STAGE_LABELS[status.stage] : '開始中…'
 
   if (done) {
     return (
       <div className="flex flex-col items-center gap-3">
         <CheckCircle size={36} className="text-emerald-400" />
-        <p className="text-zinc-200 font-semibold">Categorization complete!</p>
-        <p className="text-zinc-500 text-sm">Loading your mindmap…</p>
+        <p className="text-zinc-200 font-semibold">分類が完了しました</p>
+        <p className="text-zinc-500 text-sm">マインドマップを読み込み中…</p>
         <Loader2 size={18} className="text-indigo-400 animate-spin mt-1" />
       </div>
     )
@@ -156,7 +155,7 @@ function UncategorizedState({ totalBookmarks }: { totalBookmarks: number }) {
           <p className="text-zinc-200 font-semibold">{stageLabel}</p>
           {status?.stage === 'categorize' && status.total > 0 && (
             <p className="text-zinc-500 text-sm mt-1">
-              {status.done} / {status.total} bookmarks
+              {status.done} / {status.total}件
               {progress !== null && ` (${progress}%)`}
             </p>
           )}
@@ -172,10 +171,10 @@ function UncategorizedState({ totalBookmarks }: { totalBookmarks: number }) {
         <Sparkles size={28} className="text-indigo-400" />
       </div>
       <div>
-        <p className="text-xl font-semibold text-zinc-100">Bookmarks not categorized yet</p>
+        <p className="text-xl font-semibold text-zinc-100">まだ分類されていません</p>
         <p className="text-zinc-500 text-sm mt-1.5 leading-relaxed">
-          You have <span className="text-zinc-300 font-medium">{totalBookmarks.toLocaleString()}</span> bookmarks imported.
-          Run AI categorization to populate the mindmap.
+          <span className="text-zinc-300 font-medium">{totalBookmarks.toLocaleString()}</span>件のブックマークをインポート済みです。
+          AI分類を実行するとマインドマップが表示されます。
         </p>
       </div>
       {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -184,7 +183,7 @@ function UncategorizedState({ totalBookmarks }: { totalBookmarks: number }) {
         className="flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
       >
         <Sparkles size={16} />
-        Start AI Categorization
+        AI分類を開始
       </button>
     </div>
   )
@@ -203,15 +202,6 @@ function MindmapOverlay({
   const [done, setDone] = useState(false)
   const [status, setStatus] = useState<CategorizeStatus | null>(pipeline)
   const [error, setError] = useState('')
-
-  // Auto-attach if pipeline is running
-  useEffect(() => {
-    if (pipeline?.status === 'running' || pipeline?.status === 'stopping') {
-      setRunning(true)
-      pollStatus()
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   function pollStatus() {
     const interval = setInterval(async () => {
@@ -232,6 +222,13 @@ function MindmapOverlay({
     }, 1500)
   }
 
+  // Auto-attach if pipeline is running
+  useEffect(() => {
+    if (pipeline?.status === 'running' || pipeline?.status === 'stopping') {
+      pollStatus()
+    }
+  }, [pipeline?.status])
+
   async function startCategorization() {
     setError('')
     setRunning(true)
@@ -249,7 +246,7 @@ function MindmapOverlay({
   }
 
   const isPipelineRunning = pipeline?.status === 'running' || pipeline?.status === 'stopping'
-  const stageLabel = status?.stage ? STAGE_LABELS[status.stage] : 'Starting…'
+  const stageLabel = status?.stage ? STAGE_LABELS[status.stage] : '開始中…'
   const progress = status?.stage === 'categorize' && status.total > 0
     ? Math.round((status.done / status.total) * 100)
     : null
@@ -260,8 +257,8 @@ function MindmapOverlay({
         {done ? (
           <div className="flex flex-col items-center gap-4">
             <CheckCircle size={44} className="text-emerald-400" />
-            <p className="text-xl font-bold text-zinc-100">Categorization complete!</p>
-            <p className="text-zinc-500 text-sm">Reloading your mindmap…</p>
+            <p className="text-xl font-bold text-zinc-100">分類が完了しました</p>
+            <p className="text-zinc-500 text-sm">マインドマップを再読み込み中…</p>
             <Loader2 size={18} className="text-indigo-400 animate-spin" />
           </div>
         ) : running ? (
@@ -270,17 +267,17 @@ function MindmapOverlay({
               <Loader2 size={32} className="text-indigo-400 animate-spin" />
             </div>
             <div>
-              <p className="text-xl font-bold text-zinc-100">AI Categorization in Progress</p>
+              <p className="text-xl font-bold text-zinc-100">AI分類を実行中</p>
               <p className="text-zinc-400 text-sm mt-1.5">{stageLabel}</p>
               {status?.stage === 'categorize' && status.total > 0 && (
                 <p className="text-zinc-500 text-sm mt-1">
-                  {status.done} / {status.total} bookmarks
+                  {status.done} / {status.total}件
                   {progress !== null && ` (${progress}%)`}
                 </p>
               )}
             </div>
             <p className="text-zinc-600 text-xs">
-              The mindmap will populate automatically when done.
+              完了するとマインドマップが自動的に表示されます。
             </p>
           </div>
         ) : (
@@ -289,10 +286,10 @@ function MindmapOverlay({
               <Sparkles size={28} className="text-indigo-400" />
             </div>
             <div>
-              <p className="text-xl font-bold text-zinc-100">Bookmarks Not Categorized Yet</p>
+              <p className="text-xl font-bold text-zinc-100">まだ分類されていません</p>
               <p className="text-zinc-400 text-sm mt-2 leading-relaxed">
-                You have <span className="text-zinc-200 font-semibold">{totalBookmarks.toLocaleString()}</span> bookmarks imported.
-                The mindmap will fill in once AI categorization completes.
+                <span className="text-zinc-200 font-semibold">{totalBookmarks.toLocaleString()}</span>件のブックマークをインポート済みです。
+                AI分類が完了するとマインドマップが表示されます。
               </p>
             </div>
             {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -302,14 +299,14 @@ function MindmapOverlay({
                 className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
               >
                 <Sparkles size={16} />
-                Start AI Categorization
+                AI分類を開始
               </button>
               {isPipelineRunning && (
                 <button
                   onClick={onDismiss}
                   className="text-zinc-600 hover:text-zinc-400 text-sm transition-colors py-1"
                 >
-                  Dismiss and view empty map
+                  閉じて空のマップを見る
                 </button>
               )}
             </div>
@@ -331,7 +328,7 @@ export default function MindmapPage() {
   useEffect(() => {
     Promise.all([
       fetch('/api/mindmap').then((r) => {
-        if (!r.ok) throw new Error('Failed to load mindmap')
+        if (!r.ok) throw new Error('マインドマップの読み込みに失敗しました')
         return r.json() as Promise<MindmapData>
       }),
       fetch('/api/stats').then((r) => r.json() as Promise<{ totalBookmarks?: number }>),
@@ -342,7 +339,7 @@ export default function MindmapPage() {
         setTotalBookmarks(stats.totalBookmarks ?? 0)
         setPipeline(pipelineStatus)
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Unknown error'))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : '不明なエラーが発生しました'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -351,7 +348,7 @@ export default function MindmapPage() {
       <div className="flex items-center justify-center h-screen w-full">
         <div className="flex flex-col items-center gap-3">
           <Loader2 size={36} className="text-indigo-400 animate-spin" />
-          <p className="text-zinc-400 text-sm">Loading mindmap...</p>
+          <p className="text-zinc-400 text-sm">マインドマップを読み込み中…</p>
         </div>
       </div>
     )
@@ -372,8 +369,8 @@ export default function MindmapPage() {
           <UncategorizedState totalBookmarks={totalBookmarks} />
         ) : (
           <div className="text-center">
-            <p className="text-xl font-semibold text-zinc-400">No data to display</p>
-            <p className="text-zinc-600 text-sm mt-1">Import and categorize bookmarks first.</p>
+            <p className="text-xl font-semibold text-zinc-400">表示するデータがありません</p>
+            <p className="text-zinc-600 text-sm mt-1">まずブックマークをインポートして分類してください。</p>
           </div>
         )}
       </div>

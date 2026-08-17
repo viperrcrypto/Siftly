@@ -258,13 +258,14 @@ export async function runArchive(bookmarkId: string): Promise<{ status: string; 
   const persist = () => prisma.archiveRecord.update({ where: { bookmarkId }, data: { status: 'processing', resultJson: JSON.stringify(result) } })
   try {
     const [bookmark, settings] = await Promise.all([prisma.bookmark.findUniqueOrThrow({ where: { id: bookmarkId }, include: { mediaItems: true } }), getArchiveSettings()])
+    if (bookmark.deletedAt) throw new Error('Bookmark not found')
     const rootUrls = urlCandidatesFrom(bookmark.rawJson, bookmark.text)
     let urls: Array<string | UrlCandidate> = rootUrls
     result.tweet = { status: 'success', id: bookmark.tweetId, url: `https://x.com/${bookmark.authorHandle}/status/${bookmark.tweetId}` }
     result.urls = classifyArchiveUrls(urls)
     await persist()
 
-    const priorThread = result.thread as { status?: string; tweets?: Array<{ id: string; authorId?: string; authorHandle?: string; conversationId?: string; text?: string; inReplyToId?: string; quotedTweetId?: string; urls?: UrlCandidate[]; media?: GalleryMedia[] }>; quotes?: Array<{ id: string; relationship?: 'quote'; status: string; quotedById?: string; authorId?: string; authorHandle?: string; text?: string; urls?: UrlCandidate[]; media?: GalleryMedia[]; raw?: Record<string, unknown>; error?: string }> } | undefined
+    const priorThread = result.thread as { source?: string; status?: string; retryable?: boolean; rootFallback?: boolean; tweets?: Array<{ id: string; authorId?: string; authorHandle?: string; conversationId?: string; text?: string; inReplyToId?: string; quotedTweetId?: string; urls?: UrlCandidate[]; media?: GalleryMedia[] }>; quotes?: Array<{ id: string; relationship?: 'quote'; status: string; quotedById?: string; authorId?: string; authorHandle?: string; text?: string; urls?: UrlCandidate[]; media?: GalleryMedia[]; raw?: Record<string, unknown>; error?: string }> } | undefined
     const resolveQuote = async (id: string, quotedById?: string): Promise<ArchiveQuote> => {
       try {
         const resolved = await resolveWithGalleryDl(id, settings.galleryDlPath!, settings.cookieBrowser)
@@ -302,7 +303,13 @@ export async function runArchive(bookmarkId: string): Promise<{ status: string; 
         urls = [...urls, ...thread.flatMap((tweet) => urlCandidatesFrom(tweet.raw, tweet.text)), ...quotes.flatMap((quote) => urlCandidatesFrom(quote.raw, quote.text))]
         result.urls = classifyArchiveUrls(urls)
         result.thread = { status: quotes.some((quote) => quote.status === 'failed') ? 'partial' : 'success', tweets: thread.map((tweet) => ({ id: tweet.id, authorId: tweet.authorId, authorHandle: tweet.authorHandle, conversationId: tweet.conversationId, text: tweet.text, inReplyToId: tweet.inReplyToId, quotedTweetId: tweet.quotedTweetId, urls: urlCandidatesFrom(tweet.raw, tweet.text), media: tweet.media })), quotes: quotes.map((quote) => ({ ...quote, authorHandle: quote.authorHandle, media: quote.media, urls: urlCandidatesFrom(quote.raw, quote.text) })) }
-      } catch (error) { result.thread = { status: 'partial', error: error instanceof Error ? error.message : String(error), retryable: true, rootFallback: true } }
+      } catch (error) {
+        result.thread = priorThread?.source === 'x-oauth' && priorThread.tweets?.length
+          ? { ...priorThread, status: 'partial', retryable: true, error: error instanceof Error ? error.message : String(error) }
+          : { status: 'partial', error: error instanceof Error ? error.message : String(error), retryable: true, rootFallback: true }
+      }
+    } else if (priorThread?.source === 'x-oauth' && priorThread.tweets?.length) {
+      result.thread = priorThread
     } else result.thread = { status: 'partial', error: 'gallery-dl未設定。保存済みTweetのみを保持します', retryable: true, tweets: [{ id: bookmark.tweetId, text: bookmark.text, urls: rootUrls }] }
     await persist()
 

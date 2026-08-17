@@ -1,6 +1,7 @@
 import prisma from '@/lib/db'
 import { enqueueIncompleteArchives, ensureArchiveRecord } from '@/lib/archive/pipeline'
 import { createImportedBookmark } from '@/lib/media-import'
+import { getXArticleMedia, getXArticleText } from '@/lib/x-article'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -61,31 +62,13 @@ interface UserLegacy {
   name?: string
 }
 
-interface ArticleCoverMedia {
-  media_info?: { original_img_url?: string }
-}
-
-interface ArticleBlock {
-  text?: string
-  type?: string
-}
-
-interface ArticleResult {
-  title?: string
-  preview_image?: { url?: string }
-  cover_media?: ArticleCoverMedia
-  content?: string
-  // Some X article payloads include a Draft.js-like content_state
-  content_state?: { blocks?: ArticleBlock[] }
-}
-
 export interface TweetResult {
   __typename?: string
   rest_id?: string
   legacy?: TweetLegacy
   core?: { user_results?: { result?: { legacy?: UserLegacy } } }
   note_tweet?: { note_tweet_results?: { result?: { text?: string } } }
-  article?: { article_results?: { result?: ArticleResult } }
+  article?: unknown
   tweet?: TweetResult
 }
 
@@ -181,59 +164,25 @@ export function extractMedia(tweet: TweetResult) {
     })
     .filter(Boolean) as { type: string; url: string; thumbnailUrl: string; mediaKey: string | null; sourceTweetId: string | null; sourceMediaIndex: number }[]
 
-  // If no media from entities, try article cover/preview image
+  // If no media from entities, try Article cover/inline media.
   if (results.length === 0) {
-    const article = tweet.article?.article_results?.result
-    const coverUrl =
-      article?.cover_media?.media_info?.original_img_url ??
-      article?.preview_image?.url
-    if (coverUrl) {
-      results.push({ type: 'photo', url: coverUrl, thumbnailUrl: coverUrl, mediaKey: null, sourceTweetId: tweet.rest_id ?? null, sourceMediaIndex: 0 })
+    for (const [sourceMediaIndex, media] of getXArticleMedia(tweet).entries()) {
+      if (!media.url) continue
+      results.push({ type: 'photo', url: media.url, thumbnailUrl: media.thumbnailUrl ?? media.url, mediaKey: media.mediaKey ?? null, sourceTweetId: tweet.rest_id ?? null, sourceMediaIndex })
     }
   }
 
   return results
 }
 
-function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-}
-
-function articleBlocksText(article: ArticleResult): string {
-  const blocks = article.content_state?.blocks ?? []
-  const texts = blocks
-    .map((b) => (b.text ?? '').trim())
-    .filter(Boolean)
-    .slice(0, 8)
-  return texts.join('\n\n')
-}
-
 export function tweetFullText(tweet: TweetResult): string {
   if (tweet.note_tweet?.note_tweet_results?.result?.text) {
-    return decodeHtmlEntities(tweet.note_tweet.note_tweet_results.result.text)
+    return tweet.note_tweet.note_tweet_results.result.text
   }
 
-  const article = tweet.article?.article_results?.result
-  if (article) {
-    const parts: string[] = []
-    if (article.title) parts.push(article.title)
-    if (article.content) parts.push(article.content)
-
-    // Fallback: some X articles ship content in content_state.blocks
-    if (parts.length === 0) {
-      const blocks = articleBlocksText(article)
-      if (blocks) parts.push(blocks)
-    }
-
-    if (parts.length > 0) return decodeHtmlEntities(parts.join('\n\n'))
-  }
-
-  return decodeHtmlEntities(tweet.legacy?.full_text ?? '')
+  const articleText = getXArticleText(tweet)
+  if (articleText.text) return articleText.text
+  return tweet.legacy?.full_text ?? ''
 }
 
 // ── Import tweets to DB ───────────────────────────────────────────────────────
@@ -251,10 +200,15 @@ export async function importTweets(
     try {
       const exists = await prisma.bookmark.findUnique({
         where: { tweetId: tweet.rest_id },
-        select: { id: true },
+        select: { id: true, deletedAt: true },
       })
 
       if (exists) {
+        // 自動同期では、明示的にゴミ箱へ移した項目を復元しない。
+        if (exists.deletedAt) {
+          skipped++
+          continue
+        }
         await ensureArchiveRecord(exists.id)
         archiveIds.push(exists.id)
         skipped++

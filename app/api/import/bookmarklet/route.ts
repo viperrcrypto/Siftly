@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { enqueueIncompleteArchives, ensureArchiveRecord } from '@/lib/archive/pipeline'
 import { createImportedBookmark } from '@/lib/media-import'
+import { getXArticleMedia, getXArticleText } from '@/lib/x-article'
 
 const ALLOWED_ORIGINS = new Set(['https://x.com', 'https://twitter.com'])
 
@@ -34,13 +35,6 @@ interface MediaEntity {
   video_info?: { variants?: MediaVariant[] }
 }
 
-interface ArticleResult {
-  title?: string
-  preview_image?: { url?: string }
-  cover_media?: { media_info?: { original_img_url?: string } }
-  content?: string
-}
-
 interface TweetResult {
   __typename?: string
   rest_id?: string
@@ -56,7 +50,7 @@ interface TweetResult {
     }
   }
   note_tweet?: { note_tweet_results?: { result?: { text?: string } } }
-  article?: { article_results?: { result?: ArticleResult } }
+  article?: unknown
   tweet?: TweetResult
 }
 
@@ -72,13 +66,8 @@ function tweetFullText(tweet: TweetResult): string {
   if (tweet.note_tweet?.note_tweet_results?.result?.text) {
     return tweet.note_tweet.note_tweet_results.result.text
   }
-  const article = tweet.article?.article_results?.result
-  if (article) {
-    const parts: string[] = []
-    if (article.title) parts.push(article.title)
-    if (article.content) parts.push(article.content)
-    if (parts.length > 0) return parts.join('\n\n')
-  }
+  const articleText = getXArticleText(tweet)
+  if (articleText.text) return articleText.text
   return tweet.legacy?.full_text ?? ''
 }
 
@@ -99,12 +88,9 @@ function extractMedia(tweet: TweetResult) {
     .filter(Boolean) as { type: string; url: string; thumbnailUrl: string; mediaKey: string | null; sourceTweetId: string | null; sourceMediaIndex: number }[]
 
   if (results.length === 0) {
-    const article = tweet.article?.article_results?.result
-    const coverUrl =
-      article?.cover_media?.media_info?.original_img_url ??
-      article?.preview_image?.url
-    if (coverUrl) {
-      results.push({ type: 'photo', url: coverUrl, thumbnailUrl: coverUrl, mediaKey: null, sourceTweetId: tweet.rest_id ?? null, sourceMediaIndex: 0 })
+    for (const [sourceMediaIndex, media] of getXArticleMedia(tweet).entries()) {
+      if (!media.url) continue
+      results.push({ type: 'photo', url: media.url, thumbnailUrl: media.thumbnailUrl ?? media.url, mediaKey: media.mediaKey ?? null, sourceTweetId: tweet.rest_id ?? null, sourceMediaIndex })
     }
   }
 
@@ -139,10 +125,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const exists = await prisma.bookmark.findUnique({
       where: { tweetId: tweet.rest_id },
-      select: { id: true },
+      select: { id: true, deletedAt: true },
     })
 
     if (exists) {
+      if (exists.deletedAt) await prisma.bookmark.update({ where: { id: exists.id }, data: { deletedAt: null } })
       await ensureArchiveRecord(exists.id)
       archiveIds.push(exists.id)
       skipped++

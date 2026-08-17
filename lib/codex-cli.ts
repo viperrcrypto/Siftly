@@ -1,11 +1,8 @@
-import { execFile, spawn } from 'child_process'
-import { promisify } from 'util'
 import { readFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
-
-const execFileAsync = promisify(execFile)
+import { execCli } from './cli-exec'
 
 export interface CodexCliOptions {
   model?: string
@@ -19,15 +16,17 @@ export interface CodexCliResult<T = unknown> {
 }
 
 export async function isCodexCliAvailable(): Promise<boolean> {
-  return new Promise((resolve) => {
-    const proc = spawn('codex', ['--version'], {
-      stdio: 'ignore',
+  try {
+    await execCli('codex', ['--version'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      maxBuffer: 1024 * 1024,
       windowsHide: true,
     })
-    const timeout = setTimeout(() => { proc.kill(); resolve(false) }, 5000)
-    proc.on('close', (code) => { clearTimeout(timeout); resolve(code === 0) })
-    proc.on('error', () => { clearTimeout(timeout); resolve(false) })
-  })
+    return true
+  } catch {
+    return false
+  }
 }
 
 export async function codexPrompt(
@@ -39,12 +38,15 @@ export async function codexPrompt(
   // Write output to a temp file so we can capture the model's final message cleanly
   const outFile = join(tmpdir(), `codex-out-${randomUUID()}.txt`)
 
-  const args = ['exec', '--output-last-message', outFile]
+  // Codex can inherit the desktop session's feature config, which may be
+  // incompatible with the installed CLI version. Auth is still read from
+  // CODEX_HOME when user config is ignored.
+  const args = ['exec', '--ignore-user-config', '--output-last-message', outFile]
   if (model) args.push('--model', model)
   args.push(prompt)
 
   try {
-    await execFileAsync('codex', args, {
+    await execCli('codex', args, {
       encoding: 'utf8',
       timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024,

@@ -34,15 +34,15 @@ export default function CategoryCard({ category }: CategoryCardProps) {
       )}
 
       {!category.description && (
-        <p className="mt-2 text-xs text-zinc-600 italic">No description</p>
+        <p className="mt-2 text-xs text-zinc-600 italic">説明なし</p>
       )}
 
       <div className="mt-3 flex items-center gap-1.5 text-xs text-zinc-500">
-        <span>{category.bookmarkCount} bookmark{category.bookmarkCount !== 1 ? 's' : ''}</span>
+        <span>{category.bookmarkCount}件のブックマーク</span>
         {category.isAiGenerated && (
           <>
             <span>·</span>
-            <span className="text-indigo-400">AI generated</span>
+            <span className="text-indigo-400">AI生成</span>
           </>
         )}
       </div>
