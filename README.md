@@ -20,7 +20,7 @@
 
 ## What is Siftly?
 
-Siftly turns your Twitter/X bookmarks into a **searchable, categorized, visual knowledge base** — running entirely on your machine. No cloud, no subscriptions, no browser extensions required. Everything stays local except the AI API calls you configure.
+Siftly turns your Twitter/X bookmarks into a **searchable, categorized, visual knowledge base** — running on your machine. No Siftly account, subscriptions, or browser extensions are required. Network access is limited to the AI provider you configure, links shown in external previews, and sources you explicitly enable for archiving.
 
 It runs a **4-stage AI pipeline** on your bookmarks:
 
@@ -51,7 +51,7 @@ After the pipeline runs, you get:
 - [Node.js 18+](https://nodejs.org)
 - npm (comes with Node.js)
 
-**That's it.** If you have [Claude Code CLI](https://claude.ai/code) installed and signed in, AI features work automatically — no API key needed.
+**That's it.** If you have [Claude Code CLI](https://claude.ai/code) installed and signed in, AI features work automatically — no API key needed. Google Chrome or Chromium is optional and is used only to create a local preview image when an external page has no OG image.
 
 ### Option A — One command (recommended)
 
@@ -61,7 +61,7 @@ cd Siftly
 ./start.sh
 ```
 
-`start.sh` installs dependencies, sets up the database, checks for Claude CLI auth, and opens [http://localhost:3000](http://localhost:3000) automatically.
+`start.sh` installs dependencies, sets up the database, checks for Claude CLI auth, and opens [http://localhost:15000](http://localhost:15000) automatically.
 
 ### Option B — Using Claude Code
 
@@ -82,10 +82,10 @@ cd Siftly
 npm install
 npx prisma generate
 npx prisma migrate dev --name init
-npx next dev
+npx next dev -p 15000
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open [http://localhost:15000](http://localhost:15000)
 
 ---
 
@@ -147,6 +147,12 @@ Siftly has **built-in import tools** — no browser extensions required. Go to t
 ### Re-importing
 
 Re-import anytime — Siftly automatically skips duplicates and only adds new bookmarks.
+
+### Obsidian 自動アーカイブ
+
+Settings で Vault、Web Clipper テンプレートディレクトリ、必要に応じて `gallery-dl` の絶対パスを設定し、「アーカイブを有効化」と「インポート後に自動実行」をオンにします。`gallery-dl` はホストに別途導入してください（例: `brew install gallery-dl`）。Cookie を使う場合はブラウザー名だけを設定します。Cookie の値はSiftlyのDBやログに保存されません。
+
+Xに直接添付された写真を保存し、設定を有効にした場合はネイティブGIF・動画も保存します。YouTube/Vimeo/TikTokなど外部動画とPDFはURLだけを記録し、PDFの保存は既定で無効です。アーカイブは詳細画面の「再実行」から部分失敗だけを安全に再試行できます。
 
 ---
 
@@ -375,7 +381,7 @@ For Prisma command and workflow details, see:
 npm install
 npx prisma generate
 npx prisma migrate dev --name init
-npx next dev
+npx next dev -p 15000
 
 # Type check
 npx tsc --noEmit
@@ -410,10 +416,10 @@ Add domain strings to `KNOWN_TOOL_DOMAINS` in `lib/rawjson-extractor.ts` to have
 
 ## Privacy
 
-- All data is stored **locally** in a SQLite file on your machine
-- The only external calls are to the AI provider you configure (tweet text + image data)
+- ブックマークデータはローカルのSQLiteファイルに保存されます。OG画像がない外部ページのプレビュー画像だけは `~/.cache/siftly/link-previews` に保存され、削除しても必要時に再生成されます。
+- AI機能の外部通信先は、設定したAI providerです（tweet text + image data）。外部リンクのプレビュー表示時はリンク先ページへアクセスし、YouTubeはタイトルとサムネイル取得のためYouTube oEmbedも利用します。自動アーカイブを明示的に有効化した場合は、gallery-dl/X、参照記事、および許可したXネイティブメディアへも通信します。外部動画のダウンロードは行いません。
 - No telemetry, no tracking, no accounts required
-- Your bookmarks never touch any third-party server except your configured AI endpoint
+- Siftly does not upload your bookmark database. Only the data required for configured AI features, external link previews, or explicitly enabled archiving is sent to the corresponding service.
 
 ---
 

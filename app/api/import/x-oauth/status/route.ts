@@ -17,7 +17,8 @@ export async function GET() {
 
   return NextResponse.json({
     configured,
-    connected: connected && !tokenExpired,
+    // 期限切れでも、取得処理側がrefresh tokenで更新できるため接続導線を隠さない。
+    connected,
     tokenExpired: connected && tokenExpired,
     user: connected
       ? { id: userId?.value, name: userName?.value, username: userUsername?.value }

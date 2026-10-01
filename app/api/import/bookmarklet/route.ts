@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
+import { enqueueIncompleteArchives, ensureArchiveRecord } from '@/lib/archive/pipeline'
+import { createImportedBookmark } from '@/lib/media-import'
+import { getXArticleMedia, getXArticleText } from '@/lib/x-article'
 
 const ALLOWED_ORIGINS = new Set(['https://x.com', 'https://twitter.com'])
 
@@ -27,14 +30,9 @@ interface MediaVariant {
 interface MediaEntity {
   type?: string
   media_url_https?: string
+  media_key?: string
+  id_str?: string
   video_info?: { variants?: MediaVariant[] }
-}
-
-interface ArticleResult {
-  title?: string
-  preview_image?: { url?: string }
-  cover_media?: { media_info?: { original_img_url?: string } }
-  content?: string
 }
 
 interface TweetResult {
@@ -52,7 +50,7 @@ interface TweetResult {
     }
   }
   note_tweet?: { note_tweet_results?: { result?: { text?: string } } }
-  article?: { article_results?: { result?: ArticleResult } }
+  article?: unknown
   tweet?: TweetResult
 }
 
@@ -68,13 +66,8 @@ function tweetFullText(tweet: TweetResult): string {
   if (tweet.note_tweet?.note_tweet_results?.result?.text) {
     return tweet.note_tweet.note_tweet_results.result.text
   }
-  const article = tweet.article?.article_results?.result
-  if (article) {
-    const parts: string[] = []
-    if (article.title) parts.push(article.title)
-    if (article.content) parts.push(article.content)
-    if (parts.length > 0) return parts.join('\n\n')
-  }
+  const articleText = getXArticleText(tweet)
+  if (articleText.text) return articleText.text
   return tweet.legacy?.full_text ?? ''
 }
 
@@ -82,25 +75,22 @@ function extractMedia(tweet: TweetResult) {
   const entities =
     tweet.legacy?.extended_entities?.media ?? tweet.legacy?.entities?.media ?? []
   const results = entities
-    .map((m) => {
+    .map((m, sourceMediaIndex) => {
       const thumb = m.media_url_https ?? ''
       if (m.type === 'video' || m.type === 'animated_gif') {
         const url = bestVideoUrl(m.video_info?.variants ?? []) ?? thumb
         if (!url) return null
-        return { type: m.type === 'animated_gif' ? 'gif' : 'video', url, thumbnailUrl: thumb }
+        return { type: m.type === 'animated_gif' ? 'gif' : 'video', url, thumbnailUrl: thumb, mediaKey: m.media_key ?? m.id_str ?? null, sourceTweetId: tweet.rest_id ?? null, sourceMediaIndex }
       }
       if (!thumb) return null
-      return { type: 'photo' as const, url: thumb, thumbnailUrl: thumb }
+      return { type: 'photo' as const, url: thumb, thumbnailUrl: thumb, mediaKey: m.media_key ?? m.id_str ?? null, sourceTweetId: tweet.rest_id ?? null, sourceMediaIndex }
     })
-    .filter(Boolean) as { type: string; url: string; thumbnailUrl: string }[]
+    .filter(Boolean) as { type: string; url: string; thumbnailUrl: string; mediaKey: string | null; sourceTweetId: string | null; sourceMediaIndex: number }[]
 
   if (results.length === 0) {
-    const article = tweet.article?.article_results?.result
-    const coverUrl =
-      article?.cover_media?.media_info?.original_img_url ??
-      article?.preview_image?.url
-    if (coverUrl) {
-      results.push({ type: 'photo', url: coverUrl, thumbnailUrl: coverUrl })
+    for (const [sourceMediaIndex, media] of getXArticleMedia(tweet).entries()) {
+      if (!media.url) continue
+      results.push({ type: 'photo', url: media.url, thumbnailUrl: media.thumbnailUrl ?? media.url, mediaKey: media.mediaKey ?? null, sourceTweetId: tweet.rest_id ?? null, sourceMediaIndex })
     }
   }
 
@@ -124,6 +114,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   let imported = 0
   let skipped = 0
+  const archiveIds: string[] = []
 
   for (let tweet of tweets) {
     // Unwrap TweetWithVisibilityResults
@@ -134,10 +125,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const exists = await prisma.bookmark.findUnique({
       where: { tweetId: tweet.rest_id },
-      select: { id: true },
+      select: { id: true, deletedAt: true },
     })
 
     if (exists) {
+      if (exists.deletedAt) await prisma.bookmark.update({ where: { id: exists.id }, data: { deletedAt: null } })
+      await ensureArchiveRecord(exists.id)
+      archiveIds.push(exists.id)
       skipped++
       continue
     }
@@ -145,8 +139,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const userLegacy = tweet.core?.user_results?.result?.legacy ?? {}
     const media = extractMedia(tweet)
 
-    const created = await prisma.bookmark.create({
-      data: {
+    const created = await createImportedBookmark(
+      prisma,
+      {
         tweetId: tweet.rest_id,
         text: tweetFullText(tweet),
         authorHandle: userLegacy.screen_name ?? 'unknown',
@@ -156,22 +151,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           : null,
         rawJson: JSON.stringify(tweet),
         source,
+        archive: { create: {} },
       },
-    })
-
-    if (media.length > 0) {
-      await prisma.mediaItem.createMany({
-        data: media.map((m) => ({
-          bookmarkId: created.id,
-          type: m.type,
-          url: m.url,
-          thumbnailUrl: m.thumbnailUrl ?? null,
-        })),
-      })
-    }
+      media,
+    )
 
     imported++
+    archiveIds.push(created.id)
   }
 
+  await enqueueIncompleteArchives(archiveIds)
   return NextResponse.json({ imported, skipped }, { headers: cors })
 }

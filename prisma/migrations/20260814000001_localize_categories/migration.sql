@@ -1,0 +1,15 @@
+-- 日本語UIに合わせて、標準カテゴリの表示名と説明を更新する。
+-- slugはAI分類・既存リンクとの互換性のため変更しない。
+UPDATE "Category" SET "name" = 'AI・機械学習', "description" = '人工知能、機械学習、LLM、ChatGPT、Claude、Gemini、Grok、Midjourney、Sora、AIエージェント、RAG、ファインチューニング、プロンプト、ベクトルデータベース、モデル評価、AIスタートアップ、AI安全性、マルチモーダルモデル' WHERE "slug" = 'ai-resources' AND "name" = 'AI & Machine Learning';
+UPDATE "Category" SET "name" = '暗号資産・Web3', "description" = '暗号資産、Bitcoin、Ethereum、Solana、DeFiプロトコル、NFT、オンチェーン活動、暗号資産取引、アルトコイン、エアドロップ、ミームコイン、Web3開発、スマートコントラクト、DAO、Layer 2、Uniswap、ウォレット、ブロックチェーン分析' WHERE "slug" = 'finance-crypto' AND "name" = 'Crypto & Web3';
+UPDATE "Category" SET "name" = '開発ツール・エンジニアリング', "description" = 'ソフトウェア開発、コーディング、GitHub、オープンソース、フレームワーク、API、データベース、DevOps、CI/CD、ターミナルツール、デバッグ、システム設計、バックエンド、フロントエンド、モバイル開発、Rust、Go、TypeScript、Python、Vercel、Supabase、Docker' WHERE "slug" = 'dev-tools' AND "name" = 'Dev Tools & Engineering';
+UPDATE "Category" SET "name" = '金融・投資', "description" = '株式市場、株式、オプション取引、マクロ経済、連邦準備制度、金利、ヘッジファンド、ベンチャーキャピタル、プライベートエクイティ、決算、ポートフォリオ管理、不動産投資、商品、外国為替、金融チャート。暗号資産は除く' WHERE "slug" = 'finance-investing' AND "name" = 'Finance & Investing';
+UPDATE "Category" SET "name" = 'スタートアップ・ビジネス', "description" = 'スタートアップ、創業者、起業、SaaS、プロダクトマーケットフィット、資金調達、VC、エンジェル投資、グロースハック、B2B、マーケティング、営業、売上、ブートストラップ、Y Combinator、買収、会社づくり、事業戦略' WHERE "slug" = 'startups-business' AND "name" = 'Startups & Business';
+UPDATE "Category" SET "name" = 'ニュース・政治', "description" = '速報、時事、国内外の政治、地政学、政府政策、選挙、規制、テック政策、戦争・紛争、国際関係、ジャーナリズム、調査報道。地震、台風、洪水、津波、豪雨などは災害カテゴリを優先し、社会的影響や速報性が強い場合は併用する' WHERE "slug" = 'news' AND "name" = 'News & Politics';
+UPDATE "Category" SET "name" = 'デザイン・プロダクト', "description" = 'UI/UXデザイン、プロダクトデザイン、ビジュアルデザイン、Figma、タイポグラフィ、デザインシステム、モーションデザイン、ブランドアイデンティティ、ユーザーリサーチ、プロダクト戦略、ワイヤーフレーム、クリエイティブツール、色彩理論、Webデザイン、アプリデザイン' WHERE "slug" = 'design' AND "name" = 'Design & Product';
+UPDATE "Category" SET "name" = '健康・ウェルネス', "description" = 'フィットネス、栄養、長寿、バイオハッキング、睡眠、メンタルヘルス、サプリメント、運動習慣、食事、減量、筋力トレーニング、認知パフォーマンス、ストレス管理、瞑想、腸内環境、検査結果、WhoopやOuraなどのウェアラブル' WHERE "slug" = 'health-wellness' AND "name" = 'Health & Wellness';
+UPDATE "Category" SET "name" = 'セキュリティ・プライバシー', "description" = 'サイバーセキュリティ、ハッキング、エクスプロイト、脆弱性、OPSEC、プライバシーツール、VPN、暗号化、脅威インテリジェンス、ソーシャルエンジニアリング、フィッシング、マルウェア、ゼロデイ、ペネトレーションテスト、CTF、情報漏えい、認証、アイデンティティセキュリティ' WHERE "slug" = 'security-privacy' AND "name" = 'Security & Privacy';
+UPDATE "Category" SET "name" = '科学・研究', "description" = '科学研究、論文、発見、物理学、生物学、神経科学、宇宙探査、気候、化学、医学の進歩、学術研究、新興技術、ロボティクス、量子コンピューティング、エネルギー、材料科学' WHERE "slug" = 'science-research' AND "name" = 'Science & Research';
+UPDATE "Category" SET "name" = '生産性・ナレッジ管理', "description" = '生産性システム、時間管理、習慣、集中法、ノート術、セカンドブレイン、ディープワーク、メンタルモデル、ObsidianやNotionなどのPKMツール、生活改善、ワークフロー、自動化、委任' WHERE "slug" = 'productivity' AND "name" = 'Productivity';
+UPDATE "Category" SET "name" = 'ユーモア・ミーム', "description" = 'ミーム、ジョーク、風刺、ユーモア、バイラルコンテンツ、共感系投稿、ネタ投稿、面白いスクリーンショット、コメディスレッド、パロディ、皮肉。主な目的が面白さや娯楽であるコンテンツ' WHERE "slug" = 'funny-memes' AND "name" = 'Funny & Memes';
+UPDATE "Category" SET "name" = '一般', "description" = '他のカテゴリに明確に当てはまらない雑多な内容。どのカテゴリにも当てはまらない場合だけ使用' WHERE "slug" = 'general' AND "name" = 'General';

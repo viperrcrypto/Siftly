@@ -4,6 +4,8 @@ import { getCliAuthStatus, getCliAvailability } from '@/lib/claude-cli-auth'
 import { getCodexCliAuthStatus } from '@/lib/openai-auth'
 import { getCodexCliAvailability } from '@/lib/codex-cli'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(): Promise<NextResponse> {
   const oauthStatus = getCliAuthStatus()
   const codexStatus = getCodexCliAuthStatus()

@@ -1,7 +1,5 @@
-import { execFile, spawn } from 'child_process'
-import { promisify } from 'util'
-
-const execFileAsync = promisify(execFile)
+import { spawn } from 'child_process'
+import { execCli } from './cli-exec'
 
 export type CliModelAlias = 'haiku' | 'sonnet' | 'opus'
 
@@ -70,7 +68,7 @@ export async function claudePrompt(
   args.push(prompt)
 
   try {
-    const { stdout } = await execFileAsync('claude', args, {
+    const { stdout } = await execCli('claude', args, {
       encoding: 'utf8',
       timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024, // 10MB

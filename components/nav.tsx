@@ -4,6 +4,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import ThemeToggle from './theme-toggle'
+import LanguageToggle from './language-toggle'
+import { useLanguage } from './language-provider'
+import { uiText, type UiLanguage } from '@/lib/i18n'
 import {
   LayoutDashboard,
   Upload,
@@ -19,22 +22,24 @@ import {
 
 interface NavItem {
   href: string
-  label: string
+  label: { ja: string; en: string }
   icon: React.ComponentType<{ size?: number; className?: string }>
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/ai-search', label: 'AI Search', icon: Sparkles },
-  { href: '/bookmarks', label: 'Browse', icon: Search },
-  { href: '/mindmap', label: 'Mindmap', icon: GitBranch },
-  { href: '/import', label: 'Import', icon: Upload },
-  { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/', label: { ja: 'ダッシュボード', en: 'Dashboard' }, icon: LayoutDashboard },
+  { href: '/ai-search', label: { ja: 'AI検索', en: 'AI Search' }, icon: Sparkles },
+  { href: '/bookmarks', label: { ja: 'ブックマーク', en: 'Browse' }, icon: Search },
+  { href: '/mindmap', label: { ja: 'マインドマップ', en: 'Mindmap' }, icon: GitBranch },
+  { href: '/import', label: { ja: 'インポート', en: 'Import' }, icon: Upload },
+  { href: '/settings', label: { ja: '設定', en: 'Settings' }, icon: Settings },
 ]
 
 const BUILDER_X = 'https://x.com/viperr'
 
 function SponsorFooter() {
+  const { language } = useLanguage()
+
   return (
     <div className="mx-3 mt-auto mb-3 pt-3 border-t border-zinc-800/50 space-y-2">
       {/* Builder credit */}
@@ -45,7 +50,7 @@ function SponsorFooter() {
         className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 transition-all"
       >
         <span className="text-[13px]">&#x1D54F;</span>
-        <span className="text-[11px] font-medium">Built by @viperr</span>
+        <span className="text-[11px] font-medium">{uiText(language, '@viperr が開発', 'Built by @viperr')}</span>
       </a>
 
       {/* Sponsor spot */}
@@ -57,8 +62,8 @@ function SponsorFooter() {
       >
         <div className="w-7 h-7 rounded-full bg-zinc-700/50 border border-zinc-600/30 shrink-0" />
         <div className="flex flex-col min-w-0">
-          <span className="text-[11px] font-medium text-zinc-400 group-hover:text-zinc-300 transition-colors leading-tight">Support Siftly by sponsoring your logo here</span>
-          <span className="text-[10px] text-zinc-600 leading-tight mt-1">DM @viperr on X</span>
+          <span className="text-[11px] font-medium text-zinc-400 group-hover:text-zinc-300 transition-colors leading-tight">{uiText(language, 'ロゴ掲載でSiftlyを支援', 'Support Siftly')}</span>
+          <span className="text-[10px] text-zinc-600 leading-tight mt-1">{uiText(language, 'Xの@viperrへDM', 'DM @viperr on X')}</span>
         </div>
       </a>
     </div>
@@ -84,16 +89,22 @@ interface PipelineStatus {
   total: number
 }
 
-const PIPELINE_STAGE_LABELS: Record<string, string> = {
-  vision: 'Analyzing images',
-  entities: 'Extracting entities',
-  enrichment: 'Generating tags',
-  categorize: 'Categorizing',
-  parallel: 'Processing in parallel',
+const PIPELINE_STAGE_LABELS: Record<string, { ja: string; en: string }> = {
+  vision: { ja: '画像を分析中', en: 'Analyzing images' },
+  entities: { ja: 'エンティティを抽出中', en: 'Extracting entities' },
+  enrichment: { ja: 'タグを生成中', en: 'Generating tags' },
+  categorize: { ja: 'カテゴリ分類中', en: 'Categorizing' },
+  parallel: { ja: '並列処理中', en: 'Processing in parallel' },
+}
+
+function pipelineStageLabel(stage: string, language: UiLanguage): string {
+  const label = PIPELINE_STAGE_LABELS[stage]
+  return label ? label[language] : stage
 }
 
 export default function Nav() {
   const pathname = usePathname()
+  const { language } = useLanguage()
   const [categories, setCategories] = useState<CategoryItem[]>([])
   const [totalBookmarks, setTotalBookmarks] = useState<number | null>(null)
   const [showAllCats, setShowAllCats] = useState(true)
@@ -162,8 +173,9 @@ export default function Nav() {
         <span className="text-zinc-100 font-bold text-[17px] tracking-tight">
           Sift<span style={{ color: '#F5A623' }}>ly</span>
         </span>
-        <div className="shrink-0 flex items-center">
+        <div className="shrink-0 flex items-center gap-0.5">
           <ThemeToggle />
+          <LanguageToggle />
         </div>
       </div>
 
@@ -179,7 +191,7 @@ export default function Nav() {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500" />
           </span>
           <span className="text-[11px] font-medium text-indigo-300 truncate">
-            {pipeline.stage ? (PIPELINE_STAGE_LABELS[pipeline.stage] ?? pipeline.stage) : 'AI pipeline'}
+            {pipeline.stage ? pipelineStageLabel(pipeline.stage, language) : uiText(language, 'AI処理', 'AI pipeline')}
             {pipeline.stage === 'categorize' && pipeline.total > 0
               ? ` ${pipeline.done}/${pipeline.total}`
               : '…'}
@@ -194,7 +206,7 @@ export default function Nav() {
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700/40 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 hover:border-zinc-600/60 transition-all text-xs"
         >
           <Search size={12} className="shrink-0" />
-          <span className="flex-1 text-left">Search…</span>
+          <span className="flex-1 text-left">{uiText(language, '検索…', 'Search…')}</span>
           <kbd className="flex items-center gap-0.5 text-[10px] text-zinc-600 font-mono">
             <Command size={9} />K
           </kbd>
@@ -216,7 +228,7 @@ export default function Nav() {
               }`}
             >
               <Icon size={14} className="shrink-0" />
-              {label}
+              {label[language]}
             </Link>
           )
         })}
@@ -233,14 +245,14 @@ export default function Nav() {
             className="flex items-center justify-between px-2 mb-2 w-full group"
           >
             <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-semibold">
-              Collections
+              {uiText(language, 'コレクション', 'Collections')}
             </p>
             <div className="flex items-center gap-1.5">
               <Link
                 href="/categories"
                 onClick={(e) => e.stopPropagation()}
                 className="text-zinc-700 hover:text-zinc-400 transition-colors p-0.5 rounded"
-                title="Manage categories"
+                title={uiText(language, 'カテゴリを管理', 'Manage categories')}
               >
                 <Tag size={11} />
               </Link>
@@ -289,7 +301,9 @@ export default function Nav() {
                     size={10}
                     className={`transition-transform ${showAllCats ? 'rotate-90' : ''}`}
                   />
-                  {showAllCats ? 'Show less' : `${categories.length - 8} more`}
+                  {showAllCats
+                    ? uiText(language, '表示を減らす', 'Show less')
+                    : uiText(language, `さらに${categories.length - 8}件`, `${categories.length - 8} more`)}
                 </button>
               )}
             </>

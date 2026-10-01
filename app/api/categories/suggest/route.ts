@@ -4,10 +4,12 @@ import {
   createCategoryFromSuggestion,
   CategorySuggestion,
 } from '@/lib/category-suggester'
+import { normalizeUiLanguage } from '@/lib/i18n'
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
-    const suggestions = await generateCategorySuggestions()
+    const language = normalizeUiLanguage(request.nextUrl.searchParams.get('language'))
+    const suggestions = await generateCategorySuggestions(language)
     return NextResponse.json({ suggestions })
   } catch (err) {
     console.error('Category suggestion error:', err)

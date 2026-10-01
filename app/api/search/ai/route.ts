@@ -2,26 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/db'
 import { ftsSearch } from '@/lib/fts'
 import { AIClient, resolveAIClient } from '@/lib/ai-client'
-import { getActiveModel, getProvider } from '@/lib/settings'
+import { getActiveAuthMode, getActiveCliModel, getActiveModel, getProvider } from '@/lib/settings'
 import { extractKeywords } from '@/lib/search-utils'
 import { getCliAvailability, claudePrompt, modelNameToCliAlias } from '@/lib/claude-cli-auth'
 import { getCodexCliAvailability, codexPrompt } from '@/lib/codex-cli'
-
-// ─── Cache ────────────────────────────────────────────────────────────────────
-interface CacheEntry { results: unknown; expiresAt: number }
-const searchCache = new Map<string, CacheEntry>()
-const CACHE_TTL_MS = 5 * 60 * 1000
-
-function getCached(key: string): unknown | null {
-  const entry = searchCache.get(key)
-  if (!entry) return null
-  if (Date.now() > entry.expiresAt) { searchCache.delete(key); return null }
-  return entry.results
-}
-function setCache(key: string, results: unknown): void {
-  if (searchCache.size >= 100) searchCache.delete(searchCache.keys().next().value!)
-  searchCache.set(key, { results, expiresAt: Date.now() + CACHE_TTL_MS })
-}
+import { normalizeUiLanguage, uiText } from '@/lib/i18n'
 
 // ─── Module-level caches (avoid DB roundtrips on every search) ────────────────
 let _apiKey: string | null = null
@@ -185,19 +170,16 @@ function buildIndexEntry(b: {
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  let body: { query?: string; category?: string } = {}
+  let body: { query?: string; category?: string; language?: unknown } = {}
   try { body = await request.json() } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
   const { query, category } = body
+  const language = normalizeUiLanguage(body.language)
   if (!query?.trim()) return NextResponse.json({ error: 'Query required' }, { status: 400 })
 
   const apiKey = await getDbApiKey()
-
-  const cacheKey = `${query.trim().toLowerCase()}::${category ?? ''}`
-  const cached = getCached(cacheKey)
-  if (cached) return NextResponse.json(cached)
 
   let client: AIClient | null = null
   try {
@@ -206,11 +188,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // SDK not available — will try CLI path
   }
   const model = await getActiveModel()
+  const cliModel = await getActiveCliModel()
+  const authMode = await getActiveAuthMode()
   const provider = await getProvider()
 
-  const categoryFilter = category
-    ? { categories: { some: { category: { slug: category } } } }
-    : {}
+  const categoryFilter = {
+    deletedAt: null,
+    ...(category ? { categories: { some: { category: { slug: category } } } } : {}),
+  }
 
   // ── Step 1: Smart candidate selection ─────────────────────────────────────
   const keywords = extractKeywords(query)
@@ -225,6 +210,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       include: { category: { select: { id: true, name: true, slug: true, color: true } } },
       orderBy: { confidence: 'desc' as const },
     },
+    categoryFeedback: { select: { categoryId: true, action: true } },
   } as const
 
   // Try FTS5 first (fast, ranked by relevance); fall back to LIKE on error/empty
@@ -294,7 +280,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (bookmarks.length === 0) {
-    return NextResponse.json({ bookmarks: [], explanation: 'No bookmarks found.' })
+    return NextResponse.json({ bookmarks: [], explanation: uiText(language, 'ブックマークが見つかりません。', 'No bookmarks found.') })
   }
 
   // ── Step 2: Build rich search index ───────────────────────────────────────
@@ -339,31 +325,32 @@ Constraints:
 - Minimum score 0.30 — be generous for semantically close matches
 - Never repeat an id
 - Only return ids from the list above
-- reason must be specific, not generic ("shows bitcoin price crash chart" not "related to crypto")`
+- reason must be specific, not generic ("shows bitcoin price crash chart" not "related to crypto")
+- Write queryIntent, reason, and explanation in ${language === 'ja' ? 'Japanese' : 'English'}.
+`
 
-  let aiResponse: { queryIntent?: string; matches: { id: string; score: number; reason: string }[]; explanation: string } = { matches: [], explanation: 'No results found.' }
+  let aiResponse: { queryIntent?: string; matches: { id: string; score: number; reason: string }[]; explanation: string } = { matches: [], explanation: uiText(language, '結果が見つかりません。', 'No results found.') }
 
   const parseSearchResponse = (rawText: string): typeof aiResponse => {
     const jsonMatch = rawText.match(/\{[\s\S]*\}/)
     return jsonMatch
       ? (JSON.parse(jsonMatch[0]) as typeof aiResponse)
-      : { matches: [], explanation: 'No results found.' }
+      : { matches: [], explanation: uiText(language, '結果が見つかりません。', 'No results found.') }
   }
 
   // Try CLI first (works with ChatGPT OAuth), then fall back to SDK
   let cliSucceeded = false
-  if (provider === 'openai' && await getCodexCliAvailability()) {
+  if (provider === 'openai' && authMode === 'cli' && await getCodexCliAvailability()) {
     try {
-      const result = await codexPrompt(prompt, { timeoutMs: 90_000 })
+      const result = await codexPrompt(prompt, { model: cliModel || undefined, timeoutMs: 90_000 })
       if (result.success && result.data) {
         aiResponse = parseSearchResponse(result.data)
         cliSucceeded = true
       }
     } catch { /* fall through to SDK */ }
-  } else if (provider === 'anthropic' && await getCliAvailability()) {
+  } else if (provider === 'anthropic' && authMode === 'cli' && await getCliAvailability()) {
     try {
-      const cliModel = modelNameToCliAlias(model)
-      const result = await claudePrompt(prompt, { model: cliModel, timeoutMs: 90_000 })
+      const result = await claudePrompt(prompt, { model: modelNameToCliAlias(cliModel), timeoutMs: 90_000 })
       if (result.success && result.data) {
         aiResponse = parseSearchResponse(result.data)
         cliSucceeded = true
@@ -413,7 +400,9 @@ Constraints:
         categories: b.categories.map((bc) => ({
           id: bc.category.id, name: bc.category.name, slug: bc.category.slug,
           color: bc.category.color, confidence: bc.confidence,
+          manual: b.categoryFeedback.some((feedback) => feedback.categoryId === bc.category.id && feedback.action === 'include'),
         })),
+        hasCategoryFeedback: b.categoryFeedback.length > 0,
         aiScore: matchMap.get(b.id)?.score ?? 0,
         aiReason: matchMap.get(b.id)?.reason ?? '',
       }
@@ -421,6 +410,5 @@ Constraints:
     .filter(Boolean)
 
   const response = { bookmarks: results, explanation: aiResponse.explanation }
-  setCache(cacheKey, response)
   return NextResponse.json(response)
 }

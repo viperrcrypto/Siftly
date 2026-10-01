@@ -13,10 +13,11 @@ Or manually:
 ```bash
 npm install
 npx prisma generate && npx prisma db push
-npx next dev
+npx next dev -p 15000
 ```
 
-App runs at **http://localhost:3000**
+- `./start.sh`: **http://localhost:15000**
+- `npx next dev -p 15000`: **http://localhost:15000**
 
 ## AI Authentication — No API Key Needed
 
@@ -32,7 +33,7 @@ To verify it's working, hit: `GET /api/settings/cli-status`
 ## Key Commands
 
 ```bash
-npx next dev          # Start dev server (port 3000)
+npx next dev -p 15000 # Start dev server (port 15000)
 npx tsc --noEmit      # Type check
 npx prisma studio     # Database GUI
 npx prisma db push    # Apply schema changes to DB

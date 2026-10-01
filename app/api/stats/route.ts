@@ -13,13 +13,14 @@ export async function GET(): Promise<NextResponse> {
       recentBookmarks,
       topCategoriesRaw,
     ] = await Promise.all([
-      prisma.bookmark.count(),
-      prisma.bookmark.count({ where: { source: 'bookmark' } }),
-      prisma.bookmark.count({ where: { source: 'like' } }),
+      prisma.bookmark.count({ where: { deletedAt: null } }),
+      prisma.bookmark.count({ where: { source: 'bookmark', deletedAt: null } }),
+      prisma.bookmark.count({ where: { source: 'like', deletedAt: null } }),
       prisma.category.count(),
-      prisma.mediaItem.count(),
-      prisma.bookmark.count({ where: { enrichedAt: null } }),
+      prisma.mediaItem.count({ where: { bookmark: { deletedAt: null } } }),
+      prisma.bookmark.count({ where: { enrichedAt: null, deletedAt: null } }),
       prisma.bookmark.findMany({
+        where: { deletedAt: null },
         take: 5,
         orderBy: { importedAt: 'desc' },
         include: {
@@ -37,12 +38,8 @@ export async function GET(): Promise<NextResponse> {
       }),
       prisma.category.findMany({
         include: {
-          _count: { select: { bookmarks: true } },
+          _count: { select: { bookmarks: { where: { bookmark: { deletedAt: null } } } } },
         },
-        orderBy: {
-          bookmarks: { _count: 'desc' },
-        },
-        take: 5,
       }),
     ])
 
@@ -64,12 +61,10 @@ export async function GET(): Promise<NextResponse> {
       })),
     }))
 
-    const topCategories = topCategoriesRaw.map((cat) => ({
-      name: cat.name,
-      slug: cat.slug,
-      color: cat.color,
-      count: cat._count.bookmarks,
-    }))
+    const topCategories = topCategoriesRaw
+      .map((cat) => ({ name: cat.name, slug: cat.slug, color: cat.color, count: cat._count.bookmarks }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
 
     return NextResponse.json({
       totalBookmarks,

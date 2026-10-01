@@ -4,12 +4,11 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, X, ArrowRight, Loader2 } from 'lucide-react'
 import type { BookmarkWithMedia } from '@/lib/types'
-
-interface SearchResult extends BookmarkWithMedia {
-  total?: number
-}
+import { useLanguage } from '@/components/language-provider'
+import { uiLocale, uiText } from '@/lib/i18n'
 
 export default function CommandPalette() {
+  const { language } = useLanguage()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<BookmarkWithMedia[]>([])
@@ -25,21 +24,25 @@ export default function CommandPalette() {
     function handleKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
-        setOpen((v) => !v)
+        if (open) {
+          setOpen(false)
+        } else {
+          setQuery('')
+          setResults([])
+          setSelected(0)
+          setOpen(true)
+        }
       }
       if (e.key === 'Escape') setOpen(false)
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [])
+  }, [open])
 
   // Focus input when opened
   useEffect(() => {
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 50)
-      setQuery('')
-      setResults([])
-      setSelected(0)
     }
   }, [open])
 
@@ -123,7 +126,7 @@ export default function CommandPalette() {
               value={query}
               onChange={(e) => handleInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Search bookmarks by keyword…"
+              placeholder={uiText(language, 'キーワードでブックマークを検索…', 'Search bookmarks by keyword…')}
               className="flex-1 bg-transparent text-zinc-100 placeholder:text-zinc-500 text-sm focus:outline-none"
             />
             {query && (
@@ -167,13 +170,13 @@ export default function CommandPalette() {
                       {/* Text */}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-zinc-200 truncate leading-snug">
-                          {b.text.slice(0, 100) || 'No text'}
+                          {b.text.slice(0, 100) || uiText(language, '本文なし', 'No text')}
                         </p>
                         <p className="text-xs text-zinc-500 mt-0.5 truncate">
-                          {b.categories[0]?.name ?? 'Uncategorized'}
+                          {b.categories[0]?.name ?? uiText(language, '未分類', 'Uncategorized')}
                           {b.tweetCreatedAt && (
                             <span className="ml-2 opacity-60">
-                              {new Date(b.tweetCreatedAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                              {new Date(b.tweetCreatedAt).toLocaleDateString(uiLocale(language), { month: 'short', year: 'numeric' })}
                             </span>
                           )}
                         </p>
@@ -199,7 +202,7 @@ export default function CommandPalette() {
                     onMouseEnter={() => setSelected(results.length)}
                   >
                     <Search size={13} />
-                    See all {total} results for &ldquo;{query}&rdquo;
+                    {uiText(language, `「${query}」の検索結果をすべて表示（${total}件）`, `See all ${total} results for “${query}”`)}
                   </button>
                 </li>
               )}
@@ -209,22 +212,22 @@ export default function CommandPalette() {
           {/* Empty state */}
           {query && !loading && results.length === 0 && (
             <div className="px-4 py-8 text-center text-zinc-600 text-sm">
-              No bookmarks found for &ldquo;{query}&rdquo;
+              {uiText(language, `「${query}」に一致するブックマークはありません`, `No bookmarks found for “${query}”`)}
             </div>
           )}
 
           {/* Idle state */}
           {!query && (
             <div className="px-4 py-5 flex items-center justify-between text-xs text-zinc-600">
-              <span>Type to search your bookmarks</span>
+              <span>{uiText(language, '入力してブックマークを検索', 'Type to search your bookmarks')}</span>
               <div className="flex items-center gap-3">
                 <span className="flex items-center gap-1">
                   <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 font-mono">↑↓</kbd>
-                  navigate
+                  {uiText(language, '移動', 'navigate')}
                 </span>
                 <span className="flex items-center gap-1">
                   <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 font-mono">↵</kbd>
-                  open
+                  {uiText(language, '開く', 'open')}
                 </span>
               </div>
             </div>
