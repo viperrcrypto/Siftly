@@ -234,16 +234,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 if (ids.length === 0) break
                 const rows = await prisma.bookmark.findMany({
                   where: { id: { in: ids } },
-                  select: BOOKMARK_SELECT,
+                  select: { ...BOOKMARK_SELECT, enrichedAt: true },
                 })
                 const batch = rows.map(mapBookmarkForCategorization)
                 try {
                   const results = await categorizeBatch(batch, client, categoryDescriptions, allSlugs)
-                  await writeCategoryResults(results)
-                  counts.categorized += ids.length
+                  const written = await writeCategoryResults(results)
+                  counts.categorized += written
+                  // The AI call succeeded for this batch. Any bookmark that got no
+                  // category assignment (e.g. thin @-reply stubs the model can't place)
+                  // is still "processed" — stamp enrichedAt so it is not re-selected
+                  // on every future run. Only runs when categorizeBatch did NOT throw,
+                  // so genuine API/auth failures still retry next time.
+                  const unstamped = rows
+                    .filter((r) => r.enrichedAt === null)
+                    .map((r) => r.id)
+                  if (unstamped.length > 0) {
+                    await prisma.bookmark.updateMany({
+                      where: { id: { in: unstamped } },
+                      data: { enrichedAt: new Date() },
+                    })
+                  }
                   setState({ stageCounts: { ...counts } })
                 } catch (catErr) {
+                  const msg = catErr instanceof Error ? catErr.message : String(catErr)
                   console.error('[parallel] categorize batch error:', catErr)
+                  // Surface the failure to the UI instead of silently continuing
+                  setState({ lastError: msg.slice(0, 200) })
                 }
               }
             } finally {
