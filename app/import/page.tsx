@@ -92,7 +92,9 @@ const BOOKMARKLET_SCRIPT = `(async function(){
   function addTweet(t){
     if(!t||!t.rest_id||seen.has(t.rest_id))return;
     seen.add(t.rest_id);
-    var leg=t.legacy||{},usr=(t.core&&t.core.user_results&&t.core.user_results.result&&t.core.user_results.result.legacy)||{};
+    var leg=t.legacy||{},usrRes=(t.core&&t.core.user_results&&t.core.user_results.result)||{};
+    // X moved user fields from user_results.result.legacy to .core — read both
+    var usr=usrRes.legacy||{},usrCore=usrRes.core||{};
     var rawMedia=(leg.extended_entities&&leg.extended_entities.media)||(leg.entities&&leg.entities.media)||[];
     var media=rawMedia.map(function(m){
       var thumb=m.media_url_https||'';
@@ -106,25 +108,24 @@ const BOOKMARKLET_SCRIPT = `(async function(){
       }
       return thumb?{type:'photo',url:thumb}:null;
     }).filter(Boolean);
-    all.push({id:t.rest_id,author:usr.name||'Unknown',handle:'@'+(usr.screen_name||'unknown'),
-      avatar:usr.profile_image_url_https||'',timestamp:leg.created_at||'',
+    all.push({id:t.rest_id,author:usr.name||usrCore.name||'Unknown',handle:'@'+(usr.screen_name||usrCore.screen_name||'unknown'),
+      avatar:usr.profile_image_url_https||(usrRes.avatar&&usrRes.avatar.image_url)||'',timestamp:leg.created_at||'',
       text:leg.full_text||leg.text||'',media:media,
       hashtags:(leg.entities&&leg.entities.hashtags||[]).map(function(h){return h.text;}),
       urls:(leg.entities&&leg.entities.urls||[]).map(function(u){return u.expanded_url;}).filter(Boolean)});
     btn.textContent='Export '+all.length+' '+label+' \u2192';
   }
-  function isTweetObj(o){return o&&typeof o==='object'&&typeof o.rest_id==='string'&&o.rest_id.length>5&&(o.legacy||o.core);}
+  function isTweetEntry(o){return o&&typeof o.entryId==='string'&&o.entryId.indexOf('tweet-')===0;}
   function unwrapTweet(t){
     if(!t)return null;
     if(t.__typename==='TweetWithVisibilityResults'||t.__typename==='TweetWithVisibilityResult')return t.tweet||t;
     return t;
   }
   function deepFindTweets(obj,depth){
-    if(!obj||typeof obj!=='object'||depth>12)return;
+    if(!obj||typeof obj!=='object'||depth>16)return;
     if(Array.isArray(obj)){obj.forEach(function(item){deepFindTweets(item,depth+1);});return;}
-    if(obj.tweet_results&&obj.tweet_results.result){var tw=unwrapTweet(obj.tweet_results.result);if(tw)addTweet(tw);}
-    else if(isTweetObj(obj)){addTweet(unwrapTweet(obj));}
-    for(var k in obj){if(Object.prototype.hasOwnProperty.call(obj,k)&&k!=='quoted_status_result'){deepFindTweets(obj[k],depth+1);}}
+    if(isTweetEntry(obj)){var r=obj.content&&obj.content.itemContent&&obj.content.itemContent.tweet_results&&obj.content.itemContent.tweet_results.result;var tw=unwrapTweet(r);if(tw)addTweet(tw);}
+    for(var k in obj){if(Object.prototype.hasOwnProperty.call(obj,k)){deepFindTweets(obj[k],depth+1);}}
   }
   function processData(d){deepFindTweets(d,0);}
   var autoBtn=document.createElement('button');
@@ -158,9 +159,19 @@ const BOOKMARKLET_SCRIPT = `(async function(){
       if(all.length>lastCount){stagnant=0;lastCount=all.length;}
       else{
         stagnant++;
-        if(stagnant>=8){
+        // Loading often pauses for many seconds (rate limits, slow fetches);
+        // nudge the timeline up and back down to retrigger loading instead of giving up.
+        if(stagnant%10===0&&stagnant<40){
+          window.scrollTo(0,Math.max(0,document.documentElement.scrollHeight-2600));
+          if(col)col.scrollTo(0,Math.max(0,col.scrollHeight-2600));
+          await sleep(1200);
           window.scrollTo(0,document.documentElement.scrollHeight);
-          await sleep(2000);
+          if(col)col.scrollTo(0,col.scrollHeight);
+          await sleep(3000);
+        }
+        if(stagnant>=40){
+          window.scrollTo(0,document.documentElement.scrollHeight);
+          await sleep(5000);
           if(all.length===lastCount){
             autoScrolling=false;
             autoBtn.textContent='\u2705 Done \u2014 '+all.length+' captured';
@@ -217,7 +228,9 @@ const CONSOLE_SCRIPT = `(async function() {
   function addTweet(t) {
     if (!t?.rest_id || seen.has(t.rest_id)) return;
     seen.add(t.rest_id);
-    const leg = t.legacy ?? {}, usr = t.core?.user_results?.result?.legacy ?? {};
+    // X moved user fields from user_results.result.legacy to .core — read both
+    const usrRes = t.core?.user_results?.result ?? {};
+    const leg = t.legacy ?? {}, usr = usrRes.legacy ?? {}, usrCore = usrRes.core ?? {};
     const media = (leg.extended_entities?.media ?? leg.entities?.media ?? []).map(m => {
       const thumb = m.media_url_https ?? '';
       if (m.type === 'video' || m.type === 'animated_gif') {
@@ -230,27 +243,77 @@ const CONSOLE_SCRIPT = `(async function() {
       return thumb ? { type: 'photo', url: thumb } : null;
     }).filter(Boolean);
     all.push({
-      id: t.rest_id, author: usr.name ?? 'Unknown', handle: '@' + (usr.screen_name ?? 'unknown'),
+      id: t.rest_id, author: usr.name ?? usrCore.name ?? 'Unknown', handle: '@' + (usr.screen_name ?? usrCore.screen_name ?? 'unknown'),
       timestamp: leg.created_at ?? '', text: leg.full_text ?? leg.text ?? '', media,
       hashtags: (leg.entities?.hashtags ?? []).map(h => h.text),
       urls: (leg.entities?.urls ?? []).map(u => u.expanded_url).filter(Boolean)
     });
     btn.textContent = \`Export \${all.length} \${label} →\`;
   }
-  function isTweetObj(o) { return o && typeof o === 'object' && typeof o.rest_id === 'string' && o.rest_id.length > 5 && (o.legacy || o.core); }
+  function isTweetEntry(o) { return !!o && typeof o.entryId === 'string' && o.entryId.startsWith('tweet-'); }
   function unwrapTweet(t) {
     if (!t) return null;
     if (t.__typename === 'TweetWithVisibilityResults' || t.__typename === 'TweetWithVisibilityResult') return t.tweet ?? t;
     return t;
   }
   function deepFindTweets(obj, depth = 0) {
-    if (!obj || typeof obj !== 'object' || depth > 12) return;
+    if (!obj || typeof obj !== 'object' || depth > 16) return;
     if (Array.isArray(obj)) { obj.forEach(item => deepFindTweets(item, depth + 1)); return; }
-    if (obj.tweet_results?.result) { const tw = unwrapTweet(obj.tweet_results.result); if (tw) addTweet(tw); }
-    else if (isTweetObj(obj)) { addTweet(unwrapTweet(obj)); }
-    for (const k of Object.keys(obj)) { if (k !== 'quoted_status_result') deepFindTweets(obj[k], depth + 1); }
+    if (isTweetEntry(obj)) { const tw = unwrapTweet(obj.content?.itemContent?.tweet_results?.result); if (tw) addTweet(tw); }
+    for (const k of Object.keys(obj)) deepFindTweets(obj[k], depth + 1);
   }
   function processData(d) { deepFindTweets(d, 0); }
+  // ── DOM fallback ────────────────────────────────────────────────────────────
+  // X never re-fetches the top ~20 bookmarks (they render from cache before any
+  // script runs), so network interception alone always misses the newest items.
+  // Scrape the rendered tweet <article>s directly. Runs continuously during
+  // scroll; deduped against network captures by rest_id. Richer network data
+  // wins when both see the same tweet (network runs first in processData).
+  function scrapeDOM() {
+    const arts = document.querySelectorAll('article[data-testid="tweet"], article[role="article"]');
+    arts.forEach(a => {
+      try {
+        // rest_id + handle: from the permalink /<handle>/status/<id>[/...]
+        const statusLink = a.querySelector('a[href*="/status/"]');
+        const href = statusLink ? statusLink.getAttribute('href') : '';
+        const parts = href ? href.split('/status/') : [];
+        if (parts.length < 2) return;
+        const id = parts[1].split(/[^0-9]/)[0];          // digits up to next non-digit
+        if (!id || seen.has(id)) return;                 // already captured
+        seen.add(id);
+        const handleSeg = parts[0].split('/').filter(Boolean)[0] || 'unknown';
+        const handle = '@' + handleSeg;
+        // author display name: the User-Name testid block's first text node
+        const nameEl = a.querySelector('[data-testid="User-Name"]');
+        const author = nameEl ? (nameEl.innerText || '').split('\\n')[0].trim() || 'Unknown' : 'Unknown';
+        // timestamp: the <time datetime> (ISO) — convert to X's format later server-side
+        const timeEl = a.querySelector('time');
+        const timestamp = timeEl ? (timeEl.getAttribute('datetime') || '') : '';
+        // text: the tweetText block
+        const textEl = a.querySelector('[data-testid="tweetText"]');
+        const text = textEl ? (textEl.innerText || '') : '';
+        // media: any photo images (video thumbs included); DOM can't give mp4 urls
+        const media = [];
+        a.querySelectorAll('[data-testid="tweetPhoto"] img, img[src*="twimg.com/media"]').forEach(img => {
+          const src = img.getAttribute('src');
+          if (src) media.push({ type: 'photo', url: src.split('&name=')[0] });
+        });
+        all.push({ id, author, handle, timestamp, text, media, hashtags: [], urls: [], _dom: true });
+        btn.textContent = \`Export \${all.length} \${label} →\`;
+      } catch(e) {}
+    });
+  }
+  // The list is virtualized and recycles nodes fast — a scroll-step sampler can
+  // miss an article that renders and derenders between samples. A MutationObserver
+  // scrapes the instant any article is added to the DOM, so nothing slips through.
+  // Throttled to avoid thrashing on a fast-scrolling feed.
+  let obsPending = false;
+  const domObserver = new MutationObserver(() => {
+    if (obsPending) return;
+    obsPending = true;
+    setTimeout(() => { obsPending = false; scrapeDOM(); }, 150);
+  });
+  domObserver.observe(document.body, { childList: true, subtree: true });
   const btn = document.createElement('button');
   btn.textContent = 'Scroll then click to Export →';
   Object.assign(btn.style, {
@@ -262,6 +325,7 @@ const CONSOLE_SCRIPT = `(async function() {
     fontFamily: 'system-ui,sans-serif'
   });
   function doExport() {
+    try { domObserver.disconnect(); } catch(e) {}
     window.fetch = origFetch;
     XMLHttpRequest.prototype.open = origOpen;
     XMLHttpRequest.prototype.send = origSend;
@@ -286,18 +350,51 @@ const CONSOLE_SCRIPT = `(async function() {
   let autoScrolling = false;
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   async function runAutoScroll() {
+    // Scrape the top of the list BEFORE the fast scroll. The newest ~20
+    // bookmarks render only in the DOM (X never re-fetches them), and the list
+    // is virtualized — nodes are recycled as you scroll — so we must creep down
+    // slowly, scraping at every small step, until no new items appear for a
+    // while. Driven by capture progress, not pixel guesses.
+    const col0 = document.querySelector('[data-testid="primaryColumn"]');
+    window.scrollTo(0, 0); col0?.scrollTo(0, 0);
+    await sleep(700); scrapeDOM();
+    {
+      let topStagnant = 0, topLast = all.length, pos = 0;
+      // step by ~half a viewport so every article passes through the rendered
+      // window; stop after several consecutive steps with no new captures.
+      const step = Math.max(300, Math.floor(window.innerHeight * 0.6));
+      while (autoScrolling && topStagnant < 6) {
+        pos += step;
+        window.scrollTo(0, pos); col0?.scrollTo(0, pos);
+        await sleep(650);
+        scrapeDOM();
+        if (all.length > topLast) { topStagnant = 0; topLast = all.length; }
+        else topStagnant++;
+      }
+    }
     let stagnant = 0, lastCount = all.length;
     while (autoScrolling) {
       window.scrollTo(0, document.documentElement.scrollHeight);
       const col = document.querySelector('[data-testid="primaryColumn"]');
       col?.scrollTo(0, col.scrollHeight);
       await sleep(900);
+      scrapeDOM();
       if (all.length > lastCount) { stagnant = 0; lastCount = all.length; }
       else {
         stagnant++;
-        if (stagnant >= 8) {
+        // Loading often pauses for many seconds (rate limits, slow fetches);
+        // nudge the timeline up and back down to retrigger loading instead of giving up.
+        if (stagnant % 10 === 0 && stagnant < 40) {
+          window.scrollTo(0, Math.max(0, document.documentElement.scrollHeight - 2600));
+          col?.scrollTo(0, Math.max(0, col.scrollHeight - 2600));
+          await sleep(1200);
           window.scrollTo(0, document.documentElement.scrollHeight);
-          await sleep(2000);
+          col?.scrollTo(0, col.scrollHeight);
+          await sleep(3000);
+        }
+        if (stagnant >= 40) {
+          window.scrollTo(0, document.documentElement.scrollHeight);
+          await sleep(5000);
           if (all.length === lastCount) {
             autoScrolling = false;
             autoBtn.textContent = \`✅ Done — \${all.length} captured\`;
@@ -347,6 +444,7 @@ const CONSOLE_SCRIPT = `(async function() {
     }
     return origSend.apply(this, args);
   };
+  scrapeDOM(); // capture whatever is already on screen (the newest items)
   console.log(\`✅ Script active. Scroll through your \${label}, then click the purple button.\`);
 })();`
 
@@ -1050,7 +1148,10 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
     }, 1000)
   }
 
-  const progress = status ? Math.round((status.done / Math.max(status.total, 1)) * 100) : 0
+  const progress =
+    status && status.status === 'running'
+      ? Math.round((status.done / Math.max(status.total, 1)) * 100)
+      : 0
   const currentStageInfo = status?.stage ? STAGE_INFO[status.stage] : null
 
   return (
