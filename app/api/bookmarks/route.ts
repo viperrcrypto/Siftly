@@ -38,6 +38,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const categorySlug = searchParams.get('category')?.trim() ?? ''
   const mediaType = searchParams.get('mediaType')?.trim() ?? ''
   const uncategorized = searchParams.get('uncategorized') === 'true'
+  const includeHidden = searchParams.get('includeHidden') === 'true'
   const sortParam = searchParams.get('sort')?.trim() ?? 'newest'
   const page = parseIntParam(searchParams.get('page'), DEFAULT_PAGE)
   const limit = Math.min(parseIntParam(searchParams.get('limit'), DEFAULT_LIMIT), MAX_LIMIT)
@@ -45,6 +46,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const orderDir = sortParam === 'oldest' ? 'asc' : 'desc'
 
   const where: Record<string, unknown> = {}
+
+  // Hidden (archived/done) bookmarks are excluded unless explicitly requested
+  if (!includeHidden) {
+    where.hidden = false
+  }
 
   if (source === 'bookmark' || source === 'like') {
     where.source = source
@@ -71,7 +77,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const [bookmarks, total] = await Promise.all([
+    // Count of hidden bookmarks matching the same (non-hidden) filters — for the UI badge
+    const hiddenWhere = { ...where, hidden: true }
+
+    const [bookmarks, total, hiddenTotal] = await Promise.all([
       prisma.bookmark.findMany({
         where,
         skip,
@@ -94,6 +103,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         },
       }),
       prisma.bookmark.count({ where }),
+      prisma.bookmark.count({ where: hiddenWhere }),
     ])
 
     const formatted = bookmarks.map((bookmark) => ({
@@ -103,6 +113,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       authorHandle: bookmark.authorHandle,
       authorName: bookmark.authorName,
       source: bookmark.source,
+      hidden: bookmark.hidden,
       tweetCreatedAt: bookmark.tweetCreatedAt?.toISOString() ?? null,
       importedAt: bookmark.importedAt.toISOString(),
       mediaItems: bookmark.mediaItems.map((m) => ({
@@ -123,6 +134,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({
       bookmarks: formatted,
       total,
+      hiddenTotal,
       page,
       limit,
     })
