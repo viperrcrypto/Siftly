@@ -1050,7 +1050,10 @@ function CategorizeStep({ importedCount, force = false }: { importedCount: numbe
     }, 1000)
   }
 
-  const progress = status ? Math.round((status.done / Math.max(status.total, 1)) * 100) : 0
+  const progress =
+    status && status.status === 'running'
+      ? Math.round((status.done / Math.max(status.total, 1)) * 100)
+      : 0
   const currentStageInfo = status?.stage ? STAGE_INFO[status.stage] : null
 
   return (
