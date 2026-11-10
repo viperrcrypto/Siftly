@@ -263,6 +263,57 @@ const CONSOLE_SCRIPT = `(async function() {
     for (const k of Object.keys(obj)) deepFindTweets(obj[k], depth + 1);
   }
   function processData(d) { deepFindTweets(d, 0); }
+  // ── DOM fallback ────────────────────────────────────────────────────────────
+  // X never re-fetches the top ~20 bookmarks (they render from cache before any
+  // script runs), so network interception alone always misses the newest items.
+  // Scrape the rendered tweet <article>s directly. Runs continuously during
+  // scroll; deduped against network captures by rest_id. Richer network data
+  // wins when both see the same tweet (network runs first in processData).
+  function scrapeDOM() {
+    const arts = document.querySelectorAll('article[data-testid="tweet"], article[role="article"]');
+    arts.forEach(a => {
+      try {
+        // rest_id + handle: from the permalink /<handle>/status/<id>[/...]
+        const statusLink = a.querySelector('a[href*="/status/"]');
+        const href = statusLink ? statusLink.getAttribute('href') : '';
+        const parts = href ? href.split('/status/') : [];
+        if (parts.length < 2) return;
+        const id = parts[1].split(/[^0-9]/)[0];          // digits up to next non-digit
+        if (!id || seen.has(id)) return;                 // already captured
+        seen.add(id);
+        const handleSeg = parts[0].split('/').filter(Boolean)[0] || 'unknown';
+        const handle = '@' + handleSeg;
+        // author display name: the User-Name testid block's first text node
+        const nameEl = a.querySelector('[data-testid="User-Name"]');
+        const author = nameEl ? (nameEl.innerText || '').split('\\n')[0].trim() || 'Unknown' : 'Unknown';
+        // timestamp: the <time datetime> (ISO) — convert to X's format later server-side
+        const timeEl = a.querySelector('time');
+        const timestamp = timeEl ? (timeEl.getAttribute('datetime') || '') : '';
+        // text: the tweetText block
+        const textEl = a.querySelector('[data-testid="tweetText"]');
+        const text = textEl ? (textEl.innerText || '') : '';
+        // media: any photo images (video thumbs included); DOM can't give mp4 urls
+        const media = [];
+        a.querySelectorAll('[data-testid="tweetPhoto"] img, img[src*="twimg.com/media"]').forEach(img => {
+          const src = img.getAttribute('src');
+          if (src) media.push({ type: 'photo', url: src.split('&name=')[0] });
+        });
+        all.push({ id, author, handle, timestamp, text, media, hashtags: [], urls: [], _dom: true });
+        btn.textContent = \`Export \${all.length} \${label} →\`;
+      } catch(e) {}
+    });
+  }
+  // The list is virtualized and recycles nodes fast — a scroll-step sampler can
+  // miss an article that renders and derenders between samples. A MutationObserver
+  // scrapes the instant any article is added to the DOM, so nothing slips through.
+  // Throttled to avoid thrashing on a fast-scrolling feed.
+  let obsPending = false;
+  const domObserver = new MutationObserver(() => {
+    if (obsPending) return;
+    obsPending = true;
+    setTimeout(() => { obsPending = false; scrapeDOM(); }, 150);
+  });
+  domObserver.observe(document.body, { childList: true, subtree: true });
   const btn = document.createElement('button');
   btn.textContent = 'Scroll then click to Export →';
   Object.assign(btn.style, {
@@ -274,6 +325,7 @@ const CONSOLE_SCRIPT = `(async function() {
     fontFamily: 'system-ui,sans-serif'
   });
   function doExport() {
+    try { domObserver.disconnect(); } catch(e) {}
     window.fetch = origFetch;
     XMLHttpRequest.prototype.open = origOpen;
     XMLHttpRequest.prototype.send = origSend;
@@ -298,12 +350,35 @@ const CONSOLE_SCRIPT = `(async function() {
   let autoScrolling = false;
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   async function runAutoScroll() {
+    // Scrape the top of the list BEFORE the fast scroll. The newest ~20
+    // bookmarks render only in the DOM (X never re-fetches them), and the list
+    // is virtualized — nodes are recycled as you scroll — so we must creep down
+    // slowly, scraping at every small step, until no new items appear for a
+    // while. Driven by capture progress, not pixel guesses.
+    const col0 = document.querySelector('[data-testid="primaryColumn"]');
+    window.scrollTo(0, 0); col0?.scrollTo(0, 0);
+    await sleep(700); scrapeDOM();
+    {
+      let topStagnant = 0, topLast = all.length, pos = 0;
+      // step by ~half a viewport so every article passes through the rendered
+      // window; stop after several consecutive steps with no new captures.
+      const step = Math.max(300, Math.floor(window.innerHeight * 0.6));
+      while (autoScrolling && topStagnant < 6) {
+        pos += step;
+        window.scrollTo(0, pos); col0?.scrollTo(0, pos);
+        await sleep(650);
+        scrapeDOM();
+        if (all.length > topLast) { topStagnant = 0; topLast = all.length; }
+        else topStagnant++;
+      }
+    }
     let stagnant = 0, lastCount = all.length;
     while (autoScrolling) {
       window.scrollTo(0, document.documentElement.scrollHeight);
       const col = document.querySelector('[data-testid="primaryColumn"]');
       col?.scrollTo(0, col.scrollHeight);
       await sleep(900);
+      scrapeDOM();
       if (all.length > lastCount) { stagnant = 0; lastCount = all.length; }
       else {
         stagnant++;
@@ -369,6 +444,7 @@ const CONSOLE_SCRIPT = `(async function() {
     }
     return origSend.apply(this, args);
   };
+  scrapeDOM(); // capture whatever is already on screen (the newest items)
   console.log(\`✅ Script active. Scroll through your \${label}, then click the purple button.\`);
 })();`
 
