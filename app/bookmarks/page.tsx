@@ -259,6 +259,13 @@ function BookmarksPageInner() {
     setFilters((prev) => ({ ...prev, [key]: value, page: 1 }))
   }
 
+  function handleDelete(id: string) {
+    // Optimistically drop from the list and update the Trash badge in the nav.
+    setBookmarks((prev) => prev.filter((b) => b.id !== id))
+    setTotal((prev) => Math.max(0, prev - 1))
+    window.dispatchEvent(new CustomEvent('siftly:trash-change', { detail: { delta: 1 } }))
+  }
+
   function clearAllFilters() {
     setSearchInput('')
     setFilters(DEFAULT_FILTERS)
@@ -465,7 +472,7 @@ function BookmarksPageInner() {
           <div className="masonry-grid">
             {bookmarks.map((bookmark) => (
               <div key={bookmark.id} className="masonry-item">
-                <BookmarkCard bookmark={bookmark} />
+                <BookmarkCard bookmark={bookmark} onDelete={handleDelete} />
               </div>
             ))}
           </div>
@@ -475,7 +482,7 @@ function BookmarksPageInner() {
         {!loading && bookmarks.length > 0 && viewMode === 'list' && (
           <div className="flex flex-col gap-3 max-w-3xl mx-auto">
             {bookmarks.map((bookmark) => (
-              <BookmarkCard key={bookmark.id} bookmark={bookmark} />
+              <BookmarkCard key={bookmark.id} bookmark={bookmark} onDelete={handleDelete} />
             ))}
           </div>
         )}
@@ -501,6 +508,7 @@ function BookmarksPageInner() {
         <BookmarkDetailModal
           bookmark={openBookmark}
           onClose={() => setOpenBookmark(null)}
+          onDelete={handleDelete}
         />
       )}
     </div>

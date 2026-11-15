@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useRef, useEffect, useState } from 'react'
-import { ExternalLink, Download, FileText, Play, Pencil, X, Check, ImageOff, Bookmark, Globe } from 'lucide-react'
+import { ExternalLink, Download, FileText, Play, Pencil, X, Check, ImageOff, Bookmark, Globe, Trash2 } from 'lucide-react'
 import type { BookmarkWithMedia, Category } from '@/lib/types'
 
 // ── URL helpers ────────────────────────────────────────────────────────────────
@@ -579,12 +579,14 @@ function CategoryEditor({ bookmarkId, currentCategoryIds, onSave, onClose }: Cat
 
 interface BookmarkCardProps {
   bookmark: BookmarkWithMedia
+  onDelete?: (id: string) => void
 }
 
-export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
+export default function BookmarkCard({ bookmark, onDelete }: BookmarkCardProps) {
   const [categories, setCategories] = useState(bookmark.categories)
   const [expanded, setExpanded] = useState(false)
   const [editingCategories, setEditingCategories] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const tweetUrl = (bookmark.authorHandle && bookmark.authorHandle !== 'unknown')
     ? `https://twitter.com/${bookmark.authorHandle}/status/${bookmark.tweetId}`
@@ -614,6 +616,20 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ categoryIds: newIds }),
     }).catch(() => { setCategories(bookmark.categories) })
+  }
+
+  function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (deleting) return
+    setDeleting(true)
+    onDelete?.(bookmark.id)
+    fetch(`/api/bookmarks/${bookmark.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ triageState: 'deleted' }),
+    }).catch(() => {
+      setDeleting(false)
+    })
   }
 
   function handleSaveCategories(newIds: string[]) {
@@ -755,6 +771,16 @@ export default function BookmarkCard({ bookmark }: BookmarkCardProps) {
             >
               <ExternalLink size={13} />
             </a>
+            {onDelete && (
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50 transition-colors"
+                title="Delete bookmark (moves to Trash)"
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
         </div>
 
