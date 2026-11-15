@@ -8,9 +8,10 @@ import type { BookmarkWithMedia } from '@/lib/types'
 interface BookmarkDetailModalProps {
   bookmark: BookmarkWithMedia
   onClose: () => void
+  onDelete?: (id: string) => void
 }
 
-export default function BookmarkDetailModal({ bookmark, onClose }: BookmarkDetailModalProps) {
+export default function BookmarkDetailModal({ bookmark, onClose, onDelete }: BookmarkDetailModalProps) {
   const handleEscape = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
   }, [onClose])
@@ -42,7 +43,10 @@ export default function BookmarkDetailModal({ bookmark, onClose }: BookmarkDetai
             <X size={18} />
           </button>
         </div>
-        <BookmarkCard bookmark={bookmark} />
+        <BookmarkCard
+          bookmark={bookmark}
+          onDelete={onDelete ? (id) => { onDelete(id); onClose() } : undefined}
+        />
       </div>
     </div>
   )
