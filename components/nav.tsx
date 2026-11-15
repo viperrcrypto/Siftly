@@ -255,7 +255,7 @@ export default function Nav() {
                 <span className={`shrink-0 min-w-[1.25rem] px-1.5 py-0.5 rounded-full text-[10px] font-semibold tabular-nums text-center leading-none ${
                   href === '/inbox' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-zinc-800 text-zinc-500'
                 }`}>
-                  {badgeCount > 99 ? '99+' : badgeCount}
+                  {badgeCount.toLocaleString()}
                 </span>
               )}
             </Link>
