@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Inbox, Check, Trash2, ExternalLink, Loader2 } from 'lucide-react'
+import { Inbox, Check, Trash2, ExternalLink, Loader2, ArrowUpDown } from 'lucide-react'
 import BookmarkCard from '@/components/bookmark-card'
 import type { BookmarkWithMedia, BookmarksResponse } from '@/lib/types'
 
@@ -91,9 +91,10 @@ export default function InboxPage() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [sort, setSort] = useState<'oldest' | 'newest'>('oldest')
 
-  const fetchPage = useCallback(async (p: number) => {
-    const res = await fetch(`/api/bookmarks?triageState=inbox&sort=oldest&page=${p}&limit=${PAGE_SIZE}`)
+  const fetchPage = useCallback(async (p: number, sortOrder: 'oldest' | 'newest') => {
+    const res = await fetch(`/api/bookmarks?triageState=inbox&sort=${sortOrder}&page=${p}&limit=${PAGE_SIZE}`)
     if (!res.ok) throw new Error('Failed to fetch inbox')
     const data: BookmarksResponse = await res.json()
     return data
@@ -102,7 +103,7 @@ export default function InboxPage() {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    fetchPage(1)
+    fetchPage(1, sort)
       .then((data) => {
         if (cancelled) return
         setBookmarks(data.bookmarks)
@@ -121,7 +122,7 @@ export default function InboxPage() {
     return () => {
       cancelled = true
     }
-  }, [fetchPage])
+  }, [fetchPage, sort])
 
   function handleDecided(id: string) {
     setBookmarks((prev) => prev.filter((b) => b.id !== id))
@@ -132,7 +133,7 @@ export default function InboxPage() {
     setLoadingMore(true)
     try {
       const next = page + 1
-      const data = await fetchPage(next)
+      const data = await fetchPage(next, sort)
       // Guard against duplicates if items shifted after triage
       setBookmarks((prev) => {
         const seen = new Set(prev.map((b) => b.id))
@@ -163,6 +164,16 @@ export default function InboxPage() {
               {loading ? 'Loading…' : total > 0 ? `${total.toLocaleString()} to triage` : 'Nothing to triage'}
             </p>
           </div>
+          {total > 0 && (
+            <button
+              onClick={() => setSort((s) => (s === 'oldest' ? 'newest' : 'oldest'))}
+              className="ml-auto flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-sm text-zinc-400 hover:border-zinc-700 hover:text-zinc-200 transition-all shrink-0"
+              title={`Sort: ${sort === 'oldest' ? 'Oldest first' : 'Newest first'}`}
+            >
+              <ArrowUpDown size={13} />
+              <span className="hidden sm:inline">{sort === 'oldest' ? 'Oldest first' : 'Newest first'}</span>
+            </button>
+          )}
         </div>
       </div>
 
