@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Image, Play, EyeOff, Eye } from 'lucide-react'
+import { Image, Play } from 'lucide-react'
 import type { BookmarkWithMedia } from '@/lib/types'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -124,30 +124,13 @@ function MediaIndicator({ item }: { item: BookmarkWithMedia['mediaItems'][number
 interface BookmarkRowProps {
   bookmark: BookmarkWithMedia
   onClick: (bookmark: BookmarkWithMedia) => void
-  onHiddenChange?: (id: string, hidden: boolean) => void
 }
 
-export default function BookmarkRow({ bookmark, onClick, onHiddenChange }: BookmarkRowProps) {
+export default function BookmarkRow({ bookmark, onClick }: BookmarkRowProps) {
   const isKnownAuthor = bookmark.authorHandle !== 'unknown'
   const cleanText = stripTcoUrls(bookmark.text)
   const dateStr = formatDate(bookmark.tweetCreatedAt ?? bookmark.importedAt ?? null)
   const firstMedia = bookmark.mediaItems[0] ?? null
-  const [hidden, setHidden] = useState(bookmark.hidden ?? false)
-
-  function handleToggleHidden(e: React.MouseEvent) {
-    e.stopPropagation()
-    const next = !hidden
-    setHidden(next)
-    onHiddenChange?.(bookmark.id, next)
-    fetch(`/api/bookmarks/${bookmark.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hidden: next }),
-    }).catch(() => {
-      setHidden(!next)
-      onHiddenChange?.(bookmark.id, !next)
-    })
-  }
 
   return (
     <div
@@ -216,15 +199,6 @@ export default function BookmarkRow({ bookmark, onClick, onHiddenChange }: Bookm
       <span className="shrink-0 w-20 text-right text-[10px] text-zinc-500 tabular-nums">
         {dateStr}
       </span>
-
-      {/* Hide/unhide — visible on hover (or always when hidden) */}
-      <button
-        onClick={handleToggleHidden}
-        className={`shrink-0 p-1 rounded transition-all hover:bg-zinc-700 ${hidden ? 'text-indigo-400 hover:text-indigo-300 opacity-100' : 'text-zinc-600 hover:text-zinc-200 opacity-0 group-hover:opacity-100'}`}
-        title={hidden ? 'Unhide bookmark' : 'Hide bookmark'}
-      >
-        {hidden ? <Eye size={12} /> : <EyeOff size={12} />}
-      </button>
     </div>
   )
 }

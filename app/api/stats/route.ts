@@ -15,17 +15,17 @@ export async function GET(): Promise<NextResponse> {
       recentBookmarks,
       topCategoriesRaw,
     ] = await Promise.all([
-      prisma.bookmark.count({ where: { hidden: false } }),
-      prisma.bookmark.count({ where: { source: 'bookmark', hidden: false } }),
-      prisma.bookmark.count({ where: { source: 'like', hidden: false } }),
+      prisma.bookmark.count({ where: { triageState: { not: 'deleted' } } }),
+      prisma.bookmark.count({ where: { source: 'bookmark', triageState: { not: 'deleted' } } }),
+      prisma.bookmark.count({ where: { source: 'like', triageState: { not: 'deleted' } } }),
       prisma.category.count(),
       prisma.mediaItem.count(),
-      prisma.bookmark.count({ where: { enrichedAt: null, hidden: false } }),
+      prisma.bookmark.count({ where: { enrichedAt: null, triageState: { not: 'deleted' } } }),
       prisma.bookmark.count({ where: { triageState: 'inbox' } }),
       prisma.bookmark.count({ where: { triageState: 'deleted' } }),
       prisma.bookmark.findMany({
         take: 5,
-        where: { hidden: false },
+        where: { triageState: 'kept' },
         orderBy: { importedAt: 'desc' },
         include: {
           mediaItems: {

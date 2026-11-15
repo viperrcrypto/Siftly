@@ -22,7 +22,6 @@ export interface BookmarkWithMedia {
   authorName: string
   tweetCreatedAt: string | null
   importedAt?: string
-  hidden?: boolean
   triageState?: string
   mediaItems: MediaItem[]
   categories: BookmarkCategory[]
@@ -52,7 +51,6 @@ export interface StatsResponse {
 export interface BookmarksResponse {
   bookmarks: BookmarkWithMedia[]
   total: number
-  hiddenTotal?: number
   page: number
   limit: number
 }

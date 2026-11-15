@@ -15,7 +15,6 @@ import {
   X,
   ChevronDown,
   ArrowUpDown,
-  EyeOff,
 } from 'lucide-react'
 import * as Select from '@radix-ui/react-select'
 import BookmarkCard from '@/components/bookmark-card'
@@ -34,7 +33,6 @@ interface Filters {
   sort: string
   page: number
   uncategorized: boolean
-  includeHidden: boolean
 }
 
 const DEFAULT_FILTERS: Filters = {
@@ -45,7 +43,6 @@ const DEFAULT_FILTERS: Filters = {
   sort: 'newest',
   page: 1,
   uncategorized: false,
-  includeHidden: false,
 }
 
 function buildUrl(filters: Filters, limit: number): string {
@@ -60,7 +57,6 @@ function buildUrl(filters: Filters, limit: number): string {
   if (filters.source) params.set('source', filters.source)
   params.set('sort', filters.sort)
   params.set('page', String(filters.page))
-  if (filters.includeHidden) params.set('includeHidden', 'true')
   params.set('limit', String(limit))
   return `/api/bookmarks?${params.toString()}`
 }
@@ -214,12 +210,10 @@ function BookmarksPageInner() {
     category: searchParams.get('category') ?? '',
     mediaType: searchParams.get('mediaType') ?? '',
     q: searchParams.get('q') ?? '',
-    includeHidden: searchParams.get('includeHidden') === 'true',
   }))
   const [searchInput, setSearchInput] = useState('')
   const [bookmarks, setBookmarks] = useState<BookmarkWithMedia[]>([])
   const [total, setTotal] = useState(0)
-  const [hiddenTotal, setHiddenTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'compact'>('grid')
   const [openBookmark, setOpenBookmark] = useState<BookmarkWithMedia | null>(null)
@@ -233,12 +227,10 @@ function BookmarksPageInner() {
       const data: BookmarksResponse = await res.json()
       setBookmarks(data.bookmarks)
       setTotal(data.total)
-      setHiddenTotal(data.hiddenTotal ?? 0)
     } catch (err) {
       console.error(err)
       setBookmarks([])
       setTotal(0)
-      setHiddenTotal(0)
     } finally {
       setLoading(false)
     }
@@ -267,18 +259,6 @@ function BookmarksPageInner() {
     setFilters((prev) => ({ ...prev, [key]: value, page: 1 }))
   }
 
-  function handleHiddenChange(id: string, hidden: boolean) {
-    // Keep the hidden-count badge in sync
-    setHiddenTotal((prev) => Math.max(0, prev + (hidden ? 1 : -1)))
-    // If the item's new state no longer matches the current view, drop it from the list.
-    // Normal view shows hidden=false; "Show hidden" view shows hidden=true.
-    const belongsInView = hidden === filters.includeHidden
-    if (!belongsInView) {
-      setBookmarks((prev) => prev.filter((b) => b.id !== id))
-      setTotal((prev) => Math.max(0, prev - 1))
-    }
-  }
-
   function clearAllFilters() {
     setSearchInput('')
     setFilters(DEFAULT_FILTERS)
@@ -299,7 +279,7 @@ function BookmarksPageInner() {
     { label: 'Oldest first', value: 'oldest' },
   ]
 
-  const hasActiveFilters = !!(filters.q || filters.category || filters.mediaType || filters.source || filters.sort !== 'newest' || filters.uncategorized || filters.includeHidden)
+  const hasActiveFilters = !!(filters.q || filters.category || filters.mediaType || filters.source || filters.sort !== 'newest' || filters.uncategorized)
 
   const sortLabel = sortOptions.find((o) => o.value === filters.sort)?.label ?? 'Newest first'
 
@@ -393,12 +373,6 @@ function BookmarksPageInner() {
           {/* Active filter chips */}
           {hasActiveFilters && (
             <div className="flex items-center gap-2 mt-3 flex-wrap">
-              {filters.includeHidden && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-medium">
-                  Showing hidden
-                  <button onClick={() => updateFilter('includeHidden', false)} className="text-indigo-400 hover:text-indigo-200 transition-colors"><X size={10} /></button>
-                </span>
-              )}
               {filters.uncategorized && (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-medium">
                   Uncategorized
@@ -453,16 +427,6 @@ function BookmarksPageInner() {
               ) : (
                 <span>No bookmarks found</span>
               )}
-              {hiddenTotal > 0 && !filters.includeHidden && (
-                <button
-                  onClick={() => updateFilter('includeHidden', true)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-800/70 border border-zinc-700/60 text-xs text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 transition-colors"
-                  title="Show hidden bookmarks"
-                >
-                  <EyeOff size={11} />
-                  {hiddenTotal.toLocaleString()} hidden
-                </button>
-              )}
             </p>
           </div>
         )}
@@ -501,7 +465,7 @@ function BookmarksPageInner() {
           <div className="masonry-grid">
             {bookmarks.map((bookmark) => (
               <div key={bookmark.id} className="masonry-item">
-                <BookmarkCard bookmark={bookmark} onHiddenChange={handleHiddenChange} />
+                <BookmarkCard bookmark={bookmark} />
               </div>
             ))}
           </div>
@@ -511,7 +475,7 @@ function BookmarksPageInner() {
         {!loading && bookmarks.length > 0 && viewMode === 'list' && (
           <div className="flex flex-col gap-3 max-w-3xl mx-auto">
             {bookmarks.map((bookmark) => (
-              <BookmarkCard key={bookmark.id} bookmark={bookmark} onHiddenChange={handleHiddenChange} />
+              <BookmarkCard key={bookmark.id} bookmark={bookmark} />
             ))}
           </div>
         )}
@@ -520,7 +484,7 @@ function BookmarksPageInner() {
         {!loading && bookmarks.length > 0 && viewMode === 'compact' && (
           <div className="flex flex-col divide-y divide-zinc-800/50 border border-zinc-800 rounded-2xl overflow-hidden max-w-5xl mx-auto">
             {bookmarks.map((bookmark) => (
-              <BookmarkRow key={bookmark.id} bookmark={bookmark} onClick={setOpenBookmark} onHiddenChange={handleHiddenChange} />
+              <BookmarkRow key={bookmark.id} bookmark={bookmark} onClick={setOpenBookmark} />
             ))}
           </div>
         )}
@@ -537,7 +501,6 @@ function BookmarksPageInner() {
         <BookmarkDetailModal
           bookmark={openBookmark}
           onClose={() => setOpenBookmark(null)}
-          onHiddenChange={handleHiddenChange}
         />
       )}
     </div>

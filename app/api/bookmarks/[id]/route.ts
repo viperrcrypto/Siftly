@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@/app/generated/prisma/client'
 import prisma from '@/lib/db'
 
-// PATCH: Update mutable fields on a bookmark (hidden, triageState)
+// PATCH: Update mutable fields on a bookmark (triageState)
 const TRIAGE_STATES = ['inbox', 'kept', 'deleted'] as const
 
 // DELETE: Permanently remove a bookmark (media items + category links cascade)
@@ -30,21 +30,14 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
   const { id } = await params
-  let body: { hidden?: unknown; triageState?: unknown } = {}
+  let body: { triageState?: unknown } = {}
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const data: { hidden?: boolean; triageState?: string } = {}
-
-  if (body.hidden !== undefined) {
-    if (typeof body.hidden !== 'boolean') {
-      return NextResponse.json({ error: 'Field "hidden" must be a boolean' }, { status: 400 })
-    }
-    data.hidden = body.hidden
-  }
+  const data: { triageState?: string } = {}
 
   if (body.triageState !== undefined) {
     if (typeof body.triageState !== 'string' || !TRIAGE_STATES.includes(body.triageState as typeof TRIAGE_STATES[number])) {
