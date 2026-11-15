@@ -35,6 +35,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   const q = searchParams.get('q')?.trim() ?? ''
   const source = searchParams.get('source')?.trim() ?? ''
+  const triageState = searchParams.get('triageState')?.trim() ?? ''
   const categorySlug = searchParams.get('category')?.trim() ?? ''
   const mediaType = searchParams.get('mediaType')?.trim() ?? ''
   const uncategorized = searchParams.get('uncategorized') === 'true'
@@ -45,6 +46,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const orderDir = sortParam === 'oldest' ? 'asc' : 'desc'
 
   const where: Record<string, unknown> = {}
+
+  const TRIAGE_STATES = ['inbox', 'kept', 'deleted']
+  if (TRIAGE_STATES.includes(triageState)) {
+    // Explicit triage view (e.g. the inbox) — triage state is authoritative
+    where.triageState = triageState
+  } else {
+    // Default Browse: only decided/kept bookmarks. Inbox + deleted are excluded.
+    where.triageState = 'kept'
+  }
 
   if (source === 'bookmark' || source === 'like') {
     where.source = source
@@ -103,6 +113,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       authorHandle: bookmark.authorHandle,
       authorName: bookmark.authorName,
       source: bookmark.source,
+      triageState: bookmark.triageState,
       tweetCreatedAt: bookmark.tweetCreatedAt?.toISOString() ?? null,
       importedAt: bookmark.importedAt.toISOString(),
       mediaItems: bookmark.mediaItems.map((m) => ({
