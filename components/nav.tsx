@@ -15,6 +15,8 @@ import {
   ChevronRight,
   Command,
   Bookmark,
+  Inbox,
+  Trash2,
 } from 'lucide-react'
 
 interface NavItem {
@@ -24,11 +26,13 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { href: '/inbox', label: 'Inbox', icon: Inbox },
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/ai-search', label: 'AI Search', icon: Sparkles },
   { href: '/bookmarks', label: 'Browse', icon: Search },
   { href: '/mindmap', label: 'Mindmap', icon: GitBranch },
   { href: '/import', label: 'Import', icon: Upload },
+  { href: '/trash', label: 'Trash', icon: Trash2 },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
@@ -96,6 +100,8 @@ export default function Nav() {
   const pathname = usePathname()
   const [categories, setCategories] = useState<CategoryItem[]>([])
   const [totalBookmarks, setTotalBookmarks] = useState<number | null>(null)
+  const [inboxCount, setInboxCount] = useState<number>(0)
+  const [trashCount, setTrashCount] = useState<number>(0)
   const [showAllCats, setShowAllCats] = useState(true)
   const [collectionsOpen, setCollectionsOpen] = useState(() => {
     if (typeof window === 'undefined') return true
@@ -119,17 +125,43 @@ export default function Nav() {
     function handleCleared() {
       setCategories([])
       setTotalBookmarks(0)
+      setInboxCount(0)
+      setTrashCount(0)
+    }
+    function handleInboxChange(e: Event) {
+      const detail = (e as CustomEvent<{ delta?: number; value?: number }>).detail
+      if (detail?.value !== undefined) {
+        setInboxCount(Math.max(0, detail.value))
+      } else if (detail?.delta !== undefined) {
+        setInboxCount((prev) => Math.max(0, prev + detail.delta!))
+      }
+    }
+    function handleTrashChange(e: Event) {
+      const detail = (e as CustomEvent<{ delta?: number; value?: number }>).detail
+      if (detail?.value !== undefined) {
+        setTrashCount(Math.max(0, detail.value))
+      } else if (detail?.delta !== undefined) {
+        setTrashCount((prev) => Math.max(0, prev + detail.delta!))
+      }
     }
     window.addEventListener('siftly:cleared', handleCleared)
-    return () => window.removeEventListener('siftly:cleared', handleCleared)
+    window.addEventListener('siftly:inbox-change', handleInboxChange as EventListener)
+    window.addEventListener('siftly:trash-change', handleTrashChange as EventListener)
+    return () => {
+      window.removeEventListener('siftly:cleared', handleCleared)
+      window.removeEventListener('siftly:inbox-change', handleInboxChange as EventListener)
+      window.removeEventListener('siftly:trash-change', handleTrashChange as EventListener)
+    }
   }, [])
 
   useEffect(() => {
     // Fetch stats
     fetch('/api/stats')
       .then((r) => r.json())
-      .then((d: { totalBookmarks?: number }) => {
+      .then((d: { totalBookmarks?: number; inboxCount?: number; trashCount?: number }) => {
         if (d.totalBookmarks !== undefined) setTotalBookmarks(d.totalBookmarks)
+        if (d.inboxCount !== undefined) setInboxCount(d.inboxCount)
+        if (d.trashCount !== undefined) setTrashCount(d.trashCount)
       })
       .catch(() => {})
 
@@ -205,6 +237,8 @@ export default function Nav() {
       <nav className="flex flex-col gap-px px-2 py-2">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = isActive(pathname, href)
+          const badgeCount = href === '/inbox' ? inboxCount : href === '/trash' ? trashCount : 0
+          const showBadge = badgeCount > 0
           return (
             <Link
               key={href}
@@ -216,7 +250,14 @@ export default function Nav() {
               }`}
             >
               <Icon size={14} className="shrink-0" />
-              {label}
+              <span className="flex-1">{label}</span>
+              {showBadge && (
+                <span className={`shrink-0 min-w-[1.25rem] px-1.5 py-0.5 rounded-full text-[10px] font-semibold tabular-nums text-center leading-none ${
+                  href === '/inbox' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-zinc-800 text-zinc-500'
+                }`}>
+                  {badgeCount > 99 ? '99+' : badgeCount}
+                </span>
+              )}
             </Link>
           )
         })}

@@ -10,6 +10,8 @@ export async function GET(): Promise<NextResponse> {
       totalCategories,
       totalMedia,
       uncategorizedCount,
+      inboxCount,
+      trashCount,
       recentBookmarks,
       topCategoriesRaw,
     ] = await Promise.all([
@@ -19,6 +21,8 @@ export async function GET(): Promise<NextResponse> {
       prisma.category.count(),
       prisma.mediaItem.count(),
       prisma.bookmark.count({ where: { enrichedAt: null, hidden: false } }),
+      prisma.bookmark.count({ where: { triageState: 'inbox' } }),
+      prisma.bookmark.count({ where: { triageState: 'deleted' } }),
       prisma.bookmark.findMany({
         take: 5,
         where: { hidden: false },
@@ -79,6 +83,8 @@ export async function GET(): Promise<NextResponse> {
       totalCategories,
       totalMedia,
       uncategorizedCount,
+      inboxCount,
+      trashCount,
       recentBookmarks: formattedRecent,
       topCategories,
     })
