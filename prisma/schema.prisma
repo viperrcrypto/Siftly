@@ -22,6 +22,7 @@ model Bookmark {
   enrichmentMeta  String?   // JSON: {sentiment, people[], companies[]} from batch enrichment
   source          String    @default("bookmark")  // "bookmark" | "like"
   hidden          Boolean   @default(false)  // archived/done — excluded from normal views
+  triageState     String    @default("inbox")  // "inbox" | "kept" | "deleted" — inbox triage workflow
   mediaItems    MediaItem[]
   categories    BookmarkCategory[]
 
@@ -30,6 +31,7 @@ model Bookmark {
   @@index([enrichedAt])
   @@index([source])
   @@index([hidden])
+  @@index([triageState])
 }
 
 model Category {
