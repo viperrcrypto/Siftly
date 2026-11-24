@@ -290,11 +290,11 @@ export async function categorizeBatch(
   return parseCategorizationResponse(response.text, new Set(allSlugs))
 }
 
-export async function writeCategoryResults(results: CategorizationResult[]): Promise<void> {
-  if (results.length === 0) return
+export async function writeCategoryResults(results: CategorizationResult[]): Promise<number> {
+  if (results.length === 0) return 0
 
   const tweetIds = results.map((r) => r.tweetId).filter(Boolean)
-  if (tweetIds.length === 0) return
+  if (tweetIds.length === 0) return 0
 
   // Batch-fetch all categories and bookmarks at once (eliminates N+1 queries)
   const [categories, bookmarks] = await Promise.all([
@@ -332,7 +332,7 @@ export async function writeCategoryResults(results: CategorizationResult[]): Pro
     bookmarkIdsToUpdate.push(bookmarkId)
   }
 
-  if (upsertOps.length === 0) return
+  if (upsertOps.length === 0) return 0
 
   await prisma.$transaction([
     ...upsertOps,
@@ -341,6 +341,8 @@ export async function writeCategoryResults(results: CategorizationResult[]): Pro
       data: { enrichedAt: now },
     }),
   ])
+
+  return bookmarkIdsToUpdate.length
 }
 
 export function mapBookmarkForCategorization(b: {
